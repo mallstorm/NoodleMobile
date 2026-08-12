@@ -1,0 +1,110 @@
+name: Noodle Mobile Android CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - "NoodleMobile_0.10.0-alpha10_SOURCE.zip"
+      - ".github/workflows/android-ci.yml"
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_ZIP: NoodleMobile_0.10.0-alpha10_SOURCE.zip
+  SOURCE_SHA256: cfe4385b17bb2763eb5947c955a311262c7dd9443a3e90c0a28397bc2a943cd2
+  PROJECT_DIR: work/NoodleMobile_0.10.0-alpha10_SOURCE
+
+jobs:
+  build-certify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Verify source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "${SOURCE_SHA256}  ${SOURCE_ZIP}" | sha256sum -c -
+          unzip -t "${SOURCE_ZIP}" >/dev/null
+
+      - name: Extract source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf work
+          mkdir -p work
+          unzip -q "${SOURCE_ZIP}" -d work
+          test -f "${PROJECT_DIR}/settings.gradle.kts"
+          test -f "${PROJECT_DIR}/app/build.gradle.kts"
+          test -x "${PROJECT_DIR}/tools/ci-android-build.sh" || chmod +x "${PROJECT_DIR}"/tools/*.sh "${PROJECT_DIR}/gradlew"
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android Platform 37 and Build Tools 36.0.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "platform-tools" "platforms;android-37" "build-tools;36.0.0"
+          test -f "${ANDROID_SDK_ROOT}/platforms/android-37/android.jar"
+          test -x "${ANDROID_SDK_ROOT}/build-tools/36.0.0/aapt2"
+
+      - name: Set up Gradle 9.5.1
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: "9.5.1"
+          cache-read-only: false
+
+      - name: Toolchain report
+        shell: bash
+        run: |
+          set -euo pipefail
+          java -version
+          gradle --version
+          sdkmanager --version
+          "${ANDROID_SDK_ROOT}/build-tools/36.0.0/aapt2" version
+
+      - name: Build and certify first test APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x tools/*.sh gradlew
+          bash tools/ci-android-build.sh
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: noodle-alpha10-build-diagnostics
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            ${{ env.PROJECT_DIR }}/build-certification/**
+            ${{ env.PROJECT_DIR }}/app/build/reports/**
+            ${{ env.PROJECT_DIR }}/app/build/outputs/logs/**
+
+      - name: Upload certified APKs
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          name: NoodleMobile-0.10.0-alpha10-APKs
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
+            ${{ env.PROJECT_DIR }}/app/build/outputs/apk/androidTest/**/*.apk
+            ${{ env.PROJECT_DIR }}/build-certification/BUILD_RESULT.txt
+            ${{ env.PROJECT_DIR }}/build-certification/SHA256.txt
