@@ -89,11 +89,26 @@ jobs:
           text = text.replace(old, new, 1)
           search.write_text(text, encoding="utf-8")
 
-          print("CI overlay: Android 37.0 + Kotlin compiler fixes #1/#2")
+          videojs = root / "app/src/main/java/pro/noodle/mobile/core/engine/impl/VideoJsEngine.kt"
+          text = videojs.read_text(encoding="utf-8")
+          lines = text.splitlines()
+          replacement = '        val videoTag=Regex("<video\\\\b[^>]*>",setOf(RegexOption.IGNORE_CASE,RegexOption.DOT_MATCHES_ALL)).findAll(text).map{it.value}.firstOrNull{tag->EngineParsing.attr(tag,"data-setup").isNotBlank()||EngineParsing.attr(tag,"class").contains("video-js",true)}.orEmpty()'
+          found = False
+          for i, line in enumerate(lines):
+              if "val videoTag=Regex(" in line:
+                  lines[i] = replacement
+                  found = True
+                  break
+          if not found:
+              raise SystemExit("VideoJsEngine videoTag anchor missing")
+          videojs.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+          print("CI overlay: Android 37.0 + compiler fixes + Video.js data-setup fix")
           PY
           grep -nE 'compileSdk|targetSdk' "${PROJECT_DIR}/app/build.gradle.kts"
           grep -n 'ExperimentalMaterial3Api' "${PROJECT_DIR}/app/src/main/java/pro/noodle/mobile/MainActivity.kt"
           grep -n 'return items to null' "${PROJECT_DIR}/app/src/main/java/pro/noodle/mobile/core/search/BundledSearchRepository.kt"
+          grep -n 'val videoTag' "${PROJECT_DIR}/app/src/main/java/pro/noodle/mobile/core/engine/impl/VideoJsEngine.kt"
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
