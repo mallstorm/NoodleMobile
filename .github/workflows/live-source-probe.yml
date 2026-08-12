@@ -6,6 +6,7 @@ on:
     branches: [ main ]
     paths:
       - "ci/live_source_probe.py"
+      - "ci/deep_playback_probe.py"
       - ".github/workflows/live-source-probe.yml"
 
 permissions:
@@ -40,6 +41,7 @@ jobs:
           set -o pipefail
           mkdir -p "${PROJECT_DIR}/build-certification"
           python3 ci/live_source_probe.py "${PROJECT_DIR}" "${PROJECT_DIR}/build-certification/LIVE_SOURCE_PROBE.json" | tee "${PROJECT_DIR}/build-certification/LIVE_SOURCE_PROBE.log"
+          python3 ci/deep_playback_probe.py "${PROJECT_DIR}" "${PROJECT_DIR}/build-certification/DEEP_PLAYBACK_PROBE.json" | tee "${PROJECT_DIR}/build-certification/DEEP_PLAYBACK_PROBE.log"
 
       - name: Upload probe report
         if: always()
@@ -51,3 +53,5 @@ jobs:
           path: |
             ${{ env.PROJECT_DIR }}/build-certification/LIVE_SOURCE_PROBE.json
             ${{ env.PROJECT_DIR }}/build-certification/LIVE_SOURCE_PROBE.log
+            ${{ env.PROJECT_DIR }}/build-certification/DEEP_PLAYBACK_PROBE.json
+            ${{ env.PROJECT_DIR }}/build-certification/DEEP_PLAYBACK_PROBE.log
