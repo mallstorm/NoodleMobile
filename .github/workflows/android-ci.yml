@@ -15,7 +15,7 @@ env:
   SOURCE_ZIP: NoodleMobile_0.10.0-alpha10_SOURCE.zip
   SOURCE_SHA256: cfe4385b17bb2763eb5947c955a311262c7dd9443a3e90c0a28397bc2a943cd2
   PROJECT_DIR: work/NoodleMobile_0.10.0-alpha10_SOURCE
-  CI_ANDROID_API: "36"
+  CI_ANDROID_API: "37.0"
 
 jobs:
   build-certify:
@@ -44,38 +44,32 @@ jobs:
           test -f "${PROJECT_DIR}/app/build.gradle.kts"
           chmod +x "${PROJECT_DIR}"/tools/*.sh "${PROJECT_DIR}/gradlew"
 
-      - name: Apply API 36 test-build overlay
+      - name: Apply Android 37.0 package overlay
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
           root = Path("work/NoodleMobile_0.10.0-alpha10_SOURCE")
-          replacements = {
-              root / "app/build.gradle.kts": [
-                  ("compileSdk = 37", "compileSdk = 36"),
-                  ("targetSdk = 37", "targetSdk = 36"),
-              ],
-              root / "tools/ci-android-build.sh": [
-                  ('platforms;android-37', 'platforms;android-36'),
-                  ('platforms/android-37/android.jar', 'platforms/android-36/android.jar'),
-                  ('Android Platform 37 missing', 'Android Platform 36 missing'),
-              ],
-              root / "tools/verify-apk.sh": [
-                  ("targetSdkVersion:'37'", "targetSdkVersion:'36'"),
-              ],
-              root / "tools/verify-test-apk.sh": [
-                  ("targetSdkVersion:'37'", "targetSdkVersion:'36'"),
-              ],
-          }
-          for path, pairs in replacements.items():
-              text = path.read_text(encoding="utf-8")
-              for old, new in pairs:
-                  if old not in text:
-                      raise SystemExit(f"overlay anchor missing: {path}: {old}")
-                  text = text.replace(old, new)
-              path.write_text(text, encoding="utf-8")
-          print("CI overlay: compileSdk/targetSdk=36; source archive remains unchanged")
+          app = root / "app/build.gradle.kts"
+          text = app.read_text(encoding="utf-8")
+          anchor = "    compileSdk = 37\n"
+          if anchor not in text:
+              raise SystemExit("compileSdk 37 anchor missing")
+          text = text.replace(anchor, anchor + "    compileSdkMinor = 0\n", 1)
+          app.write_text(text, encoding="utf-8")
+
+          ci = root / "tools/ci-android-build.sh"
+          text = ci.read_text(encoding="utf-8")
+          for old, new in [
+              ('platforms;android-37', 'platforms;android-37.0'),
+              ('platforms/android-37/android.jar', 'platforms/android-37.0/android.jar'),
+          ]:
+              if old not in text:
+                  raise SystemExit(f"CI anchor missing: {old}")
+              text = text.replace(old, new)
+          ci.write_text(text, encoding="utf-8")
+          print("CI overlay: compileSdk=37, compileSdkMinor=0, targetSdk=37")
           PY
           grep -nE 'compileSdk|targetSdk' "${PROJECT_DIR}/app/build.gradle.kts"
 
@@ -96,14 +90,14 @@ jobs:
           set -euo pipefail
           mkdir -p "${PROJECT_DIR}/build-certification"
           sdkmanager --list > "${PROJECT_DIR}/build-certification/sdkmanager-list.txt"
-          grep -E 'platforms;android-(36|37)|build-tools;36\.0\.0' "${PROJECT_DIR}/build-certification/sdkmanager-list.txt" || true
+          grep -E 'platforms;android-37(\.0|\.1)|build-tools;36\.0\.0' "${PROJECT_DIR}/build-certification/sdkmanager-list.txt" || true
 
-      - name: Install Android Platform 36 and Build Tools 36.0.0
+      - name: Install Android Platform 37.0 and Build Tools 36.0.0
         shell: bash
         run: |
           set -euo pipefail
-          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
-          test -f "${ANDROID_SDK_ROOT}/platforms/android-36/android.jar"
+          sdkmanager "platform-tools" "platforms;android-37.0" "build-tools;36.0.0"
+          test -f "${ANDROID_SDK_ROOT}/platforms/android-37.0/android.jar"
           test -x "${ANDROID_SDK_ROOT}/build-tools/36.0.0/aapt2"
 
       - name: Set up Gradle 9.5.1
@@ -144,7 +138,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v7
         with:
-          name: NoodleMobile-0.10.0-alpha10-API36-test-APKs
+          name: NoodleMobile-0.10.0-alpha10-API37-test-APKs
           if-no-files-found: error
           retention-days: 30
           path: |
