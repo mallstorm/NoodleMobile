@@ -1,0 +1,53 @@
+name: Noodle Live Source Probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - "ci/live_source_probe.py"
+      - ".github/workflows/live-source-probe.yml"
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_ZIP: NoodleMobile_0.10.0-alpha10_SOURCE.zip
+  SOURCE_SHA256: cfe4385b17bb2763eb5947c955a311262c7dd9443a3e90c0a28397bc2a943cd2
+  PROJECT_DIR: work/NoodleMobile_0.10.0-alpha10_SOURCE
+
+jobs:
+  live-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Extract current candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "${SOURCE_SHA256}  ${SOURCE_ZIP}" | sha256sum -c -
+          rm -rf work && mkdir -p work
+          unzip -q "${SOURCE_ZIP}" -d work
+          python3 ci/overlay.py "${PROJECT_DIR}"
+          python3 ci/runtime_hotfix.py "${PROJECT_DIR}"
+
+      - name: Probe five bundled sources
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p "${PROJECT_DIR}/build-certification"
+          python3 ci/live_source_probe.py "${PROJECT_DIR}" "${PROJECT_DIR}/build-certification/LIVE_SOURCE_PROBE.json" | tee "${PROJECT_DIR}/build-certification/LIVE_SOURCE_PROBE.log"
+
+      - name: Upload probe report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: noodle-live-source-probe
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            ${{ env.PROJECT_DIR }}/build-certification/LIVE_SOURCE_PROBE.json
+            ${{ env.PROJECT_DIR }}/build-certification/LIVE_SOURCE_PROBE.log
