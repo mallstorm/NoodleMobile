@@ -51,6 +51,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           root = Path("work/NoodleMobile_0.10.0-alpha10_SOURCE")
+          nl = chr(10)
 
           app = root / "app/build.gradle.kts"
           text = app.read_text(encoding="utf-8")
@@ -101,35 +102,38 @@ jobs:
                   break
           if not found:
               raise SystemExit("VideoJsEngine videoTag anchor missing")
-          videojs.write_text("\n".join(lines) + "\n", encoding="utf-8")
+          videojs.write_text(nl.join(lines) + nl, encoding="utf-8")
 
           manifest = root / "app/src/main/AndroidManifest.xml"
           text = manifest.read_text(encoding="utf-8")
           old_manifest = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
-          new_manifest = '<manifest xmlns:android="http://schemas.android.com/apk/res/android"\n    xmlns:tools="http://schemas.android.com/tools">'
+          new_manifest = '<manifest xmlns:android="http://schemas.android.com/apk/res/android"' + nl + '    xmlns:tools="http://schemas.android.com/tools">'
           if old_manifest not in text:
               raise SystemExit("AndroidManifest namespace anchor missing")
           text = text.replace(old_manifest, new_manifest, 1)
           service_anchor = '        <service\n            android:name=".core.download.NoodleDownloadService"'
-          wm_service = '''        <service
-            android:name="androidx.work.impl.foreground.SystemForegroundService"
-            android:foregroundServiceType="dataSync"
-            tools:node="merge" />
-
-'''
+          wm_service = nl.join([
+              '        <service',
+              '            android:name="androidx.work.impl.foreground.SystemForegroundService"',
+              '            android:foregroundServiceType="dataSync"',
+              '            tools:node="merge" />',
+              '',
+          ])
           if service_anchor not in text:
               raise SystemExit("AndroidManifest service anchor missing")
           text = text.replace(service_anchor, wm_service + service_anchor, 1)
           manifest.write_text(text, encoding="utf-8")
 
           lint_xml = root / "app/lint.xml"
-          lint_xml.write_text('''<?xml version="1.0" encoding="utf-8"?>
-<lint>
-    <issue id="UnsafeOptInUsageError">
-        <option name="opt-in" value="androidx.media3.common.util.UnstableApi" />
-    </issue>
-</lint>
-''', encoding="utf-8")
+          lint_xml.write_text(nl.join([
+              '<?xml version="1.0" encoding="utf-8"?>',
+              '<lint>',
+              '    <issue id="UnsafeOptInUsageError">',
+              '        <option name="opt-in" value="androidx.media3.common.util.UnstableApi" />',
+              '    </issue>',
+              '</lint>',
+              '',
+          ]), encoding="utf-8")
 
           print("CI overlay: Android 37.0 + compiler/parser fixes + Media3/WorkManager lint fixes")
           PY
