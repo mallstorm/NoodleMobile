@@ -35,6 +35,7 @@ jobs:
           unzip -q "${SOURCE_ZIP}" -d work
           python3 ci/overlay.py "${PROJECT_DIR}"
           python3 ci/runtime_hotfix.py "${PROJECT_DIR}"
+          python3 ci/multisource_hotfix2.py "${PROJECT_DIR}"
           test -f "${PROJECT_DIR}/settings.gradle.kts"
           chmod +x "${PROJECT_DIR}"/tools/*.sh "${PROJECT_DIR}/gradlew"
 
@@ -73,7 +74,7 @@ jobs:
           sdkmanager --version
           "${ANDROID_SDK_ROOT}/build-tools/36.0.0/aapt2" version
 
-      - name: Build and certify first test APK
+      - name: Build and certify multi-source hotfix 2
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: bash tools/ci-android-build.sh
@@ -82,7 +83,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: noodle-alpha10-playback-hotfix1-diagnostics
+          name: noodle-alpha10-multisource-hotfix2-diagnostics
           if-no-files-found: warn
           retention-days: 14
           path: |
@@ -96,7 +97,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v7
         with:
-          name: NoodleMobile-0.10.0-alpha10-PlaybackHostHotfix1-API37
+          name: NoodleMobile-0.10.0-alpha10-MultiSourceHotfix2-API37
           if-no-files-found: error
           retention-days: 30
           path: |
