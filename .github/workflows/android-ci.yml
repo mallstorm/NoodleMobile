@@ -6,6 +6,7 @@ on:
     branches: [ main ]
     paths:
       - "NoodleMobile_0.10.0-alpha10_SOURCE.zip"
+      - "ci/overlay.py"
       - ".github/workflows/android-ci.yml"
 
 permissions:
@@ -15,168 +16,26 @@ env:
   SOURCE_ZIP: NoodleMobile_0.10.0-alpha10_SOURCE.zip
   SOURCE_SHA256: cfe4385b17bb2763eb5947c955a311262c7dd9443a3e90c0a28397bc2a943cd2
   PROJECT_DIR: work/NoodleMobile_0.10.0-alpha10_SOURCE
-  CI_ANDROID_API: "37.0"
 
 jobs:
   build-certify:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Verify source archive
+      - name: Verify and extract source
         shell: bash
         run: |
           set -euo pipefail
           echo "${SOURCE_SHA256}  ${SOURCE_ZIP}" | sha256sum -c -
           unzip -t "${SOURCE_ZIP}" >/dev/null
-
-      - name: Extract source
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf work
-          mkdir -p work
+          rm -rf work && mkdir -p work
           unzip -q "${SOURCE_ZIP}" -d work
+          python3 ci/overlay.py "${PROJECT_DIR}"
           test -f "${PROJECT_DIR}/settings.gradle.kts"
-          test -f "${PROJECT_DIR}/app/build.gradle.kts"
           chmod +x "${PROJECT_DIR}"/tools/*.sh "${PROJECT_DIR}/gradlew"
-
-      - name: Apply Android 37.0 and build-fix overlay
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          root = Path("work/NoodleMobile_0.10.0-alpha10_SOURCE")
-          nl = chr(10)
-
-          app = root / "app/build.gradle.kts"
-          text = app.read_text(encoding="utf-8")
-          anchor = "    compileSdk = 37\n"
-          if anchor not in text:
-              raise SystemExit("compileSdk 37 anchor missing")
-          text = text.replace(anchor, anchor + "    compileSdkMinor = 0\n", 1)
-          app.write_text(text, encoding="utf-8")
-
-          ci = root / "tools/ci-android-build.sh"
-          text = ci.read_text(encoding="utf-8")
-          for old, new in [
-              ('platforms;android-37', 'platforms;android-37.0'),
-              ('platforms/android-37/android.jar', 'platforms/android-37.0/android.jar'),
-          ]:
-              if old not in text:
-                  raise SystemExit(f"CI anchor missing: {old}")
-              text = text.replace(old, new)
-          ci.write_text(text, encoding="utf-8")
-
-          main = root / "app/src/main/java/pro/noodle/mobile/MainActivity.kt"
-          text = main.read_text(encoding="utf-8")
-          old = "@Composable private fun NoodleApp(settingsVm:SettingsViewModel){"
-          new = "@OptIn(ExperimentalMaterial3Api::class)\n@Composable private fun NoodleApp(settingsVm:SettingsViewModel){"
-          if old not in text:
-              raise SystemExit("MainActivity NoodleApp anchor missing")
-          text = text.replace(old, new, 1)
-          main.write_text(text, encoding="utf-8")
-
-          search = root / "app/src/main/java/pro/noodle/mobile/core/search/BundledSearchRepository.kt"
-          text = search.read_text(encoding="utf-8")
-          old = "        items to null\n    }\n\n    private fun templateSearchUrl"
-          new = "        return items to null\n    }\n\n    private fun templateSearchUrl"
-          if old not in text:
-              raise SystemExit("BundledSearchRepository return anchor missing")
-          text = text.replace(old, new, 1)
-          search.write_text(text, encoding="utf-8")
-
-          videojs = root / "app/src/main/java/pro/noodle/mobile/core/engine/impl/VideoJsEngine.kt"
-          text = videojs.read_text(encoding="utf-8")
-          lines = text.splitlines()
-          replacement = '        val videoTag=Regex("<video\\\\b[^>]*>",setOf(RegexOption.IGNORE_CASE,RegexOption.DOT_MATCHES_ALL)).findAll(text).map{it.value}.firstOrNull{tag->EngineParsing.attr(tag,"data-setup").isNotBlank()||EngineParsing.attr(tag,"class").contains("video-js",true)}.orEmpty()'
-          found = False
-          for i, line in enumerate(lines):
-              if "val videoTag=Regex(" in line:
-                  lines[i] = replacement
-                  found = True
-                  break
-          if not found:
-              raise SystemExit("VideoJsEngine videoTag anchor missing")
-          videojs.write_text(nl.join(lines) + nl, encoding="utf-8")
-
-          manifest = root / "app/src/main/AndroidManifest.xml"
-          text = manifest.read_text(encoding="utf-8")
-          old_manifest = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
-          new_manifest = '<manifest xmlns:android="http://schemas.android.com/apk/res/android"' + nl + '    xmlns:tools="http://schemas.android.com/tools">'
-          if old_manifest not in text:
-              raise SystemExit("AndroidManifest namespace anchor missing")
-          text = text.replace(old_manifest, new_manifest, 1)
-          service_anchor = '        <service\n            android:name=".core.download.NoodleDownloadService"'
-          wm_service = nl.join([
-              '        <service',
-              '            android:name="androidx.work.impl.foreground.SystemForegroundService"',
-              '            android:foregroundServiceType="dataSync"',
-              '            tools:node="merge" />',
-              '',
-          ])
-          if service_anchor not in text:
-              raise SystemExit("AndroidManifest service anchor missing")
-          text = text.replace(service_anchor, wm_service + service_anchor, 1)
-          manifest.write_text(text, encoding="utf-8")
-
-          lint_xml = root / "app/lint.xml"
-          lint_xml.write_text(nl.join([
-              '<?xml version="1.0" encoding="utf-8"?>',
-              '<lint>',
-              '    <issue id="UnsafeOptInUsageError">',
-              '        <option name="opt-in" value="androidx.media3.common.util.UnstableApi" />',
-              '    </issue>',
-              '</lint>',
-              '',
-          ]), encoding="utf-8")
-
-          verify = root / "tools/verify-apk.sh"
-          verify.write_text(nl.join([
-              '#!/usr/bin/env bash',
-              'set -euo pipefail',
-              'APK="${1:?usage: verify-apk.sh APK [AAPT2]}"',
-              'AAPT2="${2:-}"',
-              '[[ -f "$APK" ]] || { echo "ERROR: APK not found: $APK" >&2; exit 2; }',
-              'if [[ -z "$AAPT2" ]]; then',
-              '  SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"',
-              '  [[ -n "$SDK" ]] || { echo "ERROR: AAPT2 not supplied and Android SDK root is not set" >&2; exit 3; }',
-              '  AAPT2="$(find "$SDK/build-tools" -maxdepth 2 -type f -name aapt2 -print | sort -V | tail -1)"',
-              'fi',
-              '[[ -x "$AAPT2" ]] || { echo "ERROR: aapt2 not executable: $AAPT2" >&2; exit 4; }',
-              'BADGING="$($AAPT2 dump badging "$APK")"',
-              'OUT="${APK_BADGING_OUT:-$PWD/build-certification/APK_BADGING.txt}"',
-              'mkdir -p "$(dirname "$OUT")"',
-              'printf "%s\\n" "$BADGING" | tee "$OUT"',
-              'printf "%s\\n" "$BADGING" | grep -F "package: name=\'pro.noodle.mobile\' versionCode=\'100010\' versionName=\'0.10.0-alpha10\'" >/dev/null || { echo "ERROR: APK identity mismatch" >&2; exit 5; }',
-              'MIN_SDK="$(printf "%s\\n" "$BADGING" | sed -n "s/^sdkVersion:\x27\\([^\x27]*\\)\x27.*/\\1/p" | head -1)"',
-              'TARGET_SDK="$(printf "%s\\n" "$BADGING" | sed -n "s/^targetSdkVersion:\x27\\([^\x27]*\\)\x27.*/\\1/p" | head -1)"',
-              'echo "APK_BADGING_MIN_SDK=${MIN_SDK:-<missing>}"',
-              'echo "APK_BADGING_TARGET_SDK=${TARGET_SDK:-<missing>}"',
-              '[[ "$MIN_SDK" == "28" ]] || { echo "ERROR: APK minSdk mismatch: expected 28, actual ${MIN_SDK:-<missing>}" >&2; exit 6; }',
-              '[[ "$TARGET_SDK" == "37" ]] || { echo "ERROR: APK targetSdk mismatch: expected 37, actual ${TARGET_SDK:-<missing>}" >&2; exit 7; }',
-              'unzip -t "$APK" >/dev/null || { echo "ERROR: APK ZIP integrity failed" >&2; exit 8; }',
-              'unzip -l "$APK" | grep -E "(^|[[:space:]])classes[0-9]*\\.dex$" >/dev/null || { echo "ERROR: APK contains no DEX" >&2; exit 9; }',
-              'unzip -l "$APK" | grep -F "resources.arsc" >/dev/null || { echo "ERROR: APK contains no resources.arsc" >&2; exit 10; }',
-              'echo "APK=$APK"',
-              'sha256sum "$APK"',
-              'echo "APK_CERTIFICATION=PASS"',
-              '',
-          ]), encoding="utf-8")
-
-          print("CI overlay: Android 37.0 + compiler/parser/lint fixes + diagnostic APK verifier")
-          PY
-          chmod +x "${PROJECT_DIR}/tools/verify-apk.sh"
-          grep -nE 'compileSdk|targetSdk' "${PROJECT_DIR}/app/build.gradle.kts"
-          grep -n 'ExperimentalMaterial3Api' "${PROJECT_DIR}/app/src/main/java/pro/noodle/mobile/MainActivity.kt"
-          grep -n 'return items to null' "${PROJECT_DIR}/app/src/main/java/pro/noodle/mobile/core/search/BundledSearchRepository.kt"
-          grep -n 'val videoTag' "${PROJECT_DIR}/app/src/main/java/pro/noodle/mobile/core/engine/impl/VideoJsEngine.kt"
-          grep -n 'SystemForegroundService' "${PROJECT_DIR}/app/src/main/AndroidManifest.xml"
-          cat "${PROJECT_DIR}/app/lint.xml"
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
@@ -189,18 +48,12 @@ jobs:
         with:
           packages: platform-tools
 
-      - name: Snapshot available Android SDK packages
+      - name: Install Android Platform 37.0 and Build Tools 36.0.0
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "${PROJECT_DIR}/build-certification"
           sdkmanager --list > "${PROJECT_DIR}/build-certification/sdkmanager-list.txt"
-          grep -E 'platforms;android-37(\.0|\.1)|build-tools;36\.0\.0' "${PROJECT_DIR}/build-certification/sdkmanager-list.txt" || true
-
-      - name: Install Android Platform 37.0 and Build Tools 36.0.0
-        shell: bash
-        run: |
-          set -euo pipefail
           sdkmanager "platform-tools" "platforms;android-37.0" "build-tools;36.0.0"
           test -f "${ANDROID_SDK_ROOT}/platforms/android-37.0/android.jar"
           test -x "${ANDROID_SDK_ROOT}/build-tools/36.0.0/aapt2"
@@ -214,7 +67,6 @@ jobs:
       - name: Toolchain report
         shell: bash
         run: |
-          set -euo pipefail
           java -version
           gradle --version
           sdkmanager --version
@@ -223,9 +75,7 @@ jobs:
       - name: Build and certify first test APK
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
-        run: |
-          set -euo pipefail
-          bash tools/ci-android-build.sh
+        run: bash tools/ci-android-build.sh
 
       - name: Upload build diagnostics
         if: always()
