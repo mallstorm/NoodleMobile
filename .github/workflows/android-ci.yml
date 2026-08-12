@@ -44,13 +44,14 @@ jobs:
           test -f "${PROJECT_DIR}/app/build.gradle.kts"
           chmod +x "${PROJECT_DIR}"/tools/*.sh "${PROJECT_DIR}/gradlew"
 
-      - name: Apply Android 37.0 package overlay
+      - name: Apply Android 37.0 and compiler-fix overlay
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
           root = Path("work/NoodleMobile_0.10.0-alpha10_SOURCE")
+
           app = root / "app/build.gradle.kts"
           text = app.read_text(encoding="utf-8")
           anchor = "    compileSdk = 37\n"
@@ -69,9 +70,30 @@ jobs:
                   raise SystemExit(f"CI anchor missing: {old}")
               text = text.replace(old, new)
           ci.write_text(text, encoding="utf-8")
-          print("CI overlay: compileSdk=37, compileSdkMinor=0, targetSdk=37")
+
+          main = root / "app/src/main/java/pro/noodle/mobile/MainActivity.kt"
+          text = main.read_text(encoding="utf-8")
+          old = "@Composable private fun NoodleApp(settingsVm:SettingsViewModel){"
+          new = "@OptIn(ExperimentalMaterial3Api::class)\n@Composable private fun NoodleApp(settingsVm:SettingsViewModel){"
+          if old not in text:
+              raise SystemExit("MainActivity NoodleApp anchor missing")
+          text = text.replace(old, new, 1)
+          main.write_text(text, encoding="utf-8")
+
+          search = root / "app/src/main/java/pro/noodle/mobile/core/search/BundledSearchRepository.kt"
+          text = search.read_text(encoding="utf-8")
+          old = "        items to null\n    }\n\n    private fun templateSearchUrl"
+          new = "        return items to null\n    }\n\n    private fun templateSearchUrl"
+          if old not in text:
+              raise SystemExit("BundledSearchRepository return anchor missing")
+          text = text.replace(old, new, 1)
+          search.write_text(text, encoding="utf-8")
+
+          print("CI overlay: Android 37.0 + Kotlin compiler fixes #1/#2")
           PY
           grep -nE 'compileSdk|targetSdk' "${PROJECT_DIR}/app/build.gradle.kts"
+          grep -n 'ExperimentalMaterial3Api' "${PROJECT_DIR}/app/src/main/java/pro/noodle/mobile/MainActivity.kt"
+          grep -n 'return items to null' "${PROJECT_DIR}/app/src/main/java/pro/noodle/mobile/core/search/BundledSearchRepository.kt"
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
