@@ -6,7 +6,7 @@ on:
     branches: [ main ]
     paths:
       - "NoodleMobile_0.10.0-alpha10_SOURCE.zip"
-      - "ci/overlay.py"
+      - "ci/**"
       - ".github/workflows/android-ci.yml"
 
 permissions:
@@ -34,6 +34,7 @@ jobs:
           rm -rf work && mkdir -p work
           unzip -q "${SOURCE_ZIP}" -d work
           python3 ci/overlay.py "${PROJECT_DIR}"
+          python3 ci/runtime_hotfix.py "${PROJECT_DIR}"
           test -f "${PROJECT_DIR}/settings.gradle.kts"
           chmod +x "${PROJECT_DIR}"/tools/*.sh "${PROJECT_DIR}/gradlew"
 
@@ -81,7 +82,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: noodle-alpha10-build-diagnostics
+          name: noodle-alpha10-playback-hotfix1-diagnostics
           if-no-files-found: warn
           retention-days: 14
           path: |
@@ -95,7 +96,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v7
         with:
-          name: NoodleMobile-0.10.0-alpha10-API37-test-APKs
+          name: NoodleMobile-0.10.0-alpha10-PlaybackHostHotfix1-API37
           if-no-files-found: error
           retention-days: 30
           path: |
