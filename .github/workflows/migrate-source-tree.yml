@@ -42,12 +42,12 @@ jobs:
           SRC=".migration-work/NoodleMobile_0.10.0-alpha10_SOURCE"
           test -f "$SRC/settings.gradle.kts"
 
-          # Apply exactly the source overlays used by the last successful certified build.
+          # Reproduce the exact source tree used by the last successful certified build.
           python3 ci/overlay.py "$SRC"
           python3 ci/runtime_hotfix.py "$SRC"
           python3 ci/multisource_hotfix2.py "$SRC"
 
-          # Copy the actual Android project into the repository root.
+          # Publish the effective Android project as normal repository files.
           rm -rf app gradle tools docs
           cp -a "$SRC/app" ./
           cp -a "$SRC/gradle" ./
@@ -64,10 +64,9 @@ jobs:
           cp -a "$SRC/desktop-spec-ENGINE_ARCHITECTURE.md" ./
           cp -a "$SRC/desktop-spec-SECURITY.md" ./
           cp -a "$SRC/desktop-spec-TESTING.md" ./
-
           chmod +x gradlew tools/*.sh
 
-          # The repository now builds from root. Keep live probes useful with the new layout.
+          # Keep diagnostic probes usable with the new repository-root layout.
           if [[ -f ci/live_source_probe.py ]]; then
             sed -i 's#ROOT = Path(sys.argv\[1\] if len(sys.argv) > 1 else "work/NoodleMobile_0.10.0-alpha10_SOURCE")#ROOT = Path(sys.argv[1] if len(sys.argv) > 1 else ".")#' ci/live_source_probe.py
           fi
@@ -75,14 +74,14 @@ jobs:
             sed -i 's#ROOT = Path(sys.argv\[1\] if len(sys.argv) > 1 else "work/NoodleMobile_0.10.0-alpha10_SOURCE")#ROOT = Path(sys.argv[1] if len(sys.argv) > 1 else ".")#' ci/deep_playback_probe.py
           fi
 
-          # Remove the old archive/overlay storage model and stale generated reports.
+          # Remove the obsolete archive/overlay storage model and stale stage reports.
           rm -f NoodleMobile_0.10.0-alpha10_SOURCE.zip
           rm -f ci/overlay.py ci/runtime_hotfix.py ci/multisource_hotfix2.py
           rm -f ALL_VERIFICATION.txt BOOTSTRAP_ATTEMPT.txt BUILD_ENVIRONMENT_CHECK.txt BUILD_PREFLIGHT.txt CONNECTED_CI_STATUS.txt
           rm -f BUILD_CERTIFICATION_STAGE9.md DEPENDENCY_BASELINE_STAGE9.md FIRST_TEST_APK_CERTIFICATION.md IMPLEMENTATION_REPORT_RU.md desktop-spec-STAGE9_SCHEMA_V3_REPAIR_REPORT_RU.md
           rm -rf .migration-work
 
-      - name: Write direct-build CI and repository metadata
+      - name: Write repository metadata
         shell: bash
         run: |
           set -euo pipefail
@@ -102,101 +101,6 @@ jobs:
           .DS_Store
           GITIGNORE
 
-          cat > .github/workflows/android-ci.yml <<'WORKFLOW'
-          name: Noodle Mobile Android CI
-
-          on:
-            workflow_dispatch:
-            push:
-              branches: [ main ]
-              paths:
-                - "app/**"
-                - "tools/**"
-                - "gradle/**"
-                - "*.gradle.kts"
-                - "gradle.properties"
-                - "settings.gradle.kts"
-                - ".github/workflows/android-ci.yml"
-            pull_request:
-
-          permissions:
-            contents: read
-
-          jobs:
-            build-certify:
-              runs-on: ubuntu-latest
-              timeout-minutes: 60
-              steps:
-                - name: Checkout repository
-                  uses: actions/checkout@v7
-
-                - name: Set up JDK 21
-                  uses: actions/setup-java@v5
-                  with:
-                    distribution: temurin
-                    java-version: "21"
-
-                - name: Set up Android SDK
-                  uses: android-actions/setup-android@v4
-                  with:
-                    packages: platform-tools
-
-                - name: Install Android Platform 37.0 and Build Tools 36.0.0
-                  shell: bash
-                  run: |
-                    set -euo pipefail
-                    sdkmanager "platform-tools" "platforms;android-37.0" "build-tools;36.0.0"
-                    test -f "${ANDROID_SDK_ROOT}/platforms/android-37.0/android.jar"
-                    test -x "${ANDROID_SDK_ROOT}/build-tools/36.0.0/aapt2"
-
-                - name: Set up Gradle 9.5.1
-                  uses: gradle/actions/setup-gradle@v6
-                  with:
-                    gradle-version: "9.5.1"
-                    cache-read-only: ${{ github.event_name == 'pull_request' }}
-
-                - name: Toolchain report
-                  shell: bash
-                  run: |
-                    java -version
-                    gradle --version
-                    sdkmanager --version
-                    "${ANDROID_SDK_ROOT}/build-tools/36.0.0/aapt2" version
-
-                - name: Build and certify MultiSource Hotfix 2
-                  shell: bash
-                  run: |
-                    chmod +x gradlew tools/*.sh
-                    bash tools/ci-android-build.sh
-
-                - name: Upload build diagnostics
-                  if: always()
-                  uses: actions/upload-artifact@v7
-                  with:
-                    name: noodle-alpha10-multisource-hotfix2-diagnostics
-                    if-no-files-found: warn
-                    retention-days: 14
-                    path: |
-                      build-certification/**
-                      app/build/reports/**
-                      app/build/outputs/logs/**
-                      app/build/outputs/apk/debug/*.apk
-                      app/build/outputs/apk/androidTest/**/*.apk
-
-                - name: Upload certified APKs
-                  if: success()
-                  uses: actions/upload-artifact@v7
-                  with:
-                    name: NoodleMobile-0.10.0-alpha10-MultiSourceHotfix2-API37
-                    if-no-files-found: error
-                    retention-days: 30
-                    path: |
-                      app/build/outputs/apk/debug/*.apk
-                      app/build/outputs/apk/androidTest/**/*.apk
-                      build-certification/BUILD_RESULT.txt
-                      build-certification/SHA256.txt
-          WORKFLOW
-
           cat > README.md <<'README'
           # NoodleMobile
 
@@ -207,7 +111,7 @@ jobs:
           - Версия: `0.10.0-alpha10`
           - versionCode: `100010`
           - applicationId: `pro.noodle.mobile`
-          - Фактическая линия: **MultiSource Hotfix 2**
+          - Текущая линия: **MultiSource Hotfix 2**
           - minSdk: `28`
           - compileSdk / targetSdk: `37`
           - Android Platform: `37.0`
@@ -226,17 +130,15 @@ jobs:
           - WebKit: `1.16.0`
           - SNP compatibility contract: `1.9.0`
 
-          ## Репозиторий
+          ## Структура репозитория
 
-          `main` содержит **обычное развёрнутое Android source tree**. Старый source ZIP и временные overlay-скрипты удалены; все сертифицированные исправления MultiSource Hotfix 2 интегрированы непосредственно в исходники.
-
-          Основная структура:
+          `main` содержит обычное развёрнутое Android source tree. Старый source ZIP и временные overlay/hotfix-скрипты больше не являются частью рабочего проекта: все сертифицированные изменения интегрированы непосредственно в исходники.
 
           ```text
           app/                         Android application module
           gradle/                      Gradle wrapper metadata
-          tools/                       build, verification and diagnostic tools
-          docs/                        проектная документация
+          tools/                       build/verification utilities
+          docs/                        актуальная проектная документация
           ci/                          live compatibility probes
           .github/workflows/           GitHub Actions
           build.gradle.kts             root Gradle build
@@ -246,61 +148,47 @@ jobs:
 
           ## Основные возможности
 
-          - поиск одновременно по включённым SNP-источникам;
+          - многоисточниковый поиск по включённым SNP-источникам;
           - 15 runtime-движков и единый Resolver Pipeline;
           - HTML5, Video.js, HLS, DASH, JW Player, iframe-chain, JSON/API, WordPress REST, oEmbed, legacy/KVS engines;
-          - безопасная нормализация URL и source-scoped host policy;
-          - защищённый HTTP-клиент с Safe DNS, redirect validation и cookie isolation;
+          - source-scoped host policy, Safe DNS и redirect validation;
           - sandboxed WebView fallback;
-          - Media3 playback, выбор качества, аудиодорожек и субтитров;
-          - Picture-in-Picture и сохранение позиции просмотра;
+          - Media3 playback, качество, аудиодорожки, субтитры и Picture-in-Picture;
+          - сохранение позиции просмотра;
           - progressive download и adaptive HLS/DASH offline;
-          - Room + DataStore;
-          - Favorites и Downloads;
+          - Room + DataStore, Favorites и Downloads;
           - Source Center, Source Health и Diagnostics;
           - импорт, обновление, rollback и repair SNP-адаптеров;
           - Marketplace, Trusted Keys и Adapter Studio;
-          - manifest/integrity verification и защита ZIP import от traversal/duplicate paths.
+          - manifest/integrity verification и защита ZIP-import от traversal/duplicate paths.
 
           ## MultiSource Hotfix 2
 
-          Актуальные исправления интегрированы прямо в source tree:
+          В текущие исходники уже интегрированы:
 
-          - source-scoped CDN / migration hosts, подтверждённые live-probe;
+          - source-scoped CDN/migration hosts, подтверждённые live-probe;
           - KVS mixed-layout parsing для `/video/*` и `/videos/*`;
           - актуальный Video-laba search endpoint;
-          - безопасные search endpoint fallback;
+          - безопасные search endpoint fallbacks;
           - нормализация relative URL относительно final origin;
           - secure thumbnail loading через тот же SNP/Safe DNS policy;
           - thumbnail cache и реальные preview в карточках поиска;
-          - улучшенная диагностика ошибок источников и blocked playback hosts;
+          - улучшенная диагностика blocked playback hosts;
           - реальные Android compiler/lint fixes;
           - Android `37.0` / `compileSdkMinor = 0`;
-          - исправленные APK/androidTest APK certification scripts.
+          - исправленные APK и androidTest APK certification scripts.
 
-          ## Сборка и CI
+          ## Сборка
 
-          GitHub Actions собирает проект **непосредственно из файлов `main`**, без распаковки архива и без patch overlay:
+          GitHub Actions собирает проект непосредственно из файлов `main`: unit tests → lint → debug APK → APK certification → androidTest APK → androidTest certification. При наличии устройства/emulator также запускаются instrumentation tests.
 
-          1. checkout;
-          2. JDK 21;
-          3. Android Platform `37.0` + Build Tools `36.0.0`;
-          4. Gradle `9.5.1`;
-          5. `:app:testDebugUnitTest`;
-          6. `:app:lintDebug`;
-          7. `:app:assembleDebug`;
-          8. APK certification через `aapt2`;
-          9. `:app:assembleDebugAndroidTest`;
-          10. androidTest APK certification;
-          11. instrumentation tests при наличии устройства/emulator.
-
-          Последний baseline до развёртывания source tree успешно прошёл `Noodle Mobile Android CI` как `NoodleMobile-0.10.0-alpha10-MultiSourceHotfix2-API37`. После миграции тот же build/certification contract применяется уже к обычному исходному дереву.
+          Последний baseline перед развёртыванием дерева был успешно сертифицирован как `NoodleMobile-0.10.0-alpha10-MultiSourceHotfix2-API37`. После миграции тот же build contract применяется напрямую к исходникам в корне репозитория.
 
           ## Безопасность
 
           - глобальный cleartext не включается;
           - разрешённые hosts изолированы по SNP-источникам;
-          - redirects проходят повторную validation;
+          - redirects повторно проходят validation;
           - cookies разделены по источникам;
           - WebView permissions не выдаются автоматически;
           - TLS bypass не используется;
@@ -309,13 +197,10 @@ jobs:
 
           ## Разработка
 
-          Все дальнейшие изменения вносятся непосредственно в `app/`, `tools/` и остальные файлы `main`. Новые hotfix-и должны быть обычными source-коммитами, а не отдельными overlays поверх ZIP.
+          Все дальнейшие изменения вносятся непосредственно в `app/`, `tools/`, `docs/` и остальные файлы `main`. Новые исправления должны быть обычными source-коммитами, а не overlays поверх ZIP.
           README
 
-          # Remove this one-time workflow from the migrated source tree.
-          rm -f .github/workflows/migrate-source-tree.yml
-
-      - name: Validate migrated tree before commit
+      - name: Validate migrated source tree
         shell: bash
         run: |
           set -euo pipefail
@@ -331,18 +216,21 @@ jobs:
           grep -F 'Multi-source Hotfix 2' app/src/main/java/pro/noodle/mobile/core/version/BuildIdentity.kt
           grep -F 'fun loadThumbnail' app/src/main/java/pro/noodle/mobile/ui/search/SearchViewModel.kt
           grep -F 'video-laba.link' app/src/main/assets/adapters/bundled/video-laba.click/adapter.json
-          python3 tools/verify-stage10.py
+          python3 -m py_compile tools/verify-stage10.py
+          git diff --check
           git status --short
 
-      - name: Commit migrated source tree
+      - name: Commit source tree only
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+
+          # Do not change workflow files from the Actions token: it intentionally has no workflows permission.
+          git add -A -- . ':!.github/workflows'
           if git diff --cached --quiet; then
-            echo "No migration changes to commit"
+            echo "No source migration changes to commit"
             exit 0
           fi
           git commit -m "Flatten NoodleMobile source tree and remove source archive"
