@@ -1,0 +1,101 @@
+Noodle Mobile 0.6.0-alpha6 — Stage 6 verification
+
+Executable selection harness:
+PASS | Auto width unlimited
+PASS | Auto height unlimited
+PASS | Auto label
+PASS | Auto subtitles disabled
+PASS | Invalid width clamps
+PASS | Invalid height clamps
+PASS | Label trimmed
+PASS | Audio language trimmed
+PASS | Text language trimmed
+PASS | Subtitle flag preserved
+PASS | Summary quality
+PASS | Summary audio
+PASS | Summary subtitles
+PASS | Off summary
+PASS | Auto subtitle summary
+SUMMARY 15/15 passed
+
+Android/static contracts:
+PASS | alpha6 version
+PASS | Media3 stable 1.11.0
+PASS | compile/target API37
+PASS | instrumentation runner
+PASS | instrumentation dep androidx.test:core-ktx:1.7.0
+PASS | instrumentation dep androidx.test.ext:junit:1.3.0
+PASS | instrumentation dep androidx.test:runner:1.7.0
+PASS | instrumentation dep androidx.test.espresso:espresso-core:3.7.0
+PASS | instrumentation dep ui-test-junit4
+PASS | instrumentation dep room-testing
+PASS | DownloadHelper Factory used
+PASS | DownloadHelper data source is policy-aware
+PASS | DownloadHelper prepares asynchronously
+PASS | No deprecated forMediaItem
+PASS | Track max video selection
+PASS | Offline selection forces one highest representation within bounds
+PASS | Preferred audio selection
+PASS | Subtitles can be disabled
+PASS | Preferred subtitle language
+PASS | Selected streamKeys preserved in request
+PASS | Policy bytes attached by planner
+PASS | Planner releases helper success/error/cancel
+PASS | Selection core is platform-neutral
+PASS | Selection clamps invalid dimensions
+PASS | Selection summary includes subtitle state
+PASS | Adaptive enqueue always uses planner
+PASS | Adaptive selection metadata stored
+PASS | Failed resume preserves original Media3 request
+PASS | Failed resume has deterministic replan fallback
+PASS | Progressive SAF behavior retained
+PASS | Room database version3
+PASS | Room non-destructive migration 2->3
+PASS | Room v3 column thumbnailUrl
+PASS | Room v3 column protocol
+PASS | Room v3 column videoSelectionLabel
+PASS | Room v3 column videoMaxWidth
+PASS | Room v3 column videoMaxHeight
+PASS | Room v3 column audioSelectionLanguage
+PASS | Room v3 column textSelectionLanguage
+PASS | Room v3 column includeSubtitles
+PASS | Completed library DAO
+PASS | Strict offline cache has no upstream
+PASS | Strict offline cache cannot write
+PASS | DownloadHelper upstream uses SecureHttpClient
+PASS | Runtime user agent alpha6
+PASS | Media3 request can be recovered from DownloadIndex
+PASS | MediaDownloadRuntime constructs holder on main looper
+PASS | DownloadManager access is main-thread guarded
+PASS | DownloadIndex recovery separates main init from IO read
+PASS | Offline repository requires completed state
+PASS | Offline adaptive request recovery
+PASS | Offline progressive URI recovery
+PASS | Offline adaptive playback uses DownloadHelper createMediaSource
+PASS | Offline adaptive playback uses strict cache
+PASS | Offline player supports progressive local URI
+PASS | Offline player releases ExoPlayer
+PASS | Offline player surfaces strict-cache playback errors
+PASS | Player opens adaptive selection dialog
+PASS | Player persists download thumbnail
+PASS | Download dialog exposes quality/audio/subtitles
+PASS | Download dialog produces selection constraints
+PASS | Downloads VM exposes completed library
+PASS | Downloads VM exposes offline playback state
+PASS | Main shell hides nav for offline player
+PASS | Downloads UI has Queue/Library switch
+PASS | Completed items can be opened
+PASS | Downloads UI shows adaptive selection metadata
+PASS | Cleartext disabled in manifest
+PASS | Media3 service remains non-exported
+PASS | instrumentation source DatabaseInstrumentedTest.kt
+PASS | instrumentation source DownloadPolicyInstrumentedTest.kt
+PASS | instrumentation source MainActivitySmokeTest.kt
+PASS | DB instrumentation checks selection metadata
+PASS | Policy instrumentation corrupt decode fail closed
+PASS | Compose smoke launches MainActivity
+SUMMARY 75/75 passed
+
+Kotlin parser smoke:
+PASS | Kotlin parser syntax smoke
+kotlinc exit=1 is expected without Android/AndroidX/OkHttp classpath; no parser-level syntax errors were detected.

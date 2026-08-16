@@ -1,0 +1,35 @@
+import java.io.File
+fun main(args: Array<String>) {
+ val root=File(args.firstOrNull()?:"."); var p=0; var f=0
+ fun t(x:String)=File(root,x).readText()
+ fun ck(n:String,v:Boolean){println("${if(v)"PASS" else "FAIL"} | $n");if(v)p++ else f++}
+ fun occ(h:String,n:String):Int { var i=0; var c=0; while(true){ i=h.indexOf(n,i); if(i<0)return c; c++; i+=n.length } }
+ val app=t("app/build.gradle.kts"); val top=t("build.gradle.kts"); val id=t("app/src/main/java/pro/noodle/mobile/core/version/BuildIdentity.kt")
+ val boot=t("tools/bootstrap-android-toolchain.sh"); val ci=t("tools/ci-android-build.sh"); val cert=t("tools/verify-apk.sh"); val bc=t("tools/build-check.sh"); val wf=t(".github/workflows/android-ci.yml"); val notes=t("PORTING_NOTES.md")
+ ck("alpha9 coordinates", "versionCode = 100010" in app && "versionName = \"0.10.0-alpha10\"" in app)
+ ck("identity alpha9", "VERSION_NAME = \"0.10.0-alpha10\"" in id && "VERSION_CODE = 100010" in id)
+ ck("SNP compatibility preserved", "SNP_COMPATIBILITY_VERSION = \"1.9.0\"" in id)
+ ck("alpha9 UA", "USER_AGENT = \"NoodleMobile/0.10 Android\"" in id)
+ ck("Compose stable BOM", occ(app,"compose-bom:2026.06.00") == 2 && "2026.06.01" !in app)
+ ck("Media3 stable line", occ(app,":1.10.1") >= 7 && ":1.11.0" !in app)
+ ck("AGP 9.3.1", "id(\"com.android.application\") version \"9.3.1\"" in top)
+ ck("KSP 2.3.11", "id(\"com.google.devtools.ksp\") version \"2.3.11\"" in top)
+ ck("API37", "compileSdk = 37" in app && "targetSdk = 37" in app)
+ ck("Gradle checksum pinned", "bafc141b619ad6350fd975fc903156dd5c151998cc8b058e8c1044ab5f7b031f" in boot)
+ ck("Android CLI checksum pinned", "4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583" in boot)
+ ck("Android CLI build pinned", "15859902" in boot)
+ ck("Bootstrap SDK37", "platforms;android-37" in boot && "build-tools;36.0.0" in boot)
+ ck("Bootstrap checksum before unzip", boot.indexOf("sha256sum -c") < boot.indexOf("unzip -q"))
+ ck("CI SDK37", "platforms;android-37" in ci && "build-tools;36.0.0" in ci)
+ ck("CI full task gate", listOf(":app:testDebugUnitTest",":app:lintDebug",":app:assembleDebug",":app:assembleDebugAndroidTest").all{it in ci})
+ ck("APK certification helper", "tools/verify-apk.sh" in ci)
+ ck("APK package alpha9", "versionCode='100010' versionName='0.10.0-alpha10'" in cert)
+ ck("APK target 37", "targetSdkVersion:'37'" in cert)
+ ck("APK zip integrity", "unzip -t" in cert)
+ ck("Build preflight stage9", "Noodle Mobile alpha10 build preflight" in bc && "verify-stage10.sh" in bc)
+ ck("Build supports bootstrapped Gradle", ".toolchain/gradle-9.5.1/bin/gradle" in bc)
+ ck("Workflow alpha9 artifact", "NoodleMobile-0.10.0-alpha10-first-test-apk" in wf)
+ ck("Workflow current setup", "android-actions/setup-android@v4" in wf && "gradle/actions/setup-gradle@v6" in wf && "actions/upload-artifact@v7" in wf)
+ ck("Obsolete adaptive note removed", "DOWNLOAD_ADAPTIVE_NOT_YET_ENABLED" !in notes)
+ println("RESULT | pass=$p fail=$f"); if(f>0) error("Stage9 harness failed")
+}

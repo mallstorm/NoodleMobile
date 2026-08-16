@@ -1,0 +1,39 @@
+{
+  "format_version": 1,
+  "adapter_id": "video-laba.click",
+  "version": "1.0.0",
+  "publisher": "Noodle Desktop bundled",
+  "integrity_algorithm": "sha256",
+  "files": [
+    {
+      "path": "_search.html",
+      "sha256": "ec44e44fbdd1cd4483467b3ef5b4dee397a8fde5c466d4e810869ea14451e1c3",
+      "size": 148376
+    },
+    {
+      "path": "_view.html",
+      "sha256": "d5d248055e48f0290e9fe336f76d25788da125ed9753538b2bf5fe7bc5ff396c",
+      "size": 8154
+    },
+    {
+      "path": "adapter.json",
+      "sha256": "cbe20d4c6ac3791c9748e79621c9ec091027793d1ef78b6a2a6679b09eaefb3c",
+      "size": 1610
+    },
+    {
+      "path": "analysis.txt",
+      "sha256": "f037dce6be618f7bb147c1c74b23fb276c94f23c794e0ecc707cddb77aa83dce",
+      "size": 2694
+    },
+    {
+      "path": "snippets.pas",
+      "sha256": "b2f39e57d77286aa5c24a1b404b1eadb72ede7d157a4d3a6988c7b1bf7466544",
+      "size": 3725
+    }
+  ],
+  "signature": {
+    "algorithm": "none",
+    "key_id": "",
+    "value": ""
+  }
+}

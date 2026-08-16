@@ -1,0 +1,135 @@
+package pro.noodle.mobile.core.source
+
+import pro.noodle.mobile.core.adapter.AdapterSchemaParser
+import pro.noodle.mobile.core.adapter.AdapterValidator
+import pro.noodle.mobile.core.json.*
+import pro.noodle.mobile.core.version.SemanticVersion
+import java.io.File
+
+
+data class AdapterInstallResult(
+    val success: Boolean,
+    val adapterId: String = "",
+    val installedVersion: String = "",
+    val snapshotPath: String = "",
+    val errorCode: String = "",
+    val message: String = "",
+)
+
+data class PendingValidation(
+    val adapterId: String,
+    val oldVersion: String,
+    val newVersion: String,
+    val snapshotPath: String,
+    val wasEnabled: Boolean,
+    val createdAt: Long,
+)
+
+class AdapterUpdateManager(private val paths: AdapterStorePaths, private val recovery: AdapterRecoveryManager) {
+    fun pendingFile(adapterId: String) = File(paths.pending, adapterId.trim().lowercase() + ".pending.json")
+
+    fun installPackageZip(adapterId: String, currentDir: File, zipFile: File, expectedSha256: String = "", wasEnabled: Boolean = true): AdapterInstallResult {
+        paths.ensure()
+        if (!zipFile.isFile) return fail("SNP_UPDATE_PACKAGE_MISSING", "ZIP-пакет не найден.")
+        if (zipFile.length() > AdapterZipManager.MAX_ZIP_BYTES) return fail("SNP_UPDATE_PACKAGE_TOO_LARGE", "ZIP превышает 16 MiB.")
+        val actualHash = AdapterPackageManager.sha256(zipFile)
+        if (expectedSha256.isNotBlank() && !actualHash.equals(expectedSha256.trim(), true)) return fail("SNP_UPDATE_PACKAGE_HASH_MISMATCH", "SHA-256 ZIP не совпадает.")
+
+        val stagingParent = File(paths.updates, adapterId.trim().lowercase() + ".staging")
+        fun abort(code: String, message: String): AdapterInstallResult {
+            stagingParent.deleteRecursively()
+            return fail(code, message)
+        }
+        val extracted = AdapterZipManager.extractPackage(zipFile, stagingParent)
+        if (!extracted.success || extracted.root == null) return abort(extracted.errorCode, extracted.errorMessage)
+        val candidateDir = extracted.root
+        val adapterFile = File(candidateDir, "adapter.json")
+        val validation = runCatching { AdapterValidator.validate(adapterFile.readText(Charsets.UTF_8)) }.getOrElse { return abort("SNP_UPDATE_ADAPTER_READ_FAILED", it.message.orEmpty()) }
+        if (!validation.isValid || validation.definition == null) return abort(validation.errorCode, validation.errorMessage)
+        val newDef = validation.definition
+        if (!newDef.id.equals(adapterId, true)) return abort("SNP_UPDATE_ID_MISMATCH", "ID кандидата не совпадает с активным SNP.")
+        if (!File(candidateDir, "snp-package.json").isFile) return abort("SNP_UPDATE_MANIFEST_REQUIRED", "Update package обязан содержать snp-package.json.")
+        val packageInfo = AdapterPackageManager.verifyDirectory(candidateDir)
+        if (!packageInfo.valid) return abort(packageInfo.errorCode, packageInfo.errorMessage)
+        val compatibility = AdapterCompatibility.evaluate(newDef.minAppVersion, newDef.maxAppVersion)
+        if (!compatibility.compatible) return abort(compatibility.errorCode, compatibility.message)
+
+        val currentFile = File(currentDir, "adapter.json")
+        val current = (if (currentFile.isFile) AdapterSchemaParser.parse(currentFile.readText(Charsets.UTF_8)).definition else null)
+            ?: return abort("SNP_UPDATE_CURRENT_INVALID", "Активный adapter.json не читается.")
+        val currentVersion = SemanticVersion.parseOrNull(current.adapterVersion) ?: return abort("SNP_UPDATE_CURRENT_VERSION_INVALID", "Некорректная текущая версия.")
+        val nextVersion = SemanticVersion.parseOrNull(newDef.adapterVersion) ?: return abort("SNP_UPDATE_VERSION_INVALID", "Некорректная новая версия.")
+        if (nextVersion <= currentVersion) return abort("SNP_UPDATE_NOT_NEWER", "Новая версия должна быть выше текущей.")
+
+        val snapshot = recovery.createSnapshot(adapterId, currentDir, current.adapterVersion)
+            ?: return abort("SNP_UPDATE_SNAPSHOT_FAILED", "Не удалось создать snapshot.")
+        val prepared = File(currentDir.parentFile, currentDir.name + ".update-ready")
+        prepared.deleteRecursively()
+        candidateDir.copyRecursively(prepared, overwrite = true)
+        if (!AdapterPackageManager.verifyDirectory(prepared).valid) {
+            prepared.deleteRecursively()
+            return abort("SNP_UPDATE_PREPARED_INVALID", "Staged copy не прошла повторную integrity-проверку.")
+        }
+        stagingParent.deleteRecursively()
+        val oldDir = File(currentDir.parentFile, currentDir.name + ".update-old")
+        oldDir.deleteRecursively()
+        if (!currentDir.renameTo(oldDir)) {
+            prepared.deleteRecursively()
+            return fail("SNP_UPDATE_SWAP_FAILED", "Не удалось вывести текущий SNP из runtime.")
+        }
+        return try {
+            if (!prepared.renameTo(currentDir)) throw IllegalStateException("Не удалось активировать staged SNP")
+            oldDir.deleteRecursively()
+            markPendingValidation(adapterId, current.adapterVersion, newDef.adapterVersion, snapshot.path, wasEnabled)
+            AdapterInstallResult(true, adapterId = newDef.id, installedVersion = newDef.adapterVersion, snapshotPath = snapshot.path, message = "Установлена ${newDef.adapterVersion}; требуется semantic validation.")
+        } catch (e: Exception) {
+            prepared.deleteRecursively()
+            if (!currentDir.exists() && oldDir.exists()) oldDir.renameTo(currentDir)
+            fail("SNP_UPDATE_SWAP_EXCEPTION", "${e.javaClass.simpleName}: ${e.message}")
+        }
+    }
+
+    fun markPendingValidation(adapterId: String, oldVersion: String, newVersion: String, snapshotPath: String, wasEnabled: Boolean) {
+        paths.pending.mkdirs()
+        val root = JsonValue.Obj(linkedMapOf(
+            "adapter_id" to JsonValue.Str(adapterId.trim().lowercase()),
+            "old_version" to JsonValue.Str(oldVersion),
+            "new_version" to JsonValue.Str(newVersion),
+            "snapshot_path" to JsonValue.Str(snapshotPath),
+            "was_enabled" to JsonValue.Bool(wasEnabled),
+            "created_at" to JsonValue.Num(System.currentTimeMillis().toDouble()),
+        ))
+        pendingFile(adapterId).writeText(root.toJson(pretty = true), Charsets.UTF_8)
+    }
+
+    fun readPending(adapterId: String): PendingValidation? {
+        val file = pendingFile(adapterId)
+        if (!file.isFile) return null
+        val root = runCatching { MiniJson.parse(file.readText()) as? JsonValue.Obj }.getOrNull() ?: return null
+        return PendingValidation(
+            adapterId = root.string("adapter_id").orEmpty(),
+            oldVersion = root.string("old_version").orEmpty(),
+            newVersion = root.string("new_version").orEmpty(),
+            snapshotPath = root.string("snapshot_path").orEmpty(),
+            wasEnabled = root.bool("was_enabled") ?: true,
+            createdAt = (root.values["created_at"] as? JsonValue.Num)?.value?.toLong() ?: 0L,
+        )
+    }
+
+    fun completePendingValidation(adapterId: String, success: Boolean, targetDir: File): String? {
+        val pending = readPending(adapterId) ?: return null
+        return if (success) {
+            pendingFile(adapterId).delete()
+            "confirmed:${pending.newVersion}"
+        } else {
+            val snapshot = File(pending.snapshotPath)
+            val restored = if (snapshot.isDirectory) recovery.restoreSnapshot(adapterId, snapshot.name, targetDir) else null
+            if (restored != null) {
+                pendingFile(adapterId).delete()
+                "auto_rollback:$restored"
+            } else null
+        }
+    }
+
+    private fun fail(code: String, message: String) = AdapterInstallResult(false, errorCode = code, message = message)
+}

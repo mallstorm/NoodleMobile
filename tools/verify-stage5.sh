@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+OUT="$ROOT/build/stage5-harness"
+rm -rf "$OUT" && mkdir -p "$OUT"
+FILES=(
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/json/MiniJson.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/version/SemanticVersion.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/version/BuildIdentity.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/security/UrlPolicy.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/engine/EngineTypes.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/engine/EngineRegistry.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/engine/EngineDependencies.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/adapter/AdapterModels.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/adapter/AdapterSchemaParser.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/adapter/AdapterValidator.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/source/AdapterCompatibility.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/catalog/CatalogModels.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/catalog/TrustedKeyCodec.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/catalog/CatalogSignatureVerifier.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/catalog/CatalogCodec.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/studio/AdapterStudioCore.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/diagnostics/DiagnosticsSanitizer.kt"
+)
+kotlinc "${FILES[@]}" "$ROOT/tools/Stage5Harness.kt" -include-runtime -d "$OUT/stage5-harness.jar"
+(cd "$ROOT" && java -jar "$OUT/stage5-harness.jar") | tee "$OUT/stage5-verification.txt"

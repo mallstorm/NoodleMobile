@@ -1,0 +1,100 @@
+Noodle Mobile 0.7.0-alpha7 — BUILD ENVIRONMENT CHECK
+
+Noodle Mobile alpha7 build preflight
+Java:
+openjdk version "21.0.11" 2026-04-21
+OpenJDK Runtime Environment (build 21.0.11+10-1-deb13u2-Debian)
+OpenJDK 64-Bit Server VM (build 21.0.11+10-1-deb13u2-Debian, mixed mode, sharing)
+System Gradle: NOT FOUND
+Gradle wrapper JAR: NOT FOUND
+Expected Gradle 9.5.1 wrapper JAR SHA-256: 497c8c2a7e5031f6aa847f88104aa80a93532ec32ee17bdb8d1d2f67a194a9c7
+Android SDK root: NOT SET
+Android SDK 37: NOT FOUND
+Android Build Tools/aapt2: NOT FOUND
+
+Portable verification:
+PASS | alpha7 version
+PASS | AGP 9.3.1
+PASS | AGP built-in Kotlin
+PASS | KGP 2.4.10 pinned
+PASS | KSP 2.3.11
+PASS | API 37
+PASS | Gradle 9.5.1 wrapper
+PASS | Gradle wrapper SHA256 pinned
+PASS | Media3 stable 1.11.0
+PASS | Adaptive manager bridge to main
+PASS | DownloadHelper main bridge
+PASS | DownloadHelper renderers
+PASS | Current TrackSelectionParameters builder
+PASS | Single best offline representation
+PASS | WorkManagerScheduler enabled
+PASS | Media3 workmanager artifact
+PASS | Scheduler restart manifest
+PASS | Scheduler service remains non-exported
+PASS | Thread-affinity instrumentation
+SUMMARY 19/19 passed
+PASS | alpha7 version
+PASS | compileSdk/targetSdk API37
+PASS | minSdk 28 retained
+PASS | AGP 9.3.1
+PASS | AGP9 built-in Kotlin: no kotlin-android plugin
+PASS | KGP 2.4.10 pin
+PASS | Compose compiler plugin 2.4.10
+PASS | KSP 2.3.11
+PASS | Room KSP schema output retained
+PASS | Gradle wrapper 9.5.1
+PASS | Gradle distribution SHA256 pinned
+PASS | Wrapper distribution validation on
+PASS | Core KTX 1.19.0
+PASS | Lifecycle ViewModel KTX explicit
+PASS | Media3 1.11.0 across runtime artifacts
+PASS | Media3 WorkManager scheduler artifact
+PASS | Room 2.8.4 retained
+PASS | DataStore 1.2.1 retained
+PASS | WorkManager 2.11.2 retained
+PASS | Coroutines Android 1.10.2 retained
+PASS | Adaptive enqueue main-thread manager bridge
+PASS | Planner enters main looper before helper/runtime access
+PASS | DownloadHelper uses DefaultRenderersFactory
+PASS | DownloadHelper stays policy-aware
+PASS | Nondeprecated TrackSelectionParameters builder
+PASS | Offline selection one highest supported representation
+PASS | Audio/subtitle offline selection retained
+PASS | DownloadHelper stream keys retained
+PASS | Planner release on success/error/cancel
+PASS | DownloadManager construction main-looper fail-fast
+PASS | DownloadManager access fail-fast
+PASS | DownloadIndex IO separated after main init
+PASS | Settings manager call originates from viewModelScope/main
+PASS | DownloadService uses WorkManagerScheduler
+PASS | Unique scheduler work name
+PASS | Scheduler restart action declared
+PASS | Scheduler restart DEFAULT category declared
+PASS | DownloadService dataSync FGS retained
+PASS | FGS permissions retained
+PASS | DownloadService non-exported
+PASS | Cleartext disabled
+PASS | Thread affinity instrumentation exists
+PASS | Instrumentation asserts main application looper
+PASS | Instrumentation exercises IO failure
+PASS | Instrumentation checks fail-fast code
+PASS | Legacy instrumentation retained DatabaseInstrumentedTest.kt
+PASS | Legacy instrumentation retained DownloadPolicyInstrumentedTest.kt
+PASS | Legacy instrumentation retained MainActivitySmokeTest.kt
+PASS | Strict offline cache no upstream
+PASS | Strict offline cache no writer
+PASS | Adaptive upstream uses SecureHttpClient
+PASS | Download request policy codec fail-closed hook retained
+PASS | Current Media3 user agent alpha7
+PASS | Build check exists
+PASS | Build check probes API37
+PASS | Gradlew scripts retained
+PASS | Wrapper properties retained
+SUMMARY 57/57 passed
+PASS | Kotlin parser syntax smoke
+kotlinc exit=1 is expected without Android/AndroidX/OkHttp classpath; no parser-level syntax errors were detected.
+
+Android compile attempt:
+BLOCKED: Android compile prerequisites are not present in this runtime.
+
+Conclusion: Android assembleDebug NOT EXECUTED because prerequisites are absent. No APK is claimed.

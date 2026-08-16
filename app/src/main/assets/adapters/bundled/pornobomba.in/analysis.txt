@@ -1,0 +1,34 @@
+﻿Domain: pornobomba.in
+Query: home
+Detected kind: Pornobomba-like (/search + /videos/...)
+Selected search candidate: search_q_20
+Selected reason: score=97 kind=PORNOBOMBA watchPath=/videos/ghomestory-rtom-i-pilotkoy-otvlekaet-brata-ot-pristavki/
+Selected score: 97
+Search URL: https://pornobomba.in/search/?q=home
+View URL: https://pornobomba.in/videos/ghomestory-rtom-i-pilotkoy-otvlekaet-brata-ot-pristavki/
+WatchPath: /videos/ghomestory-rtom-i-pilotkoy-otvlekaet-brata-ot-pristavki/
+RemoteId: ghomestory-rtom-i-pilotkoy-otvlekaet-brata-ot-pristavki
+Matches (/view): 0
+Matches (/videos): 13
+Matches (/watch): 0
+Has flashvars: True
+Has window.playlist: False
+Preview URL: https://img.pbembed.me/contents/videos_screenshots/59000/59948/preview_m.mp4.jpg
+Video URL raw: https://pornobomba.in/get_file/3/bf4bee1aee0828934e3a7415cbfbff20/59000/59948/59948.mp4/
+Video URL normalized: https://pornobomba.in/get_file/3/bf4bee1aee0828934e3a7415cbfbff20/59000/59948/59948.mp4/
+Search HTML snapshot: E:\Noodle\Noodle2J\nodleproject\tools\AdapterGenerator\out\pornobomba.in\_search.html
+View HTML snapshot: E:\Noodle\Noodle2J\nodleproject\tools\AdapterGenerator\out\pornobomba.in\_view.html
+--- Candidates ---
+1) score=97 kind=PORNOBOMBA matches=0/13/0 flashvars=False playlist=False label=search_q_20 url=https://pornobomba.in/search/?q=home
+2) score=-999 kind=UNKNOWN loaded=False label=search_path_20 url=https://pornobomba.in/search/home/
+3) score=-998 kind=UNKNOWN loaded=False label=search_plain_20 url=https://pornobomba.in/search/home
+4) score=94 kind=PORNOBOMBA matches=0/42/0 flashvars=False playlist=False label=query_s_20 url=https://pornobomba.in/?s=home
+5) score=94 kind=PORNOBOMBA matches=0/42/0 flashvars=False playlist=False label=query_q_20 url=https://pornobomba.in/?q=home
+6) score=97 kind=PORNOBOMBA matches=0/13/0 flashvars=False playlist=False label=search_query_20 url=https://pornobomba.in/search?q=home
+7) score=-994 kind=UNKNOWN loaded=False label=video_20 url=https://pornobomba.in/video/home
+8) score=-993 kind=UNKNOWN loaded=False label=videos_20 url=https://pornobomba.in/videos/home
+9) score=-992 kind=UNKNOWN loaded=False label=category_direct_20 url=https://pornobomba.in/home/
+10) score=-991 kind=UNKNOWN loaded=False label=category_latest_20 url=https://pornobomba.in/home/latest/
+11) score=-990 kind=UNKNOWN loaded=False label=tag_20 url=https://pornobomba.in/tag/home/
+12) score=-989 kind=UNKNOWN loaded=False label=tags_20 url=https://pornobomba.in/tags/home/
+13) score=94 kind=PORNOBOMBA matches=0/42/0 flashvars=False playlist=False label=dle_story_20 url=https://pornobomba.in/index.php?do=search&subaction=search&story=home

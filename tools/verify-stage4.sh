@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+OUT="$ROOT/build/stage4-harness"
+rm -rf "$OUT" && mkdir -p "$OUT"
+FILES=(
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/json/MiniJson.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/version/SemanticVersion.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/version/BuildIdentity.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/security/UrlPolicy.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/engine/EngineTypes.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/engine/EngineRegistry.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/engine/EngineDependencies.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/adapter/AdapterModels.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/adapter/AdapterSchemaParser.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/adapter/AdapterValidator.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/source/AdapterPackageManager.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/source/AdapterZipManager.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/source/AdapterStorePaths.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/source/AdapterRecoveryManager.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/source/AdapterCompatibility.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/source/AdapterMigration.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/source/AdapterUpdateManager.kt"
+  "$ROOT/app/src/main/java/pro/noodle/mobile/core/source/SourceStatusStore.kt"
+)
+kotlinc "${FILES[@]}" "$ROOT/tools/Stage4Harness.kt" -include-runtime -d "$OUT/stage4-harness.jar"
+(cd "$ROOT" && java -jar "$OUT/stage4-harness.jar" "app/src/main/assets/adapters/bundled") | tee "$OUT/stage4-verification.txt"

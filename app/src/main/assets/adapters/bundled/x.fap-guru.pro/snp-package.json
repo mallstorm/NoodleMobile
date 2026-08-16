@@ -1,0 +1,19 @@
+{
+  "format_version": 1,
+  "adapter_id": "x.fap-guru.pro",
+  "version": "1.0.0",
+  "publisher": "Noodle Desktop bundled",
+  "integrity_algorithm": "sha256",
+  "files": [
+    {
+      "path": "adapter.json",
+      "sha256": "a1b039166f89785b3da135d5f494a635b69d7efbe9b6de2fbd0f749e2eb3ffc3",
+      "size": 1399
+    }
+  ],
+  "signature": {
+    "algorithm": "none",
+    "key_id": "",
+    "value": ""
+  }
+}

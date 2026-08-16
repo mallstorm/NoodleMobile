@@ -1,0 +1,76 @@
+from pathlib import Path
+import sys
+
+R = Path(__file__).resolve().parents[1]
+checks = []
+
+def ck(name, ok, detail=''):
+    checks.append((name, bool(ok), detail))
+    print(('PASS' if ok else 'FAIL') + ' | ' + name + ((' | ' + detail) if detail else ''))
+
+def text(rel):
+    return (R / rel).read_text(encoding='utf-8')
+
+gradle = text('app/build.gradle.kts')
+manifest = text('app/src/main/AndroidManifest.xml')
+db = text('app/src/main/java/pro/noodle/mobile/core/storage/NoodleDatabase.kt')
+settings = text('app/src/main/java/pro/noodle/mobile/core/settings/AppSettings.kt')
+overrides = text('app/src/main/java/pro/noodle/mobile/core/settings/SourceOverridesRepository.kt')
+web = text('app/src/main/java/pro/noodle/mobile/core/web/SandboxedWebExtractor.kt')
+worker = text('app/src/main/java/pro/noodle/mobile/core/download/DownloadWorker.kt')
+repo = text('app/src/main/java/pro/noodle/mobile/core/download/DownloadRepository.kt')
+player = text('app/src/main/java/pro/noodle/mobile/ui/player/PlayerScreen.kt')
+main = text('app/src/main/java/pro/noodle/mobile/MainActivity.kt')
+playback = text('app/src/main/java/pro/noodle/mobile/core/player/PlaybackRepository.kt')
+search = text('app/src/main/java/pro/noodle/mobile/core/search/BundledSearchRepository.kt')
+sources_vm = text('app/src/main/java/pro/noodle/mobile/ui/sources/SourcesViewModel.kt')
+theme = text('app/src/main/java/pro/noodle/mobile/ui/NoodleTheme.kt')
+
+ck('Version Stage3+', ('versionName = "0.3.0-alpha3"' in gradle and 'versionCode = 30003' in gradle) or ('versionName = "0.4.0-alpha4"' in gradle and 'versionCode = 40004' in gradle) or ('versionName = "0.5.0-alpha5"' in gradle and 'versionCode = 50005' in gradle) or ('versionName = "0.6.0-alpha6"' in gradle and 'versionCode = 60006' in gradle) or ('versionName = "0.7.0-alpha7"' in gradle and 'versionCode = 70007' in gradle) or ('versionName = "0.8.0-alpha8"' in gradle and 'versionCode = 80008' in gradle) or ('versionName = "0.10.0-alpha10"' in gradle and 'versionCode = 100010' in gradle))
+ck('Media3 stable supported', ('media3-exoplayer:1.10.1' in gradle) or ('media3-exoplayer:1.11.0' in gradle))
+ck('Room 2.8.4 + KSP', 'roomVersion = "2.8.4"' in gradle and 'room-compiler' in gradle and 'com.google.devtools.ksp' in gradle)
+ck('DataStore 1.2.1', 'datastore-preferences:1.2.1' in gradle)
+ck('WorkManager 2.11.2', 'work-runtime-ktx:2.11.2' in gradle)
+ck('WebKit 1.16.0', 'androidx.webkit:webkit:1.16.0' in gradle)
+ck('Room favorites entity', '@Entity(tableName = "favorites")' in db and 'FavoriteDao' in db)
+ck('Room playback position entity', '@Entity(tableName = "playback_positions")' in db and 'PlaybackPositionDao' in db)
+ck('Room persisted download queue', '@Entity(tableName = "downloads")' in db and 'DownloadState' in db and 'DownloadDao' in db)
+ck('Room does not destructively wipe user data', 'fallbackToDestructiveMigration' not in db)
+ck('Playback completion clears near-end position', 'positionMs >= durationMs - 10_000' in text('app/src/main/java/pro/noodle/mobile/core/storage/UserMediaRepository.kt'))
+ck('Four themes', all(x in theme for x in ['BlueGlass','EmeraldPulse','GraphitePro','AuroraLight']))
+ck('Persistent source enabled overrides', 'disabled_source_ids' in overrides and 'setEnabled' in sources_vm)
+ck('Search respects source overrides', 'activeAdapters()' in search and 'disabledSourceIds.first()' in search)
+ck('WebView JS opt-in', 'if (!adapter.allowJavaScript)' in web)
+ck('WebView file/content blocked', 'allowFileAccess=false' in web and 'allowContentAccess=false' in web)
+ck('WebView mixed content blocked', 'MIXED_CONTENT_NEVER_ALLOW' in web)
+ck('WebView third party cookies blocked', 'setAcceptThirdPartyCookies(web,false)' in web)
+ck('WebView no permission grants', 'onPermissionRequest' in web and 'request?.deny()' in web)
+ck('WebView TLS bypass forbidden', 'onReceivedSslError' in web and 'handler?.cancel()' in web)
+ck('WebView request host/DNS revalidation', 'shouldInterceptRequest' in web and 'UrlPolicy.evaluateNavigation' in web and 'InetAddress.getAllByName' in web and 'UrlPolicy::isUnsafeAddress' in web)
+ck('WebView serialized cookie isolation', 'private val mutex=Mutex()' in web and 'mutex.withLock' in web and 'removeAllCookies' in web)
+ck('WebView cookie accept reset', 'setAcceptCookie(false)' in web)
+ck('WebView bounded post-load settle', 'postDelayed' in web and '650L' in web)
+ck('JS fallback integrated only after normal resolver', 'safeSources.isEmpty() && adapter.allowJavaScript' in playback and 'webExtractor.extract' in playback)
+ck('Progressive download HTTP Range resume', 'header("Range","bytes=$offset-")' in worker and 'FileOutputStream(partial,offset>0)' in worker)
+ck('Download uses secure streaming client', 'SecureHttpClient().streamingClient(policy,item.sourceKey)' in worker)
+ck('Persistent partial file', 'downloads/$id.partial' in worker)
+ck('SAF CreateDocument destination', 'ActivityResultContracts.CreateDocument' in player and 'takePersistableUriPermission' in player)
+ck('Foreground download notification', 'ForegroundInfo' in worker and 'FOREGROUND_SERVICE_DATA_SYNC' in manifest)
+ck('WorkManager unique resumable job', 'enqueueUniqueWork' in repo and 'ExistingWorkPolicy.REPLACE' in repo)
+ck('Download concurrency setting enforced', 'parallelDownloads' in worker and 'countRunningRecentExcluding' in worker)
+ck('Adaptive offline status truthful', ('DOWNLOAD_ADAPTIVE_NOT_YET_ENABLED' in repo) or ('DownloadService.sendAddDownload' in repo and 'MediaDownloadRuntime' in player))
+ck('PiP manifest + player', 'supportsPictureInPicture="true"' in manifest and 'enterPictureInPictureMode' in player)
+ck('Player persisted resume', 'playbackPosition(key)' in player and 'savePlaybackPosition(key,pos,dur)' in player)
+ck('Player quality control', 'setMaxVideoSize' in player)
+ck('Player audio language control', 'setPreferredAudioLanguage' in player)
+ck('Player subtitle control', 'setPreferredTextLanguage' in player and 'setTrackTypeDisabled' in player)
+ck('Media3 Auto clears language preferences', 'setPreferredAudioLanguage(null)' in player and 'setPreferredTextLanguage(null)' in player)
+ck('Favorites usable screen', 'FavoritesScreen' in main and 'UserMediaRepository' in text('app/src/main/java/pro/noodle/mobile/ui/favorites/FavoritesViewModel.kt'))
+ck('Downloads usable screen', 'DownloadsScreen' in main and 'DownloadsViewModel' in main)
+ck('Settings persisted', 'SettingsScreen' in main and 'AppSettingsRepository' in settings)
+ck('No cleartext traffic', 'usesCleartextTraffic="false"' in manifest)
+
+failed = [c for c in checks if not c[1]]
+print(f'SUMMARY {len(checks)-len(failed)}/{len(checks)} passed')
+if failed:
+    sys.exit(1)

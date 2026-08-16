@@ -1,0 +1,39 @@
+{
+  "format_version": 1,
+  "adapter_id": "pornobomba.in",
+  "version": "1.0.0",
+  "publisher": "Noodle Desktop bundled",
+  "integrity_algorithm": "sha256",
+  "files": [
+    {
+      "path": "_search.html",
+      "sha256": "0486991e79c27d6f77606822d530b800f45cff5805a18656a4bb19de19d9b110",
+      "size": 246881
+    },
+    {
+      "path": "_view.html",
+      "sha256": "9f9742dde2d896d186f83d1cb6a04b1515bd64975a93cd51281315e91424a37c",
+      "size": 288832
+    },
+    {
+      "path": "adapter.json",
+      "sha256": "e3636458b3eb7a8dbd35b2fed6103b07b901fd4fd98e07aa018f0d672a145b44",
+      "size": 1441
+    },
+    {
+      "path": "analysis.txt",
+      "sha256": "c995596dd60bf4e16b4a801b1058858a544a28e9acc1d237ebb37f1791336d66",
+      "size": 2693
+    },
+    {
+      "path": "snippets.pas",
+      "sha256": "458958872da5c6299e737724d401214dd900e8f456ae02c1bd996a7bf1e8f6e9",
+      "size": 1204
+    }
+  ],
+  "signature": {
+    "algorithm": "none",
+    "key_id": "",
+    "value": ""
+  }
+}

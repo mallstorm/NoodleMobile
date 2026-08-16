@@ -1,0 +1,34 @@
+﻿Domain: video-laba.click
+Query: mamki
+Detected kind: Novideo-embed-like (/{category}/ + /novideo/{id}.html + iframe/embed flashvars)
+Selected search candidate: category_direct_20
+Selected reason: score=91 kind=NOVIDEO_EMBED watchPath=/novideo/434257-1720269893.html
+Selected score: 91
+Search URL: https://video-laba.click/mamki/
+View URL: https://vwfastdelivery.com/embed/187316
+WatchPath: /novideo/434257-1720269893.html
+RemoteId: 434257-1720269893
+Matches (/view): 0
+Matches (/videos): 0
+Matches (/watch): 60
+Has flashvars: True
+Has window.playlist: False
+Preview URL: https://img.vwfastdelivery.com/scr/187000/187316/preview.jpg
+Video URL raw: function/0/https://vwfastdelivery.com/get_file/1/78c2764c30bec4435442ad31c3b9fb90fbaa40debe/187000/187316/187316.mp4/?embed=true
+Video URL normalized: https://vwfastdelivery.com/get_file/1/78c2764c30bec4435442ad31c3b9fb90fbaa40debe/187000/187316/187316.mp4/?embed=true
+Search HTML snapshot: E:\Noodle\Noodle2J\nodleproject\tools\AdapterGenerator\out\video-laba.click\_search.html
+View HTML snapshot: E:\Noodle\Noodle2J\nodleproject\tools\AdapterGenerator\out\video-laba.click\_view.html
+--- Candidates ---
+1) score=-1000 kind=UNKNOWN loaded=False label=search_q_20 url=https://video-laba.click/search/?q=mamki
+2) score=-999 kind=UNKNOWN loaded=False label=search_path_20 url=https://video-laba.click/search/mamki/
+3) score=-998 kind=UNKNOWN loaded=False label=search_plain_20 url=https://video-laba.click/search/mamki
+4) score=18 kind=UNKNOWN matches=0/0/0 flashvars=False playlist=False label=query_s_20 url=https://video-laba.click/?s=mamki
+5) score=18 kind=UNKNOWN matches=0/0/0 flashvars=False playlist=False label=query_q_20 url=https://video-laba.click/?q=mamki
+6) score=-995 kind=UNKNOWN loaded=False label=search_query_20 url=https://video-laba.click/search?q=mamki
+7) score=-994 kind=UNKNOWN loaded=False label=video_20 url=https://video-laba.click/video/mamki
+8) score=-993 kind=UNKNOWN loaded=False label=videos_20 url=https://video-laba.click/videos/mamki
+9) score=91 kind=NOVIDEO_EMBED matches=0/0/60 flashvars=False playlist=False label=category_direct_20 url=https://video-laba.click/mamki/
+10) score=91 kind=NOVIDEO_EMBED matches=0/0/60 flashvars=False playlist=False label=category_latest_20 url=https://video-laba.click/mamki/latest/
+11) score=-990 kind=UNKNOWN loaded=False label=tag_20 url=https://video-laba.click/tag/mamki/
+12) score=-989 kind=UNKNOWN loaded=False label=tags_20 url=https://video-laba.click/tags/mamki/
+13) score=18 kind=UNKNOWN matches=0/0/0 flashvars=False playlist=False label=dle_story_20 url=https://video-laba.click/index.php?do=search&subaction=search&story=mamki

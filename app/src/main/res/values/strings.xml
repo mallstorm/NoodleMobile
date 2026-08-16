@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Noodle Mobile</string>
+    <string name="download_channel_name">Офлайн-загрузки</string>
+    <string name="download_channel_description">Загрузка HLS, DASH и медиаконтента для офлайн-воспроизведения</string>
+</resources>

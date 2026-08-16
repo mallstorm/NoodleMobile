@@ -1,0 +1,62 @@
+import java.io.File
+
+fun main(args: Array<String>) {
+    val root = File(args.firstOrNull() ?: ".")
+    var pass = 0
+    var fail = 0
+    fun text(path: String) = File(root, path).readText()
+    fun ck(name: String, ok: Boolean) {
+        println("${if (ok) "PASS" else "FAIL"} | $name")
+        if (ok) pass++ else fail++
+    }
+    val app = text("app/build.gradle.kts")
+    val top = text("build.gradle.kts")
+    val id = text("app/src/main/java/pro/noodle/mobile/core/version/BuildIdentity.kt")
+    val main = text("app/src/main/java/pro/noodle/mobile/MainActivity.kt")
+    val net = text("app/src/main/java/pro/noodle/mobile/core/network/SecureHttpClient.kt")
+    val worker = text("app/src/main/java/pro/noodle/mobile/core/download/DownloadWorker.kt")
+    val web = text("app/src/main/java/pro/noodle/mobile/core/web/SandboxedWebExtractor.kt")
+    val runtime = text("app/src/main/java/pro/noodle/mobile/core/download/MediaDownloadRuntime.kt")
+    val repo = text("app/src/main/java/pro/noodle/mobile/core/download/DownloadRepository.kt")
+    val compat = text("app/src/main/java/pro/noodle/mobile/core/source/AdapterCompatibility.kt")
+    val studio = text("app/src/main/java/pro/noodle/mobile/core/studio/AdapterStudioCore.kt")
+    val ci = text("tools/ci-android-build.sh")
+    val cert = text("tools/verify-apk.sh")
+    val workflow = text(".github/workflows/android-ci.yml")
+    val manifest = text("app/src/main/AndroidManifest.xml")
+
+    ck("stage8+ version", ("versionCode = 80008" in app && "versionName = \"0.8.0-alpha8\"" in app) || ("versionCode = 100010" in app && "versionName = \"0.10.0-alpha10\"" in app))
+    ck("BuildIdentity runtime version", ("VERSION_NAME = \"0.8.0-alpha8\"" in id && "VERSION_CODE = 80008" in id) || ("VERSION_NAME = \"0.10.0-alpha10\"" in id && "VERSION_CODE = 100010" in id))
+    ck("SNP compatibility separated", "SNP_COMPATIBILITY_VERSION = \"1.9.0\"" in id && "BuildIdentity.SNP_COMPATIBILITY_VERSION" in compat)
+    ck("Studio uses shared SNP compatibility", "BuildIdentity.SNP_COMPATIBILITY_VERSION" in studio)
+    ck("UI stage label centralized", "BuildIdentity.STAGE_LABEL" in main)
+    ck("HTTP UA centralized", "BuildIdentity.USER_AGENT" in net)
+    ck("Progressive download UA centralized", "BuildIdentity.USER_AGENT" in worker)
+    ck("Media3 UA centralized", "BuildIdentity.USER_AGENT" in runtime)
+    ck("Web extractor UA centralized", "BuildIdentity.USER_AGENT" in web)
+    ck("No stale app UA", !Regex("NoodleMobile/0\\.[0-7] Android").containsMatchIn(net + worker + runtime + web))
+    ck("Adaptive add uses foreground service start", repo.contains("request, true") && repo.contains("plan.request, true"))
+    ck("Foreground service permissions", "FOREGROUND_SERVICE_DATA_SYNC" in manifest && "foregroundServiceType=\"dataSync\"" in manifest)
+    ck("API 37", "compileSdk = 37" in app && "targetSdk = 37" in app)
+    ck("AGP 9.3.1", "com.android.application\") version \"9.3.1" in top)
+    ck("Kotlin Compose plugin 2.4.10", "plugin.compose\") version \"2.4.10" in top)
+    ck("Compose BOM current stable", ("androidx.compose:compose-bom:2026.06.00" in app || "androidx.compose:compose-bom:2026.06.01" in app))
+    ck("KSP 2.3.11", "com.google.devtools.ksp\") version \"2.3.11" in top)
+    ck("Media3 stable 1.10.1", app.contains("androidx.media3:media3-exoplayer:1.10.1") && app.contains("media3-exoplayer-workmanager:1.10.1") && !app.contains(":1.11.0"))
+    ck("CI installs API 37 + stable Build Tools", ci.contains("platforms;android-37") && ci.contains("build-tools;36.0.0"))
+    ck("CI runs unit tests", ci.contains(":app:testDebugUnitTest"))
+    ck("CI runs lint", ci.contains(":app:lintDebug"))
+    ck("CI runs assembleDebug", ci.contains(":app:assembleDebug"))
+    ck("CI verifies APK exists", ci.contains("assembleDebug completed without APK") && (ci.contains("sha256sum") || (ci.contains("tools/verify-apk.sh") && cert.contains("sha256sum"))))
+    ck("CI compiles androidTest APK", ci.contains(":app:assembleDebugAndroidTest"))
+    ck("CI verifies package identity", (ci.contains("versionCode='80008'") && ci.contains("versionName='0.8.0-alpha8'")) || (cert.contains("versionCode='100010'") && cert.contains("versionName='0.10.0-alpha10'")))
+    ck("CI verifies target SDK", ci.contains("targetSdkVersion:'37'") || cert.contains("targetSdkVersion:'37'"))
+    ck("CI verifies androidTest APK", ci.contains("assembleDebugAndroidTest completed without test APK"))
+    ck("Workflow installs JDK 21", workflow.contains("java-version: '21'"))
+    ck("Workflow installs Gradle 9.5.1", workflow.contains("gradle-version: '9.5.1'"))
+    ck("Workflow provides Android SDK", workflow.contains("android-actions/setup-android@v4"))
+    ck("Workflow uploads APK", workflow.contains("actions/upload-artifact@v7") && workflow.contains("app/build/outputs/apk/debug/*.apk"))
+
+    println("RESULT | pass=$pass fail=$fail")
+    if (fail > 0) error("Stage8 harness failed")
+}

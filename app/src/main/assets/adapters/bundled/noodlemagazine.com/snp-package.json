@@ -1,0 +1,39 @@
+{
+  "format_version": 1,
+  "adapter_id": "noodlemagazine.com",
+  "version": "1.0.0",
+  "publisher": "Noodle Desktop bundled",
+  "integrity_algorithm": "sha256",
+  "files": [
+    {
+      "path": "_search.html",
+      "sha256": "1c34164f3fe9cd07505846c5b0d2993fa664b744efe7135784716700e134b3a7",
+      "size": 81305
+    },
+    {
+      "path": "_view.html",
+      "sha256": "bde0e4dd53ad53622187898b92c4d8a0f912c9332e9b207e057d38ab099b9409",
+      "size": 102958
+    },
+    {
+      "path": "adapter.json",
+      "sha256": "e8a03d478692f7e3d4e98405229410ccd51779838c1b7e337de566fed619db1b",
+      "size": 1515
+    },
+    {
+      "path": "analysis.txt",
+      "sha256": "cd053eb94b27d11a7bef9116e60041013e47bb199c2069a68791c0fa6f977d2f",
+      "size": 2378
+    },
+    {
+      "path": "snippets.pas",
+      "sha256": "70e973f3a1a251952a7012466a662244e426bc3568b087e96414c6fb9e70ee6d",
+      "size": 1160
+    }
+  ],
+  "signature": {
+    "algorithm": "none",
+    "key_id": "",
+    "value": ""
+  }
+}

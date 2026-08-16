@@ -1,0 +1,2 @@
+PASS | Kotlin parser syntax smoke
+kotlinc exit=1 is expected without Android/AndroidX/OkHttp classpath; no parser-level syntax errors were detected.

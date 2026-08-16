@@ -1,0 +1,115 @@
+package pro.noodle.mobile.ui.player
+
+import android.app.Activity
+import android.app.PictureInPictureParams
+import android.content.Context
+import android.content.ContextWrapper
+import android.os.Build
+import android.util.Rational
+import android.view.ViewGroup
+import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.PictureInPictureAlt
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.offline.DownloadHelper
+import androidx.media3.ui.PlayerView
+import pro.noodle.mobile.core.download.MediaDownloadRuntime
+import pro.noodle.mobile.core.download.OfflinePlaybackSpec
+
+@OptIn(UnstableApi::class)
+@Composable
+fun OfflinePlayerScreen(spec: OfflinePlaybackSpec, onBack: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val activity = context.offlineFindActivity()
+    val player = remember(spec.id) {
+        ExoPlayer.Builder(context).build().apply {
+            when (spec) {
+                is OfflinePlaybackSpec.Adaptive -> {
+                    // The upstream is null in this factory: offline playback can never silently
+                    // fall back to the network when a cached segment is missing.
+                    val mediaSource = DownloadHelper.createMediaSource(
+                        spec.request,
+                        MediaDownloadRuntime.offlineCacheDataSourceFactory(context.applicationContext),
+                    )
+                    setMediaSource(mediaSource)
+                }
+                is OfflinePlaybackSpec.Progressive -> {
+                    setMediaItem(
+                        MediaItem.Builder().setUri(spec.uri).apply {
+                            if (spec.mimeType.isNotBlank()) setMimeType(spec.mimeType)
+                        }.build()
+                    )
+                }
+            }
+            prepare()
+            playWhenReady = true
+        }
+    }
+    var playbackError by remember(spec.id) { mutableStateOf<String?>(null) }
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onPlayerError(error: PlaybackException) {
+                playbackError = if (spec is OfflinePlaybackSpec.Adaptive)
+                    "Офлайн-кэш неполный или повреждён: ${error.errorCodeName}"
+                else "Не удалось открыть локальный файл: ${error.errorCodeName}"
+            }
+        }
+        player.addListener(listener)
+        onDispose {
+            player.removeListener(listener)
+            player.release()
+        }
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().padding(8.dp)) {
+            IconButton(onClick = onBack) { Icon(Icons.Outlined.ArrowBack, "Назад") }
+            Column(Modifier.weight(1f)) {
+                Text(spec.title, style = MaterialTheme.typography.titleMedium, maxLines = 2)
+                Text("Офлайн • ${spec.mimeType.ifBlank { "media" }}", style = MaterialTheme.typography.bodySmall)
+            }
+            if (Build.VERSION.SDK_INT >= 26) {
+                IconButton(onClick = {
+                    activity?.enterPictureInPictureMode(
+                        PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build()
+                    )
+                }) { Icon(Icons.Outlined.PictureInPictureAlt, "PiP") }
+            }
+        }
+        playbackError?.let { error ->
+            Text(
+                error,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+        }
+        AndroidView(
+            factory = { ctx ->
+                PlayerView(ctx).apply {
+                    this.player = player
+                    useController = true
+                    layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                }
+            },
+            update = { it.player = player },
+            modifier = Modifier.fillMaxWidth().weight(1f),
+        )
+    }
+}
+
+private tailrec fun Context.offlineFindActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.offlineFindActivity()
+    else -> null
+}

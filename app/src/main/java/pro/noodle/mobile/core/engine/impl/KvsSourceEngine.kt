@@ -1,0 +1,150 @@
+package pro.noodle.mobile.core.engine.impl
+
+import pro.noodle.mobile.core.engine.runtime.*
+import pro.noodle.mobile.core.model.MediaSource
+
+class KvsSourceEngine(
+    override val id: String,
+    override val aliases: Set<String>,
+    private val mode: Mode,
+) : SourceEngine {
+    enum class Mode { VIEW, VIDEOS }
+
+    override fun buildSearchUrl(request: EngineSearchRequest): String {
+        val base = request.baseUrl.trimEnd('/')
+        if (base.isBlank() || request.query.isBlank()) return ""
+        val q = EngineParsing.encodedQuery(request.query)
+        return if (request.page < 0) "$base/search/?q=$q" else {
+            val page = (request.page + 1).coerceAtLeast(2)
+            "$base/search/$page/?q=$q"
+        }
+    }
+
+    override fun parseSearch(text: String, request: EngineSearchRequest): List<EngineSearchItem> =
+        when (mode) { Mode.VIEW -> parseView(text, request); Mode.VIDEOS -> parseVideos(text, request) }
+
+    private fun parseView(html: String, request: EngineSearchRequest): List<EngineSearchItem> {
+        if (html.isBlank()) return emptyList()
+        val body = EngineParsing.first(html, "<ul[^>]*id=[\"']list_videos_[^\"']*_items[\"'][^>]*>([\\s\\S]*?)</ul>").ifBlank { html }
+        val re = Regex("<a[^>]*href=([\"'])((?:https?://[^/\"']+)?/view/(\\d+)/?)\\1[^>]*>([\\s\\S]*?)</a>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+        return re.findAll(body).mapNotNull { m ->
+            val url = EngineParsing.htmlDecode(m.groupValues[2])
+            val remote = m.groupValues[3]
+            val block = m.groupValues[4]
+            if (remote.isBlank()) return@mapNotNull null
+            val path = Regex("https?://[^/]+(/view/\\d+/?)", RegexOption.IGNORE_CASE).find(url)?.groupValues?.getOrNull(1)
+                ?: url.takeIf { it.startsWith("/view/", true) }
+                ?: "/view/$remote/"
+            val title = EngineParsing.stripTags(EngineParsing.first(block, "<span[^>]*class=[\"'][^\"']*title[^\"']*[\"'][^>]*>([\\s\\S]*?)</span>"))
+                .ifBlank { EngineParsing.htmlDecode(EngineParsing.first(block, "<img[^>]+alt=[\"']([^\"']+)[\"']")) }
+            val duration = EngineParsing.stripTags(EngineParsing.first(block, "<span[^>]*class=[\"'][^\"']*duration[^\"']*[\"'][^>]*>([\\s\\S]*?)</span>"))
+            val views = EngineParsing.stripTags(EngineParsing.first(block, "<span[^>]*class=[\"'][^\"']*views[^\"']*[\"'][^>]*>([\\s\\S]*?)</span>"))
+            val thumbRaw = EngineParsing.first(block, "data-original=[\"']([^\"']+)[\"']")
+                .ifBlank { EngineParsing.first(block, "data-src=[\"']([^\"']+)[\"']") }
+                .ifBlank { EngineParsing.first(block, "<img[^>]+src=[\"']([^\"']+)[\"']") }
+            EngineSearchItem(remote, path, title, EngineParsing.absolute(thumbRaw, request.baseUrl), duration, views)
+        }.take(request.maxItems.coerceAtLeast(1)).toList()
+    }
+
+    private fun parseVideos(html: String, request: EngineSearchRequest): List<EngineSearchItem> {
+        if (html.isBlank()) return emptyList()
+        val singleVideoMatches = Regex("<a[^>]*href=([\"'])(/video/[^\"']+)\\1[^>]*>([\\s\\S]*?)</a>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).findAll(html).toList()
+        val pluralVideoMatches = Regex("<a[^>]*href=([\"'])(/videos/[^\"']+)\\1[^>]*class=([\"'])[^\"']*\\bitem\\b[^\"']*\\3[^>]*>([\\s\\S]*?)</a>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).findAll(html).toList()
+        val matches = singleVideoMatches + pluralVideoMatches
+        return matches.mapNotNull { m ->
+            val path = EngineParsing.htmlDecode(m.groupValues[2])
+            if (isCatalogPath(path)) return@mapNotNull null
+            val block = m.groupValues.last()
+            val remote = path.removePrefix("/videos/").removePrefix("/video/").trimEnd('/')
+            if (remote.isBlank()) return@mapNotNull null
+            val thumbRaw = EngineParsing.first(block, "data-original=[\"']([^\"']+)[\"']")
+                .ifBlank { EngineParsing.first(block, "<img[^>]+(?:data-src|src)=[\"']([^\"']+)[\"']") }
+            val title = EngineParsing.stripTags(EngineParsing.first(block, "<(?:div|span)[^>]*class=[\"'][^\"']*(?:title|name)[^\"']*[\"'][^>]*>([\\s\\S]*?)</(?:div|span)>"))
+                .ifBlank { EngineParsing.htmlDecode(EngineParsing.first(block, "<img[^>]+alt=[\"']([^\"']+)[\"']")) }
+            val duration = EngineParsing.stripTags(EngineParsing.first(block, "<span[^>]*class=[\"'][^\"']*(?:time|duration)[^\"']*[\"'][^>]*>([\\s\\S]*?)</span>"))
+            val views = EngineParsing.stripTags(EngineParsing.first(block, "<span[^>]*class=[\"'][^\"']*(?:views|watched|liked)[^\"']*[\"'][^>]*>([\\s\\S]*?)</span>"))
+            EngineSearchItem(remote, path, title, EngineParsing.absolute(thumbRaw, request.baseUrl), duration, views)
+        }.take(request.maxItems.coerceAtLeast(1))
+    }
+
+    private fun isCatalogPath(path: String): Boolean {
+        val p = path.lowercase()
+        return listOf("/videos/feed", "/videos/trending", "/videos/latest", "/videos/top", "/videos/new", "/videos/popular", "/videos/recent", "/videos/categories", "/videos/tags").any { p.contains(it) }
+    }
+
+    override fun resolvePlayback(text: String, pageUrl: String): EngineResolveResult = KvsPlaybackResolver.resolve(text, pageUrl)
+}
+
+object KvsPlaybackResolver {
+    fun resolve(html: String, pageUrl: String): EngineResolveResult {
+        if (html.isBlank()) return EngineResolveResult()
+        val flash = EngineParsing.first(html, "(?:var\\s+)?flashvars\\s*=\\s*\\{([\\s\\S]*?)\\}\\s*;")
+        val candidateScope = flash.ifBlank { html }
+        if (flash.isBlank() && !Regex("\\bvideo(?:_alt)?_url(?:_[a-z0-9]+)?\\s*:", RegexOption.IGNORE_CASE).containsMatchIn(html)) return EngineResolveResult()
+        val license = EngineParsing.htmlDecode(EngineParsing.first(candidateScope, "\\blicense_code\\s*:\\s*[\"']([^\"']+)[\"']"))
+        val sourceRe = Regex("\\b(video(?:_alt)?_url(?:_[a-z0-9]+)?)\\s*:\\s*([\"'])(.*?)\\2", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+        val seen = linkedSetOf<String>()
+        val sources = sourceRe.findAll(candidateScope).mapNotNull { m ->
+            val key = m.groupValues[1]
+            var raw = EngineParsing.htmlDecode(m.groupValues[3])
+            if (raw.startsWith("function/0/http://", true) || raw.startsWith("function/0/https://", true)) raw = raw.removePrefix("function/0/")
+            else if (raw.startsWith("function/0/", true)) raw = KvsMediaUrl.normalize(raw, license)
+            if (!(raw.startsWith("http://", true) || raw.startsWith("https://", true) || raw.startsWith("/"))) raw = Regex("https?://[^\"'\\s]+", RegexOption.IGNORE_CASE).find(raw)?.value.orEmpty()
+            val url = EngineParsing.absolute(raw, pageUrl)
+            if (url.isBlank() || !seen.add(url.lowercase())) return@mapNotNull null
+            val label = inferLabel(key, candidateScope)
+            val mime = when (EngineParsing.protocol(url)) { "hls" -> "application/vnd.apple.mpegurl"; "dash" -> "application/dash+xml"; else -> "video/mp4" }
+            MediaSource(label=label,url=url,mimeType=mime,protocol=EngineParsing.protocol(url,mime),isDefault=key.equals("video_url",true)||seen.size==1)
+        }.toMutableList()
+        if (sources.isEmpty()) {
+            val og = EngineParsing.first(html, "<meta[^>]+(?:property|name)=[\"']og:video(?::url|:secure_url)?[\"'][^>]+content=[\"']([^\"']+)[\"']")
+            val url = EngineParsing.absolute(og, pageUrl)
+            if (url.isNotBlank()) sources += MediaSource(label="Auto",url=url,mimeType="video/mp4",protocol=EngineParsing.protocol(url),isDefault=true)
+        }
+        val title = EngineParsing.titleFromHtml(html).ifBlank { EngineParsing.stripTags(EngineParsing.first(html,"<h1[^>]*>([\\s\\S]*?)</h1>")) }
+        val preview = EngineParsing.absolute(EngineParsing.first(candidateScope,"\\bpreview_url\\s*:\\s*[\"']([^\"']+)[\"']"), pageUrl).ifBlank { EngineParsing.imageFromHtml(html,pageUrl) }
+        return if (sources.isNotEmpty()) EngineResolveResult(handled=true,success=true,title=title,thumbnailUrl=preview,sources=sources)
+        else EngineResolveResult(handled=true,success=false,title=title,thumbnailUrl=preview,errorCode="KVS_MEDIA_NOT_FOUND",errorMessage="KVS flashvars найдены, но воспроизводимый источник отсутствует.")
+    }
+
+    private fun inferLabel(key: String, flash: String): String {
+        val declared = EngineParsing.first(flash, "\\b${Regex.escape(key)}_text\\s*:\\s*[\"']([^\"']+)[\"']")
+        if (declared.isNotBlank()) return EngineParsing.htmlDecode(declared)
+        val k=key.lowercase()
+        return when { "2160" in k->"2160p";"1440" in k->"1440p";"1080" in k->"1080p";"720" in k->"720p";"480" in k->"480p";"360" in k->"360p";"alt" in k->"LQ";"hd" in k->"HD";"hls" in k->"HLS";key.equals("video_url",true)->"Auto";else->"KVS" }
+    }
+}
+
+object KvsMediaUrl {
+    fun normalize(videoUrl: String, licenseCode: String): String {
+        val prefix="function/0/"
+        if (!videoUrl.startsWith(prefix,true)) return videoUrl.trim()
+        val raw=videoUrl.substring(prefix.length)
+        if (raw.isBlank()) return raw
+        return try {
+            val uri=java.net.URI(raw)
+            val parts=uri.path.split('/').toMutableList()
+            if(parts.size<=3) return raw
+            val hash=parts[3]
+            if(hash.length<32) return raw
+            val token=buildLicenseToken(licenseCode)
+            if(token.size<32) return raw
+            val indices=IntArray(32){it}; var accum=0
+            for(src in 31 downTo 0){ accum+=token[src]; val dest=(src+accum)%32; val t=indices[src];indices[src]=indices[dest];indices[dest]=t }
+            val newHash=buildString { for(i in 0..31) append(hash[indices[i]]); append(hash.substring(32)) }
+            parts[3]=newHash
+            val path=parts.joinToString("/")
+            java.net.URI(uri.scheme,uri.userInfo,uri.host,uri.port,path,uri.query,uri.fragment).toString()
+        } catch (_:Exception){ raw }
+    }
+
+    private fun buildLicenseToken(code:String):IntArray{
+        val clean=code.replace("$","").trim(); if(clean.isBlank()||clean.any{!it.isDigit()}) return IntArray(0)
+        val values=clean.map{it-'0'}; val mod0=clean.replace('0','1'); val center=mod0.length/2; if(center<=0)return IntArray(0)
+        val front=mod0.substring(0,(center+1).coerceAtMost(mod0.length)).toLongOrNull()?:return IntArray(0)
+        val back=mod0.substring(center).toLongOrNull()?:return IntArray(0)
+        var mod=(4*kotlin.math.abs(front-back)).toString(); if(mod.length>center+1)mod=mod.substring(0,center+1)
+        val out=mutableListOf<Int>(); mod.forEachIndexed { i,c -> val current=c-'0'; for(offset in 0..3){ val idx=i+offset; if(idx>=values.size)break; out += (values[idx]+current)%10 } }
+        return out.toIntArray()
+    }
+}

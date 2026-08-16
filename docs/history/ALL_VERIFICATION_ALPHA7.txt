@@ -1,0 +1,539 @@
+Noodle Mobile 0.7.0-alpha7 — ALL VERIFICATION
+
+=== PORTABLE CORE ===
+PASS | 15 canonical engines | kvs_view, kvs_videos, noodle_watch_playlist, sosalkino_catalog, novideo_embed, generic_html5, jwplayer_config, videojs_config, iframe_chain, hls_manifest, dash_manifest, declarative_catalog, json_api_catalog, oembed_provider, wordpress_rest
+PASS | 15 runtime engines | dash_manifest, declarative_catalog, generic_html5, hls_manifest, iframe_chain, json_api_catalog, jwplayer_config, kvs_videos, kvs_view, noodle_watch_playlist, novideo_embed, oembed_provider, sosalkino_catalog, videojs_config, wordpress_rest
+PASS | Engine dependency graph
+PASS | Legacy alias normalization
+PASS | iframe requires generic_html5
+PASS | Unknown dependency rejected
+PASS | Transitive dependency rejected
+PASS | HTTPS allowed
+PASS | JavaScript blocked
+PASS | HTTP blocked by default
+PASS | Explicit legacy HTTP allowed
+PASS | Loopback blocked
+PASS | HTTPS downgrade detected
+PASS | Wildcard host safe
+PASS | DNS private target blocked
+PASS | SemVer prerelease
+PASS | Schema v3 valid fixture
+PASS | Missing iframe dependency rejected | ENGINE_DEP_REQUIRED_MISSING
+PASS | Undeclared view engine rejected
+PASS | Unsafe repair mode rejected
+PASS | Unknown repair strategy rejected
+PASS | Generic HTML5 runtime
+PASS | HLS media runtime
+PASS | Resolver pipeline runtime
+PASS | bundled adapter | me.fapaxi.pro
+PASS | bundled adapter | noodlemagazine.com
+PASS | bundled adapter | pornobomba.in
+PASS | bundled adapter | video-laba.click
+PASS | bundled adapter | x.fap-guru.pro
+
+=== STAGE 2 ENGINE/RESOLVER ===
+PASS | Runtime registry 15 engines | dash_manifest, declarative_catalog, generic_html5, hls_manifest, iframe_chain, json_api_catalog, jwplayer_config, kvs_videos, kvs_view, noodle_watch_playlist, novideo_embed, oembed_provider, sosalkino_catalog, videojs_config, wordpress_rest
+PASS | KVS view parser | [EngineSearchItem(remoteId=123, watchPath=/view/123/, title=Test video, thumbnailUrl=https://example.com/thumb/123.jpg, durationText=12:34, viewsText=1000)]
+PASS | KVS videos skips catalog | [EngineSearchItem(remoteId=sample-video, watchPath=/videos/sample-video/, title=Sample title, thumbnailUrl=https://example.com/img/sample.jpg, durationText=05:00, viewsText=)]
+PASS | Generic HTML5 source+track | EngineResolveResult(handled=true, success=true, title=Sample video, thumbnailUrl=, playerPageUrl=, sources=[MediaSource(label=720p, url=https://example.com/media/video-720.mp4, mimeType=video/mp4, protocol=http, width=0, height=0, bandwidth=0, codecs=, isDefault=true), MediaSource(label=HLS, url=https://cdn.example.com/master.m3u8, mimeType=application/vnd.apple.mpegurl, protocol=hls, width=0, height=0, bandwidth=0, codecs=, isDefault=false)], variants=[], audioTracks=[], tracks=[TextTrack(label=???????, language=ru, kind=subtitles, url=https://example.com/subs/ru.vtt, isDefault=true)], followUpPages=[], errorCode=, errorMessage=)
+PASS | Generic OpenGraph dedupe | EngineResolveResult(handled=true, success=true, title=Structured title, thumbnailUrl=https://cdn.example.com/poster.jpg, playerPageUrl=, sources=[MediaSource(label=Auto, url=https://cdn.example.com/video.mp4, mimeType=, protocol=http, width=0, height=0, bandwidth=0, codecs=, isDefault=true)], variants=[], audioTracks=[], tracks=[], followUpPages=[], errorCode=, errorMessage=)
+PASS | HLS master variants/tracks | EngineResolveResult(handled=true, success=true, title=, thumbnailUrl=, playerPageUrl=, sources=[MediaSource(label=HLS auto, url=https://cdn.example.com/master/index.m3u8?token=abc, mimeType=application/vnd.apple.mpegurl, protocol=hls, width=0, height=0, bandwidth=0, codecs=, isDefault=true), MediaSource(label=720p ? 1.2 Mbps, url=https://cdn.example.com/master/video/720.m3u8, mimeType=application/vnd.apple.mpegurl, protocol=hls, width=1280, height=720, bandwidth=1200000, codecs=, isDefault=false), MediaSource(label=1080p ? 4.5 Mbps, url=https://cdn.example.com/master/video/1080.m3u8, mimeType=application/vnd.apple.mpegurl, protocol=hls, width=1920, height=1080, bandwidth=4500000, codecs=, isDefault=false)], variants=[MediaVariant(id=https://cdn.example.com/master/video/720.m3u8, label=720p ? 1.2 Mbps, mimeType=application/vnd.apple.mpegurl, codecs=, width=1280, height=720, bandwidth=1200000, isDefault=false), MediaVariant(id=https://cdn.example.com/master/video/1080.m3u8, label=1080p ? 4.5 Mbps, mimeType=application/vnd.apple.mpegurl, codecs=, width=1920, height=1080, bandwidth=4500000, isDefault=true)], audioTracks=[AudioTrack(id=audio|???????, label=???????, language=ru, mimeType=application/vnd.apple.mpegurl, codecs=, isDefault=true), AudioTrack(id=audio|English, label=English, language=en, mimeType=application/vnd.apple.mpegurl, codecs=, isDefault=false)], tracks=[TextTrack(label=???????, language=ru, kind=subtitles, url=https://cdn.example.com/master/subs/ru.m3u8, isDefault=true)], followUpPages=[], errorCode=, errorMessage=)
+PASS | HLS DRM refused
+PASS | DASH variants/audio/text | EngineResolveResult(handled=true, success=true, title=, thumbnailUrl=, playerPageUrl=, sources=[MediaSource(label=DASH auto, url=https://cdn.example/video/master.mpd, mimeType=application/dash+xml, protocol=dash, width=0, height=0, bandwidth=0, codecs=, isDefault=true)], variants=[MediaVariant(id=v1, label=720p, mimeType=video/mp4, codecs=avc1.64001f, width=1280, height=720, bandwidth=2400000, isDefault=false), MediaVariant(id=v2, label=1080p, mimeType=video/mp4, codecs=, width=1920, height=1080, bandwidth=5000000, isDefault=true)], audioTracks=[AudioTrack(id=a1, label=???????, language=ru, mimeType=audio/mp4, codecs=, isDefault=true)], tracks=[TextTrack(label=en, language=en, kind=subtitles, url=https://cdn.example/video/subs/en.vtt, isDefault=true)], followUpPages=[], errorCode=, errorMessage=)
+PASS | DASH Widevine refused
+PASS | JW Player sources/tracks | EngineResolveResult(handled=true, success=true, title=Demo, thumbnailUrl=https://example.com/poster.jpg, playerPageUrl=, sources=[MediaSource(label=Auto, url=https://example.com/master.m3u8, mimeType=application/vnd.apple.mpegurl, protocol=hls, width=0, height=0, bandwidth=0, codecs=, isDefault=true), MediaSource(label=720p, url=https://example.com/720.mp4, mimeType=video/mp4, protocol=http, width=0, height=0, bandwidth=0, codecs=, isDefault=false)], variants=[], audioTracks=[], tracks=[TextTrack(label=RU, language=, kind=captions, url=https://example.com/ru.vtt, isDefault=false)], followUpPages=[], errorCode=, errorMessage=)
+PASS | JW quoted config | EngineResolveResult(handled=true, success=true, title=, thumbnailUrl=, playerPageUrl=, sources=[MediaSource(label=DASH, url=https://cdn.example/master.mpd, mimeType=dash, protocol=dash, width=0, height=0, bandwidth=0, codecs=, isDefault=true)], variants=[], audioTracks=[], tracks=[], followUpPages=[https://site.example/api/list.json], errorCode=, errorMessage=)
+PASS | Video.js data-setup | EngineResolveResult(handled=true, success=true, title=, thumbnailUrl=, playerPageUrl=, sources=[MediaSource(label=DASH, url=https://cdn.example/master.mpd, mimeType=application/dash+xml, protocol=dash, width=0, height=0, bandwidth=0, codecs=, isDefault=true)], variants=[], audioTracks=[], tracks=[TextTrack(label=???????, language=ru, kind=subtitles, url=https://site.example/ru.vtt, isDefault=true)], followUpPages=[], errorCode=, errorMessage=)
+PASS | Iframe dedupe | EngineResolveResult(handled=true, success=true, title=, thumbnailUrl=, playerPageUrl=https://example.com/embed/1, sources=[], variants=[], audioTracks=[], tracks=[], followUpPages=[https://example.com/embed/1], errorCode=, errorMessage=)
+PASS | oEmbed discovery | EngineResolveResult(handled=true, success=true, title=, thumbnailUrl=, playerPageUrl=, sources=[], variants=[], audioTracks=[], tracks=[], followUpPages=[https://example.com/oembed?url=42], errorCode=, errorMessage=)
+PASS | oEmbed JSON iframe | EngineResolveResult(handled=true, success=true, title=Official embed, thumbnailUrl=https://example.com/t.jpg, playerPageUrl=https://player.example.com/embed/42, sources=[], variants=[], audioTracks=[], tracks=[], followUpPages=[https://player.example.com/embed/42], errorCode=, errorMessage=)
+PASS | Resolver expands HLS | EngineResolveResult(handled=true, success=true, title=Pipeline sample, thumbnailUrl=, playerPageUrl=, sources=[MediaSource(label=HLS, url=https://cdn.example.com/master.m3u8, mimeType=application/vnd.apple.mpegurl, protocol=hls, width=0, height=0, bandwidth=0, codecs=, isDefault=true), MediaSource(label=720p ? 1.0 Mbps, url=https://cdn.example.com/720.m3u8, mimeType=application/vnd.apple.mpegurl, protocol=hls, width=1280, height=720, bandwidth=1000000, codecs=, isDefault=false), MediaSource(label=1080p ? 4.0 Mbps, url=https://cdn.example.com/1080.m3u8, mimeType=application/vnd.apple.mpegurl, protocol=hls, width=1920, height=1080, bandwidth=4000000, codecs=, isDefault=false)], variants=[MediaVariant(id=https://cdn.example.com/720.m3u8, label=720p ? 1.0 Mbps, mimeType=application/vnd.apple.mpegurl, codecs=, width=1280, height=720, bandwidth=1000000, isDefault=false), MediaVariant(id=https://cdn.example.com/1080.m3u8, label=1080p ? 4.0 Mbps, mimeType=application/vnd.apple.mpegurl, codecs=, width=1920, height=1080, bandwidth=4000000, isDefault=true)], audioTracks=[], tracks=[], followUpPages=[], errorCode=, errorMessage=)
+PASS | Resolver keeps HLS fallback | EngineResolveResult(handled=true, success=true, title=, thumbnailUrl=, playerPageUrl=, sources=[MediaSource(label=HLS, url=https://cdn.example.com/master.m3u8, mimeType=application/vnd.apple.mpegurl, protocol=hls, width=0, height=0, bandwidth=0, codecs=, isDefault=true)], variants=[], audioTracks=[], tracks=[], followUpPages=[], errorCode=, errorMessage=)
+PASS | Declarative CSS-lite | [EngineSearchItem(remoteId=42, watchPath=https://example.com/watch/42, title=Demo & Test, thumbnailUrl=https://example.com/img/42.jpg, durationText=03:14, viewsText=)]
+PASS | JSON API paths | [EngineSearchItem(remoteId=42, watchPath=https://api.example.com/watch/42, title=API item, thumbnailUrl=https://api.example.com/img/42.jpg, durationText=02:00, viewsText=)]
+PASS | Sosalkino catalog page | [EngineSearchItem(remoteId=demo_movie, watchPath=https://example.com/video/demo_movie, title=Demo Movie, thumbnailUrl=https://example.com/poster.jpg, durationText=10:00, viewsText=123)]
+PASS | WordPress REST | https://example.com/wp-json/wp/v2/search?search=demo&page=1&per_page=25 [EngineSearchItem(remoteId=9, watchPath=https://example.com/video/item, title=WordPress item, thumbnailUrl=, durationText=, viewsText=)]
+SUMMARY 21/21 passed
+
+=== STAGE 3 STATIC ===
+PASS | Version Stage3+
+PASS | Media3 stable supported
+PASS | Room 2.8.4 + KSP
+PASS | DataStore 1.2.1
+PASS | WorkManager 2.11.2
+PASS | WebKit 1.16.0
+PASS | Room favorites entity
+PASS | Room playback position entity
+PASS | Room persisted download queue
+PASS | Room does not destructively wipe user data
+PASS | Playback completion clears near-end position
+PASS | Four themes
+PASS | Persistent source enabled overrides
+PASS | Search respects source overrides
+PASS | WebView JS opt-in
+PASS | WebView file/content blocked
+PASS | WebView mixed content blocked
+PASS | WebView third party cookies blocked
+PASS | WebView no permission grants
+PASS | WebView TLS bypass forbidden
+PASS | WebView request host/DNS revalidation
+PASS | WebView serialized cookie isolation
+PASS | WebView cookie accept reset
+PASS | WebView bounded post-load settle
+PASS | JS fallback integrated only after normal resolver
+PASS | Progressive download HTTP Range resume
+PASS | Download uses secure streaming client
+PASS | Persistent partial file
+PASS | SAF CreateDocument destination
+PASS | Foreground download notification
+PASS | WorkManager unique resumable job
+PASS | Download concurrency setting enforced
+PASS | Adaptive offline status truthful
+PASS | PiP manifest + player
+PASS | Player persisted resume
+PASS | Player quality control
+PASS | Player audio language control
+PASS | Player subtitle control
+PASS | Media3 Auto clears language preferences
+PASS | Favorites usable screen
+PASS | Downloads usable screen
+PASS | Settings persisted
+PASS | No cleartext traffic
+SUMMARY 43/43 passed
+
+=== STAGE 4 EXECUTABLE ===
+PASS | 5 bundled package directories | me.fapaxi.pro, noodlemagazine.com, pornobomba.in, video-laba.click, x.fap-guru.pro
+PASS | bundled package me.fapaxi.pro | bundled_trusted 
+PASS | bundled package noodlemagazine.com | bundled_trusted 
+PASS | bundled package pornobomba.in | bundled_trusted 
+PASS | bundled package video-laba.click | bundled_trusted 
+PASS | bundled package x.fap-guru.pro | bundled_trusted 
+PASS | manifest create/verify | AdapterPackageInfo(valid=true, adapterId=example.com, version=1.0.0, publisher=harness, trustStatus=INTEGRITY_VERIFIED_UNSIGNED, errorCode=, errorMessage=, manifestPath=/tmp/noodle-manifest-6970455342125645067/snp-package.json)
+PASS | manifest detects tamper | SNP_PACKAGE_SIZE_MISMATCH
+PASS | manifest rejects unlisted file | SNP_PACKAGE_UNLISTED_FILE
+PASS | ZIP traversal blocked | SNP_IMPORT_PATH_UNSAFE
+PASS | ZIP duplicate path blocked | SNP_IMPORT_ENTRY_DUPLICATE
+PASS | snapshot history pruned to 5 | 5
+PASS | snapshot restore latest | /tmp/noodle-snapshot-15566734531804806649/adapters/_history/snap.example/20260811_044826_670_1_0_6
+PASS | snapshot compatibility gate
+PASS | Schema v2 -> v3 migration | AdapterMigrationResult(success=true, changed=true, adapterId=legacy.example, oldSchemaVersion=2, newSchemaVersion=3, snapshotPath=/tmp/noodle-migration-479250803173353784/adapters/_history/legacy.example/20260811_044826_700_1_0_0, errorCode=, message=Schema v2 -> v3.)
+PASS | migration snapshot created | /tmp/noodle-migration-479250803173353784/adapters/_history/legacy.example/20260811_044826_700_1_0_0
+PASS | migration candidate not leaked
+PASS | migration manifest rebuilt
+PASS | rejected update staging cleaned | SNP_UPDATE_NOT_NEWER
+PASS | staged update installed | AdapterInstallResult(success=true, adapterId=update.example, installedVersion=1.1.0, snapshotPath=/tmp/noodle-update-12148657817145509167/adapters/_history/update.example/20260811_044826_714_1_0_0, errorCode=, message=??????????? 1.1.0; ????????? semantic validation.)
+PASS | pending semantic marker
+PASS | failed semantic auto-rolls back | auto_rollback:/tmp/noodle-update-12148657817145509167/adapters/_history/update.example/20260811_044826_714_1_0_0 version=1.0.0
+PASS | successful semantic confirms update | confirmed:1.1.0
+PASS | compat current range
+PASS | compat rejects newer minimum
+PASS | source state persists
+SUMMARY 26/26 passed
+
+=== STAGE 4 STATIC ===
+PASS | Version Stage4+
+PASS | SNP compatibility level separated
+PASS | Store separates bundled/custom/history/updates
+PASS | Runtime discovery only bundled/custom
+PASS | Package format v1
+PASS | Package SHA256 only
+PASS | Manifest exact ID/version/publisher validation
+PASS | Manifest duplicate path rejection
+PASS | Manifest unlisted file rejection
+PASS | adapter.json must be listed
+PASS | Trust states retained
+PASS | ZIP max 16 MiB
+PASS | ZIP expanded max 32 MiB
+PASS | ZIP entry/count/ratio guards
+PASS | ZIP traversal guarded
+PASS | ZIP duplicate entry guarded
+PASS | Snapshots default retain 5
+PASS | Snapshot restore path policy
+PASS | Snapshot package integrity gate
+PASS | Snapshot adapter identity gate
+PASS | Snapshot compatibility gate
+PASS | Migration custom-only
+PASS | Migration sets Schema v3
+PASS | Migration adds engine dependencies
+PASS | Migration repair conservative defaults
+PASS | Migration snapshot before write
+PASS | Migration rebuilds manifest
+PASS | Update ZIP hash validation
+PASS | Update requires package manifest
+PASS | Update validates compatibility
+PASS | Update requires newer SemVer
+PASS | Update snapshot before swap
+PASS | Pending semantic marker
+PASS | Failed semantic rollback
+PASS | Successful semantic confirm
+PASS | Bundled copied as full asset tree
+PASS | Bundled manifest verified before activation
+PASS | Custom import rejects bundled collision
+PASS | Manifest synthesized for legacy import
+PASS | Custom import package + compatibility validation
+PASS | Custom replacement snapshots previous
+PASS | SAF ZIP import
+PASS | SAF ZIP export
+PASS | Imported custom source disabled by default
+PASS | Bundled remove prohibited
+PASS | Semantic chain search->playback
+PASS | Semantic minimum results errors
+PASS | Semantic completes pending update
+PASS | Fingerprint strips script/style contents
+PASS | Fingerprint first 1600 structural tags
+PASS | Fingerprint weighted score
+PASS | Fingerprint thresholds 12/35 percent
+PASS | Minor fingerprint updates baseline
+PASS | Major/critical preserve prior baseline
+PASS | Repair custom-only
+PASS | Repair selector relearn
+PASS | Repair resolver refresh
+PASS | Repair cannot expand allowed_hosts
+PASS | Repair candidate semantic validation
+PASS | Repair snapshot before runtime swap
+PASS | Breakage consecutive failure threshold
+PASS | Breakage degraded before threshold
+PASS | Breakage respects cooldown
+PASS | Breakage auto quarantine
+PASS | Update feed HTTPS/host policy
+PASS | Update package host policy
+PASS | Remote package limit 16 MiB
+PASS | Remote update SemVer comparison
+PASS | Source Center exposes lifecycle actions
+PASS | Source Center shows trust/package/history/pending
+PASS | Search uses runtime bundled+custom repo
+PASS | Background monitoring off by default
+PASS | Background interval default 24
+PASS | Background interval clamped 6..168
+PASS | Background requires network
+PASS | Unique periodic background work
+PASS | Background checks fingerprint+breakage
+PASS | Five bundled full packages | me.fapaxi.pro, noodlemagazine.com, pornobomba.in, video-laba.click, x.fap-guru.pro
+PASS | me.fapaxi.pro has adapter+manifest
+PASS | me.fapaxi.pro Stage9 min compatibility | 1.9.0
+PASS | noodlemagazine.com has adapter+manifest
+PASS | noodlemagazine.com Stage9 min compatibility | 1.9.0
+PASS | pornobomba.in has adapter+manifest
+PASS | pornobomba.in Stage9 min compatibility | 1.9.0
+PASS | video-laba.click has adapter+manifest
+PASS | video-laba.click Stage9 min compatibility | 1.9.0
+PASS | x.fap-guru.pro has adapter+manifest
+PASS | x.fap-guru.pro Stage9 min compatibility | 1.9.0
+SUMMARY 88/88 passed
+
+=== STAGE 5 EXECUTABLE ===
+PASS | trusted RSA-2048 key accepted
+PASS | short RSA key rejected
+PASS | leading-zero fake RSA-2048 rejected
+PASS | bad key id rejected
+PASS | bad exponent rejected
+PASS | trusted key registry round-trip
+PASS | signed catalog verifies
+PASS | invalid catalog entry filtered | VerifiedCatalog(name=Harness Catalog, publisher=Harness, keyId=harness-key, entries=[CatalogEntry(adapterId=demo.example, name=Demo, version=1.2.0, publisher=Harness, description=ok, packageUrl=https://cdn.example/demo.zip, sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, category=, homepage=, tags=[video, stable], minAppVersion=1.9.0, maxAppVersion=, compatible=true, compatibilityStatus=compatible)], rejectedEntries=1)
+PASS | catalog compatibility evaluated
+PASS | untrusted key rejected
+PASS | tampered payload rejected
+PASS | tampered signature rejected
+PASS | Adapter Studio detects WordPress | wordpress_rest
+PASS | Studio WordPress draft validates
+PASS | Adapter Studio declarative fallback | declarative_catalog
+PASS | Studio repeated selector learned | .video-card
+PASS | Studio data-src learned | data-src
+PASS | Studio declarative draft validates
+PASS | Studio rejects HTTP
+PASS | Studio defaults JS off
+PASS | Studio repair conservative
+PASS | diagnostics Authorization redacted | Authorization: <redacted>
+Cookie: <redacted>
+token=<redacted> access_token=<redacted> password:<redacted> https://x.test/?api_key=<redacted>&x=1
+PASS | diagnostics Cookie redacted | Authorization: <redacted>
+Cookie: <redacted>
+token=<redacted> access_token=<redacted> password:<redacted> https://x.test/?api_key=<redacted>&x=1
+PASS | diagnostics token redacted | Authorization: <redacted>
+Cookie: <redacted>
+token=<redacted> access_token=<redacted> password:<redacted> https://x.test/?api_key=<redacted>&x=1
+PASS | diagnostics password redacted | Authorization: <redacted>
+Cookie: <redacted>
+token=<redacted> access_token=<redacted> password:<redacted> https://x.test/?api_key=<redacted>&x=1
+PASS | diagnostics query secret redacted | Authorization: <redacted>
+Cookie: <redacted>
+token=<redacted> access_token=<redacted> password:<redacted> https://x.test/?api_key=<redacted>&x=1
+SUMMARY 26/26 passed
+
+=== STAGE 5 STATIC ===
+PASS | Version alpha5+
+PASS | Media3 stable supported
+PASS | Signed catalog model
+PASS | Trusted key algorithm restricted
+PASS | RSA actual bitLength >=2048
+PASS | RSA exponent restricted
+PASS | Catalog signature SHA256withRSA
+PASS | Catalog verifies signature before payload parse
+PASS | Untrusted key rejected
+PASS | Catalog signature failure rejected
+PASS | Catalog package URL HTTPS validation
+PASS | Catalog SHA256 format validation
+PASS | Catalog compatibility evaluated
+PASS | Built-in trusted keys asset
+PASS | Built-in keys immutable
+PASS | Trusted key user export excludes built-ins
+PASS | Marketplace HTTPS catalog only
+PASS | Marketplace catalog 2MiB bound
+PASS | Marketplace package 16MiB bound
+PASS | Marketplace verifies signed ZIP SHA
+PASS | Marketplace requires package manifest
+PASS | Marketplace package integrity gate
+PASS | Marketplace exact id/version/publisher binding
+PASS | Marketplace publisher takeover blocked
+PASS | Marketplace new source disabled
+PASS | Marketplace bundled update blocked
+PASS | Marketplace update uses snapshot pending pipeline
+PASS | Adapter Studio HTTPS only
+PASS | Adapter Studio WordPress detection
+PASS | Adapter Studio declarative fallback
+PASS | Adapter Studio JS/cookies default off
+PASS | Adapter Studio conservative repair
+PASS | Adapter Studio declares dependencies
+PASS | Adapter Studio generated draft validator
+PASS | Adapter Studio compatibility gate
+PASS | Adapter Studio bundled collision blocked
+PASS | Adapter Studio snapshots existing custom
+PASS | Adapter Studio package manifest+integrity
+PASS | Adapter Studio saved disabled
+PASS | Source Details contract
+PASS | Source UI exposes Marketplace+Studio
+PASS | Source UI exposes Trusted Keys
+PASS | Source UI exposes permissions/details
+PASS | Tool VM imports/exports keys
+PASS | Diagnostics sanitizer headers
+PASS | Diagnostics sanitizer token/password/api key
+PASS | Diagnostics ZIP created
+PASS | Diagnostics includes source state
+PASS | Diagnostics runs 15 engine self-test
+PASS | Diagnostics package integrity checks
+PASS | Settings exports diagnostics through SAF
+PASS | Media3 DownloadService declared
+PASS | Adaptive offline Media3 DownloadRequest
+PASS | Adaptive MIME HLS+DASH
+PASS | Adaptive no old not-enabled sentinel
+PASS | Adaptive Pause uses stop reason
+PASS | Adaptive Resume clears stop reason
+PASS | Adaptive failed retry re-adds request
+PASS | Adaptive Cancel/Remove removes Media3 download
+PASS | Media3 shared SimpleCache
+PASS | Media3 persistent DownloadIndex
+PASS | Media3 custom DownloaderFactory
+PASS | Adaptive request policy in DownloadRequest.data
+PASS | Adaptive policy decode fail-closed
+PASS | Adaptive policy preserves HTTP/cookies
+PASS | Media3 upstream uses SecureHttpClient
+PASS | Secure cookies shared by source across layers
+PASS | Player reads same offline cache
+PASS | Playback cache is read-only
+PASS | Download cache writable for downloader
+PASS | Media3 download progress synced to Room
+PASS | Download queue keeps unified Room states
+PASS | Room stores allowHttp
+PASS | Room migration 1->2 non-destructive
+PASS | Progressive worker preserves allowHttp
+PASS | Parallel setting propagated to Media3
+PASS | Download notification resources
+PASS | Downloads UI claims real adaptive backend
+SUMMARY 78/78 passed
+
+=== STAGE 6 EXECUTABLE ===
+PASS | Auto width unlimited
+PASS | Auto height unlimited
+PASS | Auto label
+PASS | Auto subtitles disabled
+PASS | Invalid width clamps
+PASS | Invalid height clamps
+PASS | Label trimmed
+PASS | Audio language trimmed
+PASS | Text language trimmed
+PASS | Subtitle flag preserved
+PASS | Summary quality
+PASS | Summary audio
+PASS | Summary subtitles
+PASS | Off summary
+PASS | Auto subtitle summary
+SUMMARY 15/15 passed
+
+=== STAGE 6 STATIC ===
+PASS | Stage6+ version
+PASS | Media3 stable 1.11.0
+PASS | compile/target API37
+PASS | instrumentation runner
+PASS | instrumentation dep androidx.test:core-ktx:1.7.0
+PASS | instrumentation dep androidx.test.ext:junit:1.3.0
+PASS | instrumentation dep androidx.test:runner:1.7.0
+PASS | instrumentation dep androidx.test.espresso:espresso-core:3.7.0
+PASS | instrumentation dep ui-test-junit4
+PASS | instrumentation dep room-testing
+PASS | DownloadHelper Factory used
+PASS | DownloadHelper data source is policy-aware
+PASS | DownloadHelper prepares asynchronously
+PASS | No deprecated forMediaItem
+PASS | Track max video selection
+PASS | Offline selection forces one highest representation within bounds
+PASS | Preferred audio selection
+PASS | Subtitles can be disabled
+PASS | Preferred subtitle language
+PASS | Selected streamKeys preserved in request
+PASS | Policy bytes attached by planner
+PASS | Planner releases helper success/error/cancel
+PASS | Selection core is platform-neutral
+PASS | Selection clamps invalid dimensions
+PASS | Selection summary includes subtitle state
+PASS | Adaptive enqueue always uses planner
+PASS | Adaptive selection metadata stored
+PASS | Failed resume preserves original Media3 request
+PASS | Failed resume has deterministic replan fallback
+PASS | Progressive SAF behavior retained
+PASS | Room database version3
+PASS | Room non-destructive migration 2->3
+PASS | Room v3 column thumbnailUrl
+PASS | Room v3 column protocol
+PASS | Room v3 column videoSelectionLabel
+PASS | Room v3 column videoMaxWidth
+PASS | Room v3 column videoMaxHeight
+PASS | Room v3 column audioSelectionLanguage
+PASS | Room v3 column textSelectionLanguage
+PASS | Room v3 column includeSubtitles
+PASS | Completed library DAO
+PASS | Strict offline cache has no upstream
+PASS | Strict offline cache cannot write
+PASS | DownloadHelper upstream uses SecureHttpClient
+PASS | Runtime user agent current
+PASS | Media3 request can be recovered from DownloadIndex
+PASS | MediaDownloadRuntime constructs holder on main looper
+PASS | DownloadManager access is main-thread guarded
+PASS | DownloadIndex recovery separates main init from IO read
+PASS | Offline repository requires completed state
+PASS | Offline adaptive request recovery
+PASS | Offline progressive URI recovery
+PASS | Offline adaptive playback uses DownloadHelper createMediaSource
+PASS | Offline adaptive playback uses strict cache
+PASS | Offline player supports progressive local URI
+PASS | Offline player releases ExoPlayer
+PASS | Offline player surfaces strict-cache playback errors
+PASS | Player opens adaptive selection dialog
+PASS | Player persists download thumbnail
+PASS | Download dialog exposes quality/audio/subtitles
+PASS | Download dialog produces selection constraints
+PASS | Downloads VM exposes completed library
+PASS | Downloads VM exposes offline playback state
+PASS | Main shell hides nav for offline player
+PASS | Downloads UI has Queue/Library switch
+PASS | Completed items can be opened
+PASS | Downloads UI shows adaptive selection metadata
+PASS | Cleartext disabled in manifest
+PASS | Media3 service remains non-exported
+PASS | instrumentation source DatabaseInstrumentedTest.kt
+PASS | instrumentation source DownloadPolicyInstrumentedTest.kt
+PASS | instrumentation source MainActivitySmokeTest.kt
+PASS | DB instrumentation checks selection metadata
+PASS | Policy instrumentation corrupt decode fail closed
+PASS | Compose smoke launches MainActivity
+SUMMARY 75/75 passed
+
+=== STAGE 7 EXECUTABLE ===
+PASS | alpha7 version
+PASS | AGP 9.3.1
+PASS | AGP built-in Kotlin
+PASS | KGP 2.4.10 pinned
+PASS | KSP 2.3.11
+PASS | API 37
+PASS | Gradle 9.5.1 wrapper
+PASS | Gradle wrapper SHA256 pinned
+PASS | Media3 stable 1.11.0
+PASS | Adaptive manager bridge to main
+PASS | DownloadHelper main bridge
+PASS | DownloadHelper renderers
+PASS | Current TrackSelectionParameters builder
+PASS | Single best offline representation
+PASS | WorkManagerScheduler enabled
+PASS | Media3 workmanager artifact
+PASS | Scheduler restart manifest
+PASS | Scheduler service remains non-exported
+PASS | Thread-affinity instrumentation
+SUMMARY 19/19 passed
+
+=== STAGE 7 STATIC ===
+PASS | alpha7 version
+PASS | compileSdk/targetSdk API37
+PASS | minSdk 28 retained
+PASS | AGP 9.3.1
+PASS | AGP9 built-in Kotlin: no kotlin-android plugin
+PASS | KGP 2.4.10 pin
+PASS | Compose compiler plugin 2.4.10
+PASS | KSP 2.3.11
+PASS | Room KSP schema output retained
+PASS | Gradle wrapper 9.5.1
+PASS | Gradle distribution SHA256 pinned
+PASS | Wrapper distribution validation on
+PASS | Core KTX 1.19.0
+PASS | Lifecycle ViewModel KTX explicit
+PASS | Media3 1.11.0 across runtime artifacts
+PASS | Media3 WorkManager scheduler artifact
+PASS | Room 2.8.4 retained
+PASS | DataStore 1.2.1 retained
+PASS | WorkManager 2.11.2 retained
+PASS | Coroutines Android 1.10.2 retained
+PASS | Adaptive enqueue main-thread manager bridge
+PASS | Planner enters main looper before helper/runtime access
+PASS | DownloadHelper uses DefaultRenderersFactory
+PASS | DownloadHelper stays policy-aware
+PASS | Nondeprecated TrackSelectionParameters builder
+PASS | Offline selection one highest supported representation
+PASS | Audio/subtitle offline selection retained
+PASS | DownloadHelper stream keys retained
+PASS | Planner release on success/error/cancel
+PASS | DownloadManager construction main-looper fail-fast
+PASS | DownloadManager access fail-fast
+PASS | DownloadIndex IO separated after main init
+PASS | Settings manager call originates from viewModelScope/main
+PASS | DownloadService uses WorkManagerScheduler
+PASS | Unique scheduler work name
+PASS | Scheduler restart action declared
+PASS | Scheduler restart DEFAULT category declared
+PASS | DownloadService dataSync FGS retained
+PASS | FGS permissions retained
+PASS | DownloadService non-exported
+PASS | Cleartext disabled
+PASS | Thread affinity instrumentation exists
+PASS | Instrumentation asserts main application looper
+PASS | Instrumentation exercises IO failure
+PASS | Instrumentation checks fail-fast code
+PASS | Legacy instrumentation retained DatabaseInstrumentedTest.kt
+PASS | Legacy instrumentation retained DownloadPolicyInstrumentedTest.kt
+PASS | Legacy instrumentation retained MainActivitySmokeTest.kt
+PASS | Strict offline cache no upstream
+PASS | Strict offline cache no writer
+PASS | Adaptive upstream uses SecureHttpClient
+PASS | Download request policy codec fail-closed hook retained
+PASS | Current Media3 user agent alpha7
+PASS | Build check exists
+PASS | Build check probes API37
+PASS | Gradlew scripts retained
+PASS | Wrapper properties retained
+SUMMARY 57/57 passed
+
+=== KOTLIN SYNTAX SMOKE ===
+PASS | Kotlin parser syntax smoke
+kotlinc exit=1 is expected without Android/AndroidX/OkHttp classpath; no parser-level syntax errors were detected.
+
+=== SUMMARY ===
+Portable core: 29 PASS
+Stage 2: 21/21 PASS
+Stage 3: 43/43 PASS
+Stage 4 executable: 26/26 PASS
+Stage 4 static: 88/88 PASS
+Stage 5 executable: 26/26 PASS
+Stage 5 static: 78/78 PASS
+Stage 6 executable: 15/15 PASS
+Stage 6 static: 75/75 PASS
+Stage 7 executable: 19/19 PASS
+Stage 7 static: 57/57 PASS
+Named checks total: 477 PASS
+Kotlin parser smoke: PASS
