@@ -16,25 +16,33 @@ class RelatedVideosRepository(
     private val search = BundledSearchRepository(context.applicationContext, http)
     private val thumbnailCache = ConcurrentHashMap<String, Bitmap>()
     private val thumbnailMisses = ConcurrentHashMap.newKeySet<String>()
+    private val relatedCache = ConcurrentHashMap<String, List<VideoItem>>()
 
-    suspend fun load(current: VideoItem, limit: Int = 16): List<VideoItem> {
+    suspend fun load(current: VideoItem, limit: Int = 8): List<VideoItem> {
+        val cacheKey = current.watchUrl.ifBlank { current.id }.lowercase()
+        relatedCache[cacheKey]?.let { return it.take(limit.coerceIn(4, 12)) }
+
         val query = relatedQuery(current)
         if (query.isBlank()) return emptyList()
 
-        val batch = search.search(query, maxPerSource = limit.coerceIn(8, 24))
+        // Watch page must not repeat a heavy search across every enabled SNP. The current
+        // source is the closest equivalent to the site's own related/recommended section.
+        val batch = search.searchSameSource(
+            video = current,
+            query = query,
+            maxPerSource = limit.coerceIn(4, 12),
+        )
         val currentKey = current.watchUrl.lowercase()
-        val sameSource = current.sourceBaseUrl.lowercase()
-
-        return batch.items
+        val result = batch.items
             .asSequence()
             .filter { it.watchUrl.isNotBlank() && it.watchUrl.lowercase() != currentKey }
             .distinctBy { "${it.sourceBaseUrl}|${it.remoteId}|${it.watchUrl}".lowercase() }
-            .sortedWith(
-                compareByDescending<VideoItem> { it.sourceBaseUrl.lowercase() == sameSource }
-                    .thenByDescending { relevanceScore(current, it) },
-            )
-            .take(limit.coerceIn(4, 24))
+            .sortedByDescending { relevanceScore(current, it) }
+            .take(limit.coerceIn(4, 12))
             .toList()
+
+        if (result.isNotEmpty()) relatedCache[cacheKey] = result
+        return result
     }
 
     suspend fun loadThumbnail(video: VideoItem): Bitmap? {
@@ -48,10 +56,10 @@ class RelatedVideosRepository(
             policy = NetworkPolicy(
                 allowedHosts = adapter.allowedHosts,
                 allowCookies = adapter.allowCookies,
-                maxResponseBytes = 3 * 1024 * 1024,
+                maxResponseBytes = 1536 * 1024,
             ),
             sourceKey = adapter.id,
-            accept = "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.5",
+            accept = "image/avif,image/webp,image/apng,image/*,*/*;q=0.5",
             referer = adapter.baseUrl,
         )
         if (!result.success || result.bytes.isEmpty()) {
@@ -72,7 +80,7 @@ class RelatedVideosRepository(
             .map { it.trim() }
             .filter { it.length >= 3 }
             .distinctBy { it.lowercase() }
-            .take(5)
+            .take(4)
         if (tags.isNotEmpty()) return tags.joinToString(" ")
 
         val stop = setOf(
@@ -84,7 +92,7 @@ class RelatedVideosRepository(
             .map { it.value }
             .filter { it.length >= 3 && it !in stop }
             .distinct()
-            .take(6)
+            .take(4)
             .joinToString(" ")
     }
 
