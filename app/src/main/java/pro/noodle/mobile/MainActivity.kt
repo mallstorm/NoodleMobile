@@ -14,7 +14,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import pro.noodle.mobile.core.selftest.CoreSelfTest
@@ -30,15 +32,63 @@ import pro.noodle.mobile.ui.player.OfflinePlayerScreen
 import pro.noodle.mobile.ui.player.PlayerScreen
 import pro.noodle.mobile.ui.search.NoodleSearchScreen
 import pro.noodle.mobile.ui.search.SearchViewModel
+import pro.noodle.mobile.ui.security.AppLockGate
+import pro.noodle.mobile.ui.security.AppLockSettingsCard
 import pro.noodle.mobile.ui.sources.SourceCenterScreen
 
 class MainActivity : ComponentActivity() {
+    private var relockCallback: (() -> Unit)? = null
+
+    override fun onStop() {
+        super.onStop()
+        relockCallback?.invoke()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             val vm: SettingsViewModel = viewModel()
             val settings by vm.settings.collectAsState()
-            NoodleTheme(settings.theme) { NoodleApp(vm) }
+            val settingsLoaded by vm.settingsLoaded.collectAsState()
+            var lockInitialized by remember { mutableStateOf(false) }
+            var unlocked by remember { mutableStateOf(false) }
+
+            LaunchedEffect(settingsLoaded) {
+                if (settingsLoaded && !lockInitialized) {
+                    unlocked = settings.lockMode == "none"
+                    lockInitialized = true
+                }
+            }
+            LaunchedEffect(settings.lockMode) {
+                if (settings.lockMode == "none") unlocked = true
+            }
+            DisposableEffect(settings.lockMode) {
+                relockCallback = if (settings.lockMode == "none") null else ({ unlocked = false })
+                onDispose { relockCallback = null }
+            }
+
+            NoodleTheme(settings.theme) {
+                if (!settingsLoaded) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                } else {
+                    val baseDensity = LocalDensity.current
+                    val scale = 0.90f * (settings.uiScalePercent / 100f)
+                    CompositionLocalProvider(
+                        LocalDensity provides Density(
+                            density = baseDensity.density * scale,
+                            fontScale = baseDensity.fontScale * scale,
+                        ),
+                    ) {
+                        if (settings.lockMode == "none" || unlocked) {
+                            NoodleApp(vm)
+                        } else {
+                            AppLockGate(settings) { unlocked = true }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -357,7 +407,7 @@ private fun MoreScreen(settingsVm: SettingsViewModel) {
                 ElevatedCard(onClick = { page = MorePage.SETTINGS }, modifier = Modifier.fillMaxWidth()) {
                     ListItem(
                         headlineContent = { Text("Настройки") },
-                        supportingContent = { Text("Тема, загрузки, мониторинг и диагностика") },
+                        supportingContent = { Text("Тема, масштаб, защита, загрузки и диагностика") },
                         leadingContent = { Icon(Icons.Outlined.Settings, null, tint = MaterialTheme.colorScheme.tertiary) },
                         trailingContent = { Icon(Icons.Outlined.ChevronRight, null) },
                     )
@@ -401,6 +451,34 @@ private fun SettingsScreen(vm: SettingsViewModel) {
                             )
                         }
                     }
+
+                    HorizontalDivider()
+                    Text("Масштаб интерфейса: ${settings.uiScalePercent}%", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "100% теперь соответствует 90% размера прежнего интерфейса.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Slider(
+                        value = settings.uiScalePercent.toFloat(),
+                        onValueChange = { raw ->
+                            val value = when {
+                                raw >= 95f -> 100
+                                raw >= 85f -> 90
+                                else -> 80
+                            }
+                            vm.uiScale(value)
+                        },
+                        valueRange = 80f..100f,
+                        steps = 1,
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("80%", style = MaterialTheme.typography.labelSmall)
+                        Text("90%", style = MaterialTheme.typography.labelSmall)
+                        Text("100%", style = MaterialTheme.typography.labelSmall)
+                    }
+
+                    HorizontalDivider()
                     Text("Параллельных загрузок: ${settings.parallelDownloads}")
                     Slider(
                         settings.parallelDownloads.toFloat(),
@@ -428,6 +506,9 @@ private fun SettingsScreen(vm: SettingsViewModel) {
                     }
                 }
             }
+        }
+        item {
+            AppLockSettingsCard(settings, vm::setLock)
         }
         item {
             HorizontalDivider()
