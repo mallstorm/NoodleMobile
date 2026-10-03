@@ -99,7 +99,9 @@ object MediaDownloadRuntime {
 
         fun upstreamFactory(policy: NetworkPolicy, sourceKey: String): DataSource.Factory {
             val client = SecureHttpClient().streamingClient(policy, sourceKey)
-            return OkHttpDataSource.Factory(client).setUserAgent("${BuildIdentity.USER_AGENT} Media3")
+            // Keep the exact same User-Agent that was used to obtain signed media URLs.
+            // Some CDNs bind short-lived signatures to the request fingerprint.
+            return OkHttpDataSource.Factory(client).setUserAgent(BuildIdentity.USER_AGENT)
         }
 
         fun cacheFactory(policy: NetworkPolicy, sourceKey: String, readOnly: Boolean): CacheDataSource.Factory {
