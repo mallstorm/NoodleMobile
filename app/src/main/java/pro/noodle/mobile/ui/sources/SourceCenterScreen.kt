@@ -17,7 +17,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import pro.noodle.mobile.core.catalog.CatalogEntry
 import pro.noodle.mobile.core.catalog.TrustedCatalogKey
-import pro.noodle.mobile.core.engine.EngineRegistry
 import pro.noodle.mobile.core.source.AdapterSnapshotInfo
 import pro.noodle.mobile.core.source.SourceCenterItem
 import pro.noodle.mobile.core.source.SourceDetails
@@ -51,18 +50,10 @@ fun SourceCenterScreen(
 
     Column(Modifier.fillMaxSize()) {
         Row(
-            Modifier.fillMaxWidth().padding(12.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Column(Modifier.weight(1f)) {
-                Text("Центр источников", style = MaterialTheme.typography.titleLarge)
-                Text(
-                    "${state.adapters.size} SNP • ${EngineRegistry.knownEngineIds.size} engines",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
             FilledTonalButton(onClick = { showMarketplace = true }) {
                 Icon(Icons.Outlined.Storefront, null)
                 Spacer(Modifier.width(5.dp))
@@ -73,6 +64,7 @@ fun SourceCenterScreen(
                 Spacer(Modifier.width(5.dp))
                 Text("Studio")
             }
+            Spacer(Modifier.weight(1f))
             IconButton(
                 onClick = { importer.launch(arrayOf("application/zip", "application/octet-stream")) },
                 enabled = state.busyId.isBlank(),
@@ -92,8 +84,8 @@ fun SourceCenterScreen(
 
         LazyColumn(
             Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(state.adapters, key = { it.adapterId }) { item ->
                 SourceCard(
@@ -163,13 +155,13 @@ private fun SourceCard(
 ) {
     var menu by remember { mutableStateOf(false) }
     ElevatedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     if (item.packageError.isBlank() && item.compatible) Icons.Outlined.CheckCircle else Icons.Outlined.Warning,
                     null,
                 )
-                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(9.dp))
                 Column(Modifier.weight(1f)) {
                     Text(item.name, fontWeight = FontWeight.SemiBold)
                     Text("${item.adapterId} • ${item.version} • schema ${item.schemaVersion}", style = MaterialTheme.typography.bodySmall)
