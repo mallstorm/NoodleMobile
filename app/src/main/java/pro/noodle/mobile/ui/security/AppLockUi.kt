@@ -3,7 +3,6 @@ package pro.noodle.mobile.ui.security
 import android.content.Context
 import android.content.pm.PackageManager
 import android.hardware.biometrics.BiometricPrompt
-import android.hardware.fingerprint.FingerprintManager
 import android.os.CancellationSignal
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -151,7 +150,7 @@ fun AppLockSettingsCard(settings: AppSettings, onSetLock: (String, String) -> Un
                     selected = settings.lockMode == "biometric",
                     onClick = {
                         if (biometricAvailable(context)) onSetLock("biometric", "")
-                        else setupError = "На устройстве нет настроенного отпечатка пальца"
+                        else setupError = "На устройстве не найден сканер отпечатка пальца"
                     },
                     label = { Text("Палец") },
                 )
@@ -313,15 +312,12 @@ private fun PatternPad(onPattern: (String) -> Unit) {
     }
 }
 
-private fun biometricAvailable(context: Context): Boolean {
-    if (!context.packageManager.hasSystemFeature(PackageManager.FEATURE_FINGERPRINT)) return false
-    val fm = context.getSystemService(FingerprintManager::class.java) ?: return false
-    return runCatching { fm.isHardwareDetected && fm.hasEnrolledFingerprints() }.getOrDefault(false)
-}
+private fun biometricAvailable(context: Context): Boolean =
+    context.packageManager.hasSystemFeature(PackageManager.FEATURE_FINGERPRINT)
 
 private fun showBiometricPrompt(context: Context, onSuccess: () -> Unit, onError: (String) -> Unit) {
     if (!biometricAvailable(context)) {
-        onError("Отпечаток пальца не настроен")
+        onError("Сканер отпечатка пальца не найден")
         return
     }
     val executor = context.mainExecutor
