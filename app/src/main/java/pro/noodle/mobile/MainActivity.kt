@@ -407,7 +407,7 @@ private fun MoreScreen(settingsVm: SettingsViewModel) {
                 ElevatedCard(onClick = { page = MorePage.SETTINGS }, modifier = Modifier.fillMaxWidth()) {
                     ListItem(
                         headlineContent = { Text("Настройки") },
-                        supportingContent = { Text("Тема, масштаб, защита, загрузки и диагностика") },
+                        supportingContent = { Text("Тема, масштаб, плеер, защита, загрузки и диагностика") },
                         leadingContent = { Icon(Icons.Outlined.Settings, null, tint = MaterialTheme.colorScheme.tertiary) },
                         trailingContent = { Icon(Icons.Outlined.ChevronRight, null) },
                     )
@@ -491,6 +491,30 @@ private fun SettingsScreen(vm: SettingsViewModel) {
                         Spacer(Modifier.width(8.dp))
                         Text("Запоминать позицию воспроизведения")
                     }
+
+                    HorizontalDivider()
+                    Text("Похожие видео", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Вид рекомендаций под плеером. По умолчанию используется плотная сетка в две колонки.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = settings.relatedVideosColumns == 1,
+                            onClick = { vm.relatedVideosColumns(1) },
+                            leadingIcon = { Icon(Icons.Outlined.ViewList, null) },
+                            label = { Text("1 колонка") },
+                        )
+                        FilterChip(
+                            selected = settings.relatedVideosColumns != 1,
+                            onClick = { vm.relatedVideosColumns(2) },
+                            leadingIcon = { Icon(Icons.Outlined.GridView, null) },
+                            label = { Text("2 колонки") },
+                        )
+                    }
+
+                    HorizontalDivider()
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Switch(settings.backgroundMonitoring, vm::background)
                         Spacer(Modifier.width(8.dp))
