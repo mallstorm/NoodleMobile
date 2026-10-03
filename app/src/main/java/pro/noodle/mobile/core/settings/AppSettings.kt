@@ -18,6 +18,7 @@ data class AppSettings(
     val lockMode: String = "none",
     val lockSalt: String = "",
     val lockHash: String = "",
+    val followedSources: Set<String> = emptySet(),
 )
 
 class AppSettingsRepository(private val context: Context) {
@@ -31,6 +32,7 @@ class AppSettingsRepository(private val context: Context) {
         val lockMode = stringPreferencesKey("lock_mode")
         val lockSalt = stringPreferencesKey("lock_salt")
         val lockHash = stringPreferencesKey("lock_hash")
+        val followedSources = stringSetPreferencesKey("followed_sources")
     }
 
     val settings: Flow<AppSettings> = context.noodleSettingsStore.data.map { p ->
@@ -50,6 +52,7 @@ class AppSettingsRepository(private val context: Context) {
             lockMode = p[Keys.lockMode] ?: "none",
             lockSalt = p[Keys.lockSalt] ?: "",
             lockHash = p[Keys.lockHash] ?: "",
+            followedSources = p[Keys.followedSources] ?: emptySet(),
         )
     }
 
@@ -69,5 +72,10 @@ class AppSettingsRepository(private val context: Context) {
         it[Keys.lockMode] = mode
         if (salt.isBlank()) it.remove(Keys.lockSalt) else it[Keys.lockSalt] = salt
         if (hash.isBlank()) it.remove(Keys.lockHash) else it[Keys.lockHash] = hash
+    }
+    suspend fun setSourceFollowed(sourceKey: String, followed: Boolean) = context.noodleSettingsStore.edit { p ->
+        val next = (p[Keys.followedSources] ?: emptySet()).toMutableSet()
+        if (followed) next += sourceKey else next -= sourceKey
+        p[Keys.followedSources] = next
     }
 }
