@@ -37,30 +37,36 @@ import pro.noodle.mobile.core.download.DownloadRepository
 import pro.noodle.mobile.core.download.MediaDownloadRuntime
 import pro.noodle.mobile.core.model.MediaSource
 import pro.noodle.mobile.core.model.VideoItem
+import pro.noodle.mobile.core.network.SecureHttpClient
+import pro.noodle.mobile.core.player.PlaybackRepository
 import pro.noodle.mobile.core.player.PlaybackSession
+import pro.noodle.mobile.core.search.BundledSearchRepository
 import pro.noodle.mobile.core.settings.AppSettings
 import pro.noodle.mobile.core.settings.AppSettingsRepository
 import pro.noodle.mobile.core.storage.UserMediaRepository
 
 @OptIn(UnstableApi::class, ExperimentalMaterial3Api::class)
 @Composable
-fun PlayerScreen(
-    session: PlaybackSession,
-    streamingClient: OkHttpClient,
-    onBack: () -> Unit,
-    onOpenRelated: (VideoItem) -> Unit = {},
-) {
+fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val activity = context.findActivity()
-    val video = session.video
+    var activeSession by remember(session.sourceKey, session.video.id, session.video.watchUrl) { mutableStateOf(session) }
+    val video = activeSession.video
     val key = video.favoriteKey.ifBlank { video.id.ifBlank { video.watchUrl } }
     val userRepo = remember { UserMediaRepository(context.applicationContext) }
     val downloadRepo = remember { DownloadRepository(context.applicationContext) }
     val settingsRepo = remember { AppSettingsRepository(context.applicationContext) }
+    val resolverHttp = remember { SecureHttpClient() }
+    val playbackRepo = remember { PlaybackRepository(context.applicationContext, resolverHttp) }
+    val searchRepo = remember { BundledSearchRepository(context.applicationContext, resolverHttp) }
     val appSettings by remember { settingsRepo.settings }.collectAsState(initial = AppSettings())
     val ioScope = remember { CoroutineScope(SupervisorJob() + Dispatchers.IO) }
     val isFavorite by remember(key) { userRepo.isFavorite(key) }.collectAsState(initial = false)
-    val isFollowed = session.sourceKey in appSettings.followedSources
+    val isFollowed = activeSession.sourceKey in appSettings.followedSources
+
+    DisposableEffect(Unit) {
+        onDispose { ioScope.cancel() }
+    }
 
     var message by remember { mutableStateOf("") }
     var fullscreen by remember { mutableStateOf(false) }
@@ -85,8 +91,8 @@ fun PlayerScreen(
                 downloadRepo.enqueue(
                     video.title,
                     src,
-                    session.networkPolicy,
-                    session.sourceKey,
+                    activeSession.networkPolicy,
+                    activeSession.sourceKey,
                     uri.toString(),
                     video.thumbnailUrl,
                 )
@@ -108,11 +114,11 @@ fun PlayerScreen(
         return
     }
 
-    val player = remember(video.id, streamingClient, session.sourceKey) {
+    val player = remember(video.id, streamingClient, activeSession.sourceKey, source.url) {
         val factory = MediaDownloadRuntime.cacheDataSourceFactory(
             context.applicationContext,
-            session.networkPolicy,
-            session.sourceKey,
+            activeSession.networkPolicy,
+            activeSession.sourceKey,
         )
         ExoPlayer.Builder(context)
             .setMediaSourceFactory(DefaultMediaSourceFactory(factory))
@@ -178,11 +184,8 @@ fun PlayerScreen(
             val pos = player.currentPosition.coerceAtLeast(0)
             val dur = player.duration.takeIf { it > 0 && it != C.TIME_UNSET } ?: 0L
             player.release()
-            ioScope.launch {
-                if (appSettings.rememberPlaybackPosition) {
-                    runCatching { userRepo.savePlaybackPosition(key, pos, dur) }
-                }
-                ioScope.cancel()
+            if (appSettings.rememberPlaybackPosition) {
+                ioScope.launch { runCatching { userRepo.savePlaybackPosition(key, pos, dur) } }
             }
         }
     }
@@ -207,6 +210,29 @@ fun PlayerScreen(
         context.startActivity(Intent.createChooser(intent, "Поделиться видео"))
     }
 
+    fun openRelated(candidate: VideoItem) {
+        message = ""
+        ioScope.launch {
+            val adapter = searchRepo.adapterFor(candidate)
+            if (adapter == null) {
+                withContext(Dispatchers.Main) { message = "SNP источника не найден." }
+                return@launch
+            }
+            userRepo.saveHistory(candidate, 0L, 0L)
+            val result = playbackRepo.resolve(candidate, adapter)
+            withContext(Dispatchers.Main) {
+                if (result.success && result.session != null) {
+                    activeSession = result.session
+                    fullscreen = false
+                    showPlaybackSettings = false
+                    message = ""
+                } else {
+                    message = "${result.errorCode}: ${result.errorMessage}"
+                }
+            }
+        }
+    }
+
     if (showAdaptiveDownloadDialog) {
         AdaptiveDownloadDialog(
             video = video,
@@ -220,8 +246,8 @@ fun PlayerScreen(
                     downloadRepo.enqueue(
                         video.title,
                         source,
-                        session.networkPolicy,
-                        session.sourceKey,
+                        activeSession.networkPolicy,
+                        activeSession.sourceKey,
                         thumbnailUrl = video.thumbnailUrl,
                         adaptiveSelection = selection,
                     )
@@ -352,12 +378,12 @@ fun PlayerScreen(
                         }
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(video.sourceName.ifBlank { session.sourceKey }, fontWeight = FontWeight.SemiBold)
-                            Text(session.sourceKey, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(video.sourceName.ifBlank { activeSession.sourceKey }, fontWeight = FontWeight.SemiBold)
+                            Text(activeSession.sourceKey, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         FilledTonalButton(
                             onClick = {
-                                ioScope.launch { settingsRepo.setSourceFollowed(session.sourceKey, !isFollowed) }
+                                ioScope.launch { settingsRepo.setSourceFollowed(activeSession.sourceKey, !isFollowed) }
                             },
                             colors = ButtonDefaults.filledTonalButtonColors(
                                 containerColor = if (isFollowed) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.primaryContainer,
@@ -411,7 +437,7 @@ fun PlayerScreen(
                     onColumnsChange = { columns ->
                         ioScope.launch { settingsRepo.setRelatedVideosColumns(columns) }
                     },
-                    onOpen = onOpenRelated,
+                    onOpen = ::openRelated,
                 )
             }
         }
