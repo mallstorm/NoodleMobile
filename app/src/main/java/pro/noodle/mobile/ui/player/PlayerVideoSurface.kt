@@ -1,6 +1,7 @@
 package pro.noodle.mobile.ui.player
 
 import android.app.PictureInPictureParams
+import android.content.res.Configuration
 import android.os.Build
 import android.util.Rational
 import android.view.ViewGroup
@@ -15,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.C
@@ -41,6 +43,20 @@ internal fun PlayerVideoSurface(
     var isPlaying by remember { mutableStateOf(false) }
     var scrubbing by remember { mutableStateOf(false) }
     var scrubPosition by remember { mutableLongStateOf(0L) }
+
+    // React only to a real orientation change. This keeps the manual fullscreen button usable
+    // in portrait while still making landscape enter fullscreen and portrait leave it.
+    val orientation = LocalConfiguration.current.orientation
+    var previousOrientation by remember { mutableIntStateOf(orientation) }
+    LaunchedEffect(orientation) {
+        if (orientation != previousOrientation) {
+            when (orientation) {
+                Configuration.ORIENTATION_LANDSCAPE -> if (!fullscreen) onToggleFullscreen()
+                Configuration.ORIENTATION_PORTRAIT -> if (fullscreen) onToggleFullscreen()
+            }
+            previousOrientation = orientation
+        }
+    }
 
     LaunchedEffect(player) {
         while (isActive) {
@@ -78,8 +94,6 @@ internal fun PlayerVideoSurface(
             modifier = Modifier.fillMaxSize(),
         )
 
-        // Always keep a Compose hit target above the Android PlayerView. Without this layer
-        // PlayerView can consume the first touch and the custom controls may never reappear.
         Box(
             Modifier
                 .fillMaxSize()
@@ -197,14 +211,14 @@ internal fun PlayerVideoSurface(
                     }
                 }
 
-                // Timeline belongs to the lower edge of the video, never to its centre.
-                Box(Modifier.fillMaxWidth().height(28.dp)) {
+                // Compact YouTube-like timeline at the very bottom edge of the video.
+                Box(Modifier.fillMaxWidth().height(20.dp)) {
                     if (durationMs > 0L && bufferedMs > 0L) {
                         LinearProgressIndicator(
                             progress = { (bufferedMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) },
-                            modifier = Modifier.fillMaxWidth().height(3.dp).align(Alignment.Center),
-                            color = Color.White.copy(alpha = .38f),
-                            trackColor = Color.White.copy(alpha = .16f),
+                            modifier = Modifier.fillMaxWidth().height(2.dp).align(Alignment.Center),
+                            color = Color.White.copy(alpha = .36f),
+                            trackColor = Color.White.copy(alpha = .14f),
                         )
                     }
                     Slider(
@@ -220,7 +234,7 @@ internal fun PlayerVideoSurface(
                             scrubbing = false
                         },
                         valueRange = 0f..durationMs.coerceAtLeast(1L).toFloat(),
-                        modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter),
+                        modifier = Modifier.fillMaxWidth().height(20.dp).align(Alignment.BottomCenter),
                     )
                 }
             }
