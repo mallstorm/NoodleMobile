@@ -45,6 +45,14 @@ data class StudioAiReply(
     val model: String,
 )
 
+data class StudioAiModel(
+    val id: String,
+    val name: String = "",
+    val provider: String = "",
+    val isFree: Boolean = false,
+    val isAuto: Boolean = false,
+)
+
 /**
  * Small AI router for Adapter Studio. Authentication semantics are intentionally compatible
  * with the Kilo/Cline account flows used by OmniChat, but the HTTP client identifies itself
@@ -117,13 +125,16 @@ class StudioAiRouter(context: Context) {
         }
     }
 
-    suspend fun models(provider: StudioAiProvider): List<String> = withContext(Dispatchers.IO) {
+    suspend fun modelCatalog(provider: StudioAiProvider): List<StudioAiModel> = withContext(Dispatchers.IO) {
         when (provider) {
             StudioAiProvider.LOCAL -> emptyList()
-            StudioAiProvider.KILO -> kiloModels()
-            StudioAiProvider.CLINE -> clineModels()
+            StudioAiProvider.KILO -> kiloModelCatalog()
+            StudioAiProvider.CLINE -> clineModelCatalog()
         }
     }
+
+    suspend fun models(provider: StudioAiProvider): List<String> =
+        modelCatalog(provider).map(StudioAiModel::id)
 
     suspend fun complete(
         provider: StudioAiProvider,
@@ -133,7 +144,7 @@ class StudioAiRouter(context: Context) {
     ): StudioAiReply = withContext(Dispatchers.IO) {
         require(provider != StudioAiProvider.LOCAL) { "Для локального режима AI-вызов не требуется" }
         val chosen = model.trim().ifBlank {
-            models(provider).firstOrNull().orEmpty()
+            modelCatalog(provider).firstOrNull()?.id.orEmpty()
         }
         require(chosen.isNotBlank()) { "Не удалось выбрать AI-модель" }
 
@@ -312,33 +323,121 @@ class StudioAiRouter(context: Context) {
         error("Время ожидания входа Cline истекло")
     }
 
-    private fun kiloModels(): List<String> {
+    private fun kiloModelCatalog(): List<StudioAiModel> {
         val token = readSecret(KEY_KILO_TOKEN)
         if (token.isBlank()) error("Войдите в Kilo Code")
-        val response = execute(
-            Request.Builder()
-                .url("$KILO_OPENAI_BASE/models")
-                .header("Authorization", "Bearer $token")
-                .header("Accept", "application/json")
-                .header("User-Agent", "NoodleMobile-Android")
-                .get()
-                .build(),
+
+        val gatewayResponse = runCatching {
+            execute(
+                Request.Builder()
+                    .url(KILO_GATEWAY_MODELS_URL)
+                    .header("Accept", "application/json")
+                    .header("User-Agent", "NoodleMobile-Android")
+                    .get()
+                    .build(),
+            )
+        }.getOrNull()
+        val gatewayModels = gatewayResponse
+            ?.takeIf { it.code in 200..299 }
+            ?.json
+            ?.let(::parseKiloCatalog)
+            .orEmpty()
+
+        val legacyResponse = runCatching {
+            execute(
+                Request.Builder()
+                    .url("$KILO_OPENAI_BASE/models")
+                    .header("Authorization", "Bearer $token")
+                    .header("Accept", "application/json")
+                    .header("User-Agent", "NoodleMobile-Android")
+                    .get()
+                    .build(),
+            )
+        }.getOrNull()
+        val legacyModels = legacyResponse
+            ?.takeIf { it.code in 200..299 }
+            ?.json
+            ?.let(::extractModelIds)
+            .orEmpty()
+            .map(::simpleModel)
+
+        val fallbackModels = KILO_FALLBACK_MODELS.map(::simpleModel)
+        val merged = linkedMapOf<String, StudioAiModel>()
+        (gatewayModels + legacyModels + fallbackModels).forEach { model ->
+            if (model.id.isNotBlank() && model.id !in merged) merged[model.id] = model
+        }
+        return merged.values.sortedWith(
+            compareBy<StudioAiModel>(
+                { !it.isAuto },
+                { !it.isFree },
+                { it.provider.lowercase() },
+                { it.name.ifBlank { it.id }.lowercase() },
+            ),
         )
-        val live = if (response.code in 200..299) extractModelIds(response.json) else emptyList()
-        return (live + KILO_FALLBACK_MODELS).distinct()
     }
 
-    private fun clineModels(): List<String> {
+    private fun parseKiloCatalog(payload: JSONObject): List<StudioAiModel> {
+        val array = payload.optJSONArray("data") ?: payload.optJSONArray("models") ?: return emptyList()
+        return (0 until array.length()).mapNotNull { index ->
+            val item = array.optJSONObject(index) ?: return@mapNotNull null
+            val id = item.optString("id").ifBlank { item.optString("model") }
+            if (id.isBlank()) return@mapNotNull null
+            val pricing = item.optJSONObject("pricing")
+            val priceFree = pricing != null &&
+                pricing.has("prompt") && pricing.has("completion") &&
+                priceValue(pricing.opt("prompt")) == 0.0 &&
+                priceValue(pricing.opt("completion")) == 0.0
+            StudioAiModel(
+                id = id,
+                name = item.optString("name").ifBlank { id },
+                provider = item.optString("owned_by")
+                    .ifBlank { item.optString("provider") }
+                    .ifBlank { id.substringBefore('/', "Kilo") },
+                isFree = isFreeModelId(id) || priceFree,
+                isAuto = id.startsWith("kilo-auto/", ignoreCase = true),
+            )
+        }
+    }
+
+    private fun priceValue(value: Any?): Double? = when (value) {
+        is Number -> value.toDouble()
+        is String -> value.toDoubleOrNull()
+        else -> null
+    }
+
+    private fun simpleModel(id: String): StudioAiModel = StudioAiModel(
+        id = id,
+        name = id,
+        provider = id.substringBefore('/', "Kilo"),
+        isFree = isFreeModelId(id),
+        isAuto = id.startsWith("kilo-auto/", ignoreCase = true),
+    )
+
+    private fun isFreeModelId(id: String): Boolean =
+        id.endsWith(":free", ignoreCase = true) ||
+            id.equals("kilo-auto/free", ignoreCase = true) ||
+            id.equals("openrouter/free", ignoreCase = true)
+
+    private fun clineModelCatalog(): List<StudioAiModel> {
         val credentials = currentCline() ?: error("Войдите в Cline")
         val bearer = formatClineToken(credentials.accessToken)
         val generic = getClineJson("$CLINE_OPENAI_BASE/models", bearer)?.let(::extractModelIds).orEmpty()
         val recommended = getClineJson("$CLINE_API_BASE/api/v1/ai/cline/recommended-models", bearer)
-        val preferred = buildList {
-            addAll(extractModelIds(recommended?.opt("clinePass")))
-            addAll(extractModelIds(recommended?.opt("free")))
-            addAll(extractModelIds(recommended?.opt("billing")))
-        }
-        return (preferred + generic + CLINE_FALLBACK_MODELS).distinct()
+        val pass = extractModelIds(recommended?.opt("clinePass"))
+        val free = extractModelIds(recommended?.opt("free"))
+        val billing = extractModelIds(recommended?.opt("billing"))
+        val freeSet = free.toSet()
+        return (pass + free + billing + generic + CLINE_FALLBACK_MODELS)
+            .distinct()
+            .map { id ->
+                StudioAiModel(
+                    id = id,
+                    name = id,
+                    provider = id.substringBefore('/', "Cline"),
+                    isFree = id in freeSet || id.endsWith(":free", ignoreCase = true),
+                    isAuto = false,
+                )
+            }
     }
 
     private fun getClineJson(url: String, bearer: String): JSONObject? {
@@ -518,6 +617,7 @@ class StudioAiRouter(context: Context) {
 
         private const val KILO_API_BASE = "https://api.kilo.ai"
         private const val KILO_OPENAI_BASE = "https://api.kilo.ai/api/openrouter"
+        private const val KILO_GATEWAY_MODELS_URL = "https://api.kilo.ai/api/gateway/models"
         private const val CLINE_API_BASE = "https://api.cline.bot"
         private const val CLINE_OPENAI_BASE = "https://api.cline.bot/api/v1"
         private const val WORKOS_BASE = "https://api.workos.com"
@@ -525,8 +625,9 @@ class StudioAiRouter(context: Context) {
         private const val CLINE_TOKEN_PREFIX = "workos:"
 
         private val KILO_FALLBACK_MODELS = listOf(
-            "kilo-auto/efficient",
             "kilo-auto/free",
+            "openrouter/free",
+            "kilo-auto/efficient",
             "kilo-auto/small",
             "kilo-auto/frontier",
         )
