@@ -60,15 +60,7 @@ internal fun PlayerVideoSurface(
     }
 
     val interaction = remember { MutableInteractionSource() }
-    Box(
-        modifier
-            .background(Color.Black)
-            .clickable(
-                interactionSource = interaction,
-                indication = null,
-                onClick = { controlsVisible = !controlsVisible },
-            ),
-    ) {
+    Box(modifier.background(Color.Black)) {
         AndroidView(
             factory = { ctx ->
                 PlayerView(ctx).apply {
@@ -84,6 +76,18 @@ internal fun PlayerVideoSurface(
             },
             update = { it.player = player },
             modifier = Modifier.fillMaxSize(),
+        )
+
+        // Always keep a Compose hit target above the Android PlayerView. Without this layer
+        // PlayerView can consume the first touch and the custom controls may never reappear.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .clickable(
+                    interactionSource = interaction,
+                    indication = null,
+                    onClick = { controlsVisible = !controlsVisible },
+                ),
         )
 
         if (controlsVisible) {
@@ -193,6 +197,7 @@ internal fun PlayerVideoSurface(
                     }
                 }
 
+                // Timeline belongs to the lower edge of the video, never to its centre.
                 Box(Modifier.fillMaxWidth().height(28.dp)) {
                     if (durationMs > 0L && bufferedMs > 0L) {
                         LinearProgressIndicator(
