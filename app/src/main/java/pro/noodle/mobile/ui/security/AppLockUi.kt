@@ -1,0 +1,323 @@
+package pro.noodle.mobile.ui.security
+
+import android.content.Context
+import android.content.pm.PackageManager
+import android.hardware.biometrics.BiometricPrompt
+import android.hardware.fingerprint.FingerprintManager
+import android.os.CancellationSignal
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Fingerprint
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Pattern
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.layout.onSizeChanged
+import pro.noodle.mobile.core.security.AppLockCrypto
+import pro.noodle.mobile.core.settings.AppSettings
+import kotlin.math.hypot
+
+@Composable
+fun AppLockGate(settings: AppSettings, onUnlocked: () -> Unit) {
+    val context = LocalContext.current
+    var secret by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf("") }
+    var biometricStarted by remember(settings.lockMode) { mutableStateOf(false) }
+
+    fun verify(value: String) {
+        if (AppLockCrypto.verify(value, settings.lockSalt, settings.lockHash)) {
+            error = ""
+            onUnlocked()
+        } else {
+            error = "Неверный код"
+        }
+    }
+
+    LaunchedEffect(settings.lockMode) {
+        if (settings.lockMode == "biometric" && !biometricStarted) {
+            biometricStarted = true
+            showBiometricPrompt(
+                context = context,
+                onSuccess = onUnlocked,
+                onError = { error = it },
+            )
+        }
+    }
+
+    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Column(
+            Modifier.fillMaxSize().padding(28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Icon(
+                when (settings.lockMode) {
+                    "biometric" -> Icons.Outlined.Fingerprint
+                    "pattern" -> Icons.Outlined.Pattern
+                    else -> Icons.Outlined.Lock
+                },
+                null,
+                modifier = Modifier.size(58.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.height(18.dp))
+            Text("NoodleMobile заблокирован", style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                when (settings.lockMode) {
+                    "biometric" -> "Подтвердите отпечаток пальца"
+                    "pattern" -> "Нарисуйте графический пароль"
+                    else -> "Введите PIN-код"
+                },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(24.dp))
+
+            when (settings.lockMode) {
+                "pin" -> {
+                    OutlinedTextField(
+                        value = secret,
+                        onValueChange = { if (it.length <= 8 && it.all(Char::isDigit)) secret = it },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        visualTransformation = PasswordVisualTransformation(),
+                        label = { Text("PIN") },
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Button(onClick = { verify(secret) }, enabled = secret.length >= 4) { Text("Открыть") }
+                }
+                "pattern" -> PatternPad(onPattern = ::verify)
+                "biometric" -> Button(
+                    onClick = {
+                        error = ""
+                        showBiometricPrompt(context, onUnlocked) { error = it }
+                    },
+                ) {
+                    Icon(Icons.Outlined.Fingerprint, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Повторить")
+                }
+            }
+            if (error.isNotBlank()) {
+                Spacer(Modifier.height(14.dp))
+                Text(error, color = MaterialTheme.colorScheme.error)
+            }
+        }
+    }
+}
+
+@Composable
+fun AppLockSettingsCard(settings: AppSettings, onSetLock: (String, String) -> Unit) {
+    val context = LocalContext.current
+    var pinDialog by remember { mutableStateOf(false) }
+    var patternDialog by remember { mutableStateOf(false) }
+    var firstPin by remember { mutableStateOf("") }
+    var confirmPin by remember { mutableStateOf("") }
+    var firstPattern by remember { mutableStateOf("") }
+    var setupError by remember { mutableStateOf("") }
+
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Защита приложения", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Блокировка при открытии и после ухода приложения в фон.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(
+                    selected = settings.lockMode == "none",
+                    onClick = { onSetLock("none", "") },
+                    label = { Text("Выкл") },
+                )
+                FilterChip(
+                    selected = settings.lockMode == "pin",
+                    onClick = { pinDialog = true },
+                    label = { Text("PIN") },
+                )
+                FilterChip(
+                    selected = settings.lockMode == "biometric",
+                    onClick = {
+                        if (biometricAvailable(context)) onSetLock("biometric", "")
+                        else setupError = "На устройстве нет настроенного отпечатка пальца"
+                    },
+                    label = { Text("Палец") },
+                )
+                FilterChip(
+                    selected = settings.lockMode == "pattern",
+                    onClick = { firstPattern = ""; patternDialog = true },
+                    label = { Text("Графический") },
+                )
+            }
+            if (setupError.isNotBlank()) Text(setupError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+
+    if (pinDialog) {
+        AlertDialog(
+            onDismissRequest = { pinDialog = false; firstPin = ""; confirmPin = "" },
+            title = { Text("Установить PIN") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        firstPin,
+                        { if (it.length <= 8 && it.all(Char::isDigit)) firstPin = it },
+                        label = { Text("PIN, 4–8 цифр") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        visualTransformation = PasswordVisualTransformation(),
+                    )
+                    OutlinedTextField(
+                        confirmPin,
+                        { if (it.length <= 8 && it.all(Char::isDigit)) confirmPin = it },
+                        label = { Text("Повторите PIN") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        visualTransformation = PasswordVisualTransformation(),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = firstPin.length >= 4 && firstPin == confirmPin,
+                    onClick = { onSetLock("pin", firstPin); pinDialog = false; firstPin = ""; confirmPin = "" },
+                ) { Text("Сохранить") }
+            },
+            dismissButton = { TextButton(onClick = { pinDialog = false }) { Text("Отмена") } },
+        )
+    }
+
+    if (patternDialog) {
+        AlertDialog(
+            onDismissRequest = { patternDialog = false; firstPattern = "" },
+            title = { Text(if (firstPattern.isBlank()) "Нарисуйте графический пароль" else "Повторите рисунок") },
+            text = {
+                PatternPad { value ->
+                    if (value.split('-').size < 4) {
+                        setupError = "Нужно соединить минимум 4 точки"
+                    } else if (firstPattern.isBlank()) {
+                        firstPattern = value
+                    } else if (firstPattern == value) {
+                        onSetLock("pattern", value)
+                        patternDialog = false
+                        firstPattern = ""
+                        setupError = ""
+                    } else {
+                        setupError = "Рисунок не совпал. Попробуйте ещё раз"
+                        firstPattern = ""
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { patternDialog = false; firstPattern = "" }) { Text("Отмена") } },
+        )
+    }
+}
+
+@Composable
+private fun PatternPad(onPattern: (String) -> Unit) {
+    var size by remember { mutableStateOf(IntSize.Zero) }
+    var selected by remember { mutableStateOf<List<Int>>(emptyList()) }
+    var pointer by remember { mutableStateOf<Offset?>(null) }
+
+    fun nodeAt(offset: Offset): Int? {
+        if (size.width <= 0 || size.height <= 0) return null
+        val stepX = size.width / 4f
+        val stepY = size.height / 4f
+        val radius = minOf(stepX, stepY) * .42f
+        var best: Int? = null
+        var bestDistance = Float.MAX_VALUE
+        for (row in 0..2) for (col in 0..2) {
+            val index = row * 3 + col
+            val center = Offset(stepX * (col + 1), stepY * (row + 1))
+            val d = hypot(offset.x - center.x, offset.y - center.y)
+            if (d < radius && d < bestDistance) { best = index; bestDistance = d }
+        }
+        return best
+    }
+
+    Canvas(
+        Modifier
+            .size(250.dp)
+            .onSizeChanged { size = it }
+            .pointerInput(size) {
+                detectDragGestures(
+                    onDragStart = { start ->
+                        selected = nodeAt(start)?.let { listOf(it) } ?: emptyList()
+                        pointer = start
+                    },
+                    onDrag = { change, _ ->
+                        pointer = change.position
+                        nodeAt(change.position)?.let { node ->
+                            if (node !in selected) selected = selected + node
+                        }
+                    },
+                    onDragEnd = {
+                        if (selected.isNotEmpty()) onPattern(selected.joinToString("-"))
+                        selected = emptyList(); pointer = null
+                    },
+                    onDragCancel = { selected = emptyList(); pointer = null },
+                )
+            },
+    ) {
+        val stepX = size.width / 4f
+        val stepY = size.height / 4f
+        fun center(index: Int) = Offset(stepX * (index % 3 + 1), stepY * (index / 3 + 1))
+        selected.zipWithNext().forEach { (a, b) ->
+            drawLine(MaterialTheme.colorScheme.primary, center(a), center(b), strokeWidth = 9f)
+        }
+        if (selected.isNotEmpty() && pointer != null) {
+            drawLine(MaterialTheme.colorScheme.primary.copy(alpha = .55f), center(selected.last()), pointer!!, strokeWidth = 7f)
+        }
+        repeat(9) { index ->
+            val active = index in selected
+            drawCircle(
+                color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                radius = if (active) 18f else 14f,
+                center = center(index),
+            )
+        }
+    }
+}
+
+private fun biometricAvailable(context: Context): Boolean {
+    if (!context.packageManager.hasSystemFeature(PackageManager.FEATURE_FINGERPRINT)) return false
+    val fm = context.getSystemService(FingerprintManager::class.java) ?: return false
+    return runCatching { fm.isHardwareDetected && fm.hasEnrolledFingerprints() }.getOrDefault(false)
+}
+
+private fun showBiometricPrompt(context: Context, onSuccess: () -> Unit, onError: (String) -> Unit) {
+    if (!biometricAvailable(context)) {
+        onError("Отпечаток пальца не настроен")
+        return
+    }
+    val executor = context.mainExecutor
+    val cancellation = CancellationSignal()
+    val prompt = BiometricPrompt.Builder(context)
+        .setTitle("NoodleMobile")
+        .setSubtitle("Подтвердите отпечаток пальца")
+        .setNegativeButton("Отмена", executor) { _, _ -> onError("Проверка отменена") }
+        .build()
+    prompt.authenticate(cancellation, executor, object : BiometricPrompt.AuthenticationCallback() {
+        override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult?) {
+            onSuccess()
+        }
+        override fun onAuthenticationError(errorCode: Int, errString: CharSequence?) {
+            onError(errString?.toString().orEmpty().ifBlank { "Ошибка биометрии" })
+        }
+        override fun onAuthenticationFailed() {
+            onError("Отпечаток не распознан")
+        }
+    })
+}
