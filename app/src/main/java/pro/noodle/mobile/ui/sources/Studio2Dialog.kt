@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -32,8 +34,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,6 +45,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import pro.noodle.mobile.core.studio.StudioAiModel
 import pro.noodle.mobile.core.studio.StudioAiProvider
 
 @Composable
@@ -168,33 +169,26 @@ internal fun Studio2Dialog(
                                         Text("Обновить")
                                     }
                                 }
-                                androidx.compose.foundation.layout.Box {
-                                    OutlinedButton(
-                                        onClick = { modelMenu = true },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        enabled = state.studioModels.isNotEmpty() && !state.studioAuthBusy,
-                                    ) {
-                                        Text(
-                                            state.studioModel.ifBlank {
-                                                if (state.studioAuthBusy) "Загрузка моделей…" else "Модель не выбрана"
-                                            },
-                                            maxLines = 1,
-                                        )
-                                    }
-                                    DropdownMenu(
-                                        expanded = modelMenu,
-                                        onDismissRequest = { modelMenu = false },
-                                    ) {
-                                        state.studioModels.take(120).forEach { model ->
-                                            DropdownMenuItem(
-                                                text = { Text(model) },
-                                                onClick = {
-                                                    vm.setStudioModel(model)
-                                                    modelMenu = false
-                                                },
-                                            )
-                                        }
-                                    }
+                                if (state.studioModelCatalog.isNotEmpty()) {
+                                    val freeCount = state.studioModelCatalog.count { it.isFree }
+                                    val autoCount = state.studioModelCatalog.count { it.isAuto }
+                                    Text(
+                                        "Всего ${state.studioModelCatalog.size} • Free $freeCount${if (autoCount > 0) " • Auto $autoCount" else ""}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                OutlinedButton(
+                                    onClick = { modelMenu = true },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    enabled = state.studioModelCatalog.isNotEmpty() && !state.studioAuthBusy,
+                                ) {
+                                    Text(
+                                        state.studioModel.ifBlank {
+                                            if (state.studioAuthBusy) "Загрузка моделей…" else "Модель не выбрана"
+                                        },
+                                        maxLines = 1,
+                                    )
                                 }
                             }
                         }
@@ -288,6 +282,153 @@ internal fun Studio2Dialog(
                     )
                 }
                 Spacer(Modifier.height(2.dp))
+            }
+        },
+    )
+
+    if (modelMenu) {
+        StudioModelPickerDialog(
+            provider = state.studioProvider,
+            models = state.studioModelCatalog,
+            selected = state.studioModel,
+            onDismiss = { modelMenu = false },
+            onSelect = { model ->
+                vm.setStudioModel(model)
+                modelMenu = false
+            },
+        )
+    }
+}
+
+private enum class StudioModelFilter {
+    ALL,
+    FREE,
+    AUTO,
+    PAID,
+}
+
+@Composable
+private fun StudioModelPickerDialog(
+    provider: StudioAiProvider,
+    models: List<StudioAiModel>,
+    selected: String,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit,
+) {
+    var query by remember(provider) { mutableStateOf("") }
+    var filter by remember(provider) {
+        mutableStateOf(if (provider == StudioAiProvider.KILO) StudioModelFilter.FREE else StudioModelFilter.ALL)
+    }
+    val filtered = remember(models, query, filter) {
+        val needle = query.trim().lowercase()
+        models.filter { model ->
+            val matchesFilter = when (filter) {
+                StudioModelFilter.ALL -> true
+                StudioModelFilter.FREE -> model.isFree
+                StudioModelFilter.AUTO -> model.isAuto
+                StudioModelFilter.PAID -> !model.isFree
+            }
+            val matchesQuery = needle.isBlank() ||
+                model.id.lowercase().contains(needle) ||
+                model.name.lowercase().contains(needle) ||
+                model.provider.lowercase().contains(needle)
+            matchesFilter && matchesQuery
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } },
+        title = { Text("Выбор модели") },
+        text = {
+            Column(
+                Modifier.fillMaxWidth().heightIn(max = 620.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Поиск модели") },
+                    placeholder = { Text("openrouter, deepseek, gemini…") },
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    FilterChip(
+                        selected = filter == StudioModelFilter.ALL,
+                        onClick = { filter = StudioModelFilter.ALL },
+                        label = { Text("Все") },
+                    )
+                    FilterChip(
+                        selected = filter == StudioModelFilter.FREE,
+                        onClick = { filter = StudioModelFilter.FREE },
+                        label = { Text("Free") },
+                    )
+                    if (models.any { it.isAuto }) {
+                        FilterChip(
+                            selected = filter == StudioModelFilter.AUTO,
+                            onClick = { filter = StudioModelFilter.AUTO },
+                            label = { Text("Auto") },
+                        )
+                    }
+                    FilterChip(
+                        selected = filter == StudioModelFilter.PAID,
+                        onClick = { filter = StudioModelFilter.PAID },
+                        label = { Text("Платные") },
+                    )
+                }
+                Text(
+                    "Показано ${filtered.size} из ${models.size}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                LazyColumn(
+                    Modifier.fillMaxWidth().heightIn(max = 430.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    if (filtered.isEmpty()) {
+                        item { Text("По этому фильтру моделей нет.", style = MaterialTheme.typography.bodySmall) }
+                    }
+                    items(filtered, key = { it.id }) { model ->
+                        TextButton(
+                            onClick = { onSelect(model.id) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
+                                    Text(
+                                        model.name.ifBlank { model.id },
+                                        fontWeight = if (model.id == selected) FontWeight.Bold else FontWeight.Medium,
+                                        maxLines = 2,
+                                    )
+                                    if (model.name.isNotBlank() && model.name != model.id) {
+                                        Text(
+                                            model.id,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 2,
+                                        )
+                                    }
+                                }
+                                if (model.isAuto) {
+                                    Text(
+                                        "AUTO",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.tertiary,
+                                        modifier = Modifier.padding(horizontal = 4.dp),
+                                    )
+                                }
+                                if (model.isFree) {
+                                    Text(
+                                        "FREE",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         },
     )
