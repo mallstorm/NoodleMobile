@@ -11,21 +11,20 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Fingerprint
+import androidx.compose.material.icons.outlined.Gesture
 import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.Pattern
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.layout.onSizeChanged
 import pro.noodle.mobile.core.security.AppLockCrypto
 import pro.noodle.mobile.core.settings.AppSettings
 import kotlin.math.hypot
@@ -66,7 +65,7 @@ fun AppLockGate(settings: AppSettings, onUnlocked: () -> Unit) {
             Icon(
                 when (settings.lockMode) {
                     "biometric" -> Icons.Outlined.Fingerprint
-                    "pattern" -> Icons.Outlined.Pattern
+                    "pattern" -> Icons.Outlined.Gesture
                     else -> Icons.Outlined.Lock
                 },
                 null,
@@ -162,7 +161,9 @@ fun AppLockSettingsCard(settings: AppSettings, onSetLock: (String, String) -> Un
                     label = { Text("Графический") },
                 )
             }
-            if (setupError.isNotBlank()) Text(setupError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            if (setupError.isNotBlank()) {
+                Text(setupError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
         }
     }
 
@@ -191,7 +192,12 @@ fun AppLockSettingsCard(settings: AppSettings, onSetLock: (String, String) -> Un
             confirmButton = {
                 TextButton(
                     enabled = firstPin.length >= 4 && firstPin == confirmPin,
-                    onClick = { onSetLock("pin", firstPin); pinDialog = false; firstPin = ""; confirmPin = "" },
+                    onClick = {
+                        onSetLock("pin", firstPin)
+                        pinDialog = false
+                        firstPin = ""
+                        confirmPin = ""
+                    },
                 ) { Text("Сохранить") }
             },
             dismissButton = { TextButton(onClick = { pinDialog = false }) { Text("Отмена") } },
@@ -220,7 +226,9 @@ fun AppLockSettingsCard(settings: AppSettings, onSetLock: (String, String) -> Un
                 }
             },
             confirmButton = {},
-            dismissButton = { TextButton(onClick = { patternDialog = false; firstPattern = "" }) { Text("Отмена") } },
+            dismissButton = {
+                TextButton(onClick = { patternDialog = false; firstPattern = "" }) { Text("Отмена") }
+            },
         )
     }
 }
@@ -242,7 +250,10 @@ private fun PatternPad(onPattern: (String) -> Unit) {
             val index = row * 3 + col
             val center = Offset(stepX * (col + 1), stepY * (row + 1))
             val d = hypot(offset.x - center.x, offset.y - center.y)
-            if (d < radius && d < bestDistance) { best = index; bestDistance = d }
+            if (d < radius && d < bestDistance) {
+                best = index
+                bestDistance = d
+            }
         }
         return best
     }
@@ -265,9 +276,13 @@ private fun PatternPad(onPattern: (String) -> Unit) {
                     },
                     onDragEnd = {
                         if (selected.isNotEmpty()) onPattern(selected.joinToString("-"))
-                        selected = emptyList(); pointer = null
+                        selected = emptyList()
+                        pointer = null
                     },
-                    onDragCancel = { selected = emptyList(); pointer = null },
+                    onDragCancel = {
+                        selected = emptyList()
+                        pointer = null
+                    },
                 )
             },
     ) {
@@ -278,7 +293,12 @@ private fun PatternPad(onPattern: (String) -> Unit) {
             drawLine(MaterialTheme.colorScheme.primary, center(a), center(b), strokeWidth = 9f)
         }
         if (selected.isNotEmpty() && pointer != null) {
-            drawLine(MaterialTheme.colorScheme.primary.copy(alpha = .55f), center(selected.last()), pointer!!, strokeWidth = 7f)
+            drawLine(
+                MaterialTheme.colorScheme.primary.copy(alpha = .55f),
+                center(selected.last()),
+                pointer!!,
+                strokeWidth = 7f,
+            )
         }
         repeat(9) { index ->
             val active = index in selected
@@ -313,9 +333,11 @@ private fun showBiometricPrompt(context: Context, onSuccess: () -> Unit, onError
         override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult?) {
             onSuccess()
         }
+
         override fun onAuthenticationError(errorCode: Int, errString: CharSequence?) {
             onError(errString?.toString().orEmpty().ifBlank { "Ошибка биометрии" })
         }
+
         override fun onAuthenticationFailed() {
             onError("Отпечаток не распознан")
         }
