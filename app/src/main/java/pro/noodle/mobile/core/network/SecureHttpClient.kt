@@ -2,6 +2,7 @@ package pro.noodle.mobile.core.network
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.ConnectionPool
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.Dns
@@ -25,8 +26,6 @@ data class NetworkPolicy(
     val maxResponseBytes: Int = 4 * 1024 * 1024,
     val maxRedirects: Int = 5,
 )
-
-
 
 data class BinaryFetchResult(
     val success: Boolean,
@@ -56,6 +55,9 @@ class SecureHttpClient {
     companion object {
         /** Process-local, source-isolated cookie sessions shared by search/resolver/player/download. */
         private val cookieStores = ConcurrentHashMap<String, MemoryCookieJar>()
+
+        /** Reuse TCP/TLS/HTTP2 connections across search, resolver, thumbnails and Media3. */
+        private val sharedConnectionPool = ConnectionPool(8, 5, TimeUnit.MINUTES)
     }
 
     fun fetchTextBlocking(url: String, policy: NetworkPolicy, sourceKey: String = "default"): TextFetchResult =
@@ -112,7 +114,13 @@ class SecureHttpClient {
         TextFetchResult(false, current, errorCode = "HTTP_REDIRECT_LOOP", errorMessage = "Redirect loop.")
     }
 
-    suspend fun fetchBytes(url: String, policy: NetworkPolicy, sourceKey: String = "default", accept: String = "application/zip,application/json,application/octet-stream,*/*;q=0.4", referer: String = ""): BinaryFetchResult = withContext(Dispatchers.IO) {
+    suspend fun fetchBytes(
+        url: String,
+        policy: NetworkPolicy,
+        sourceKey: String = "default",
+        accept: String = "application/zip,application/json,application/octet-stream,*/*;q=0.4",
+        referer: String = "",
+    ): BinaryFetchResult = withContext(Dispatchers.IO) {
         val client = clientFor(policy, sourceKey, followRedirects = false)
         var current = url
         repeat(policy.maxRedirects + 1) { redirectNo ->
@@ -120,7 +128,9 @@ class SecureHttpClient {
             if (!decision.allowed) return@withContext BinaryFetchResult(false, current, errorCode = decision.errorCode, errorMessage = decision.reason)
             val host = runCatching { URI(current).host.orEmpty() }.getOrDefault("")
             if (!hostAllowed(host, policy)) return@withContext BinaryFetchResult(false, current, errorCode = "URL_HOST_NOT_ALLOWED", errorMessage = "Хост $host не разрешён SNP-политикой.")
-            val requestBuilder = Request.Builder().url(current).header("User-Agent", BuildIdentity.USER_AGENT).header("Accept", accept)
+            val requestBuilder = Request.Builder().url(current)
+                .header("User-Agent", BuildIdentity.USER_AGENT)
+                .header("Accept", accept)
             if (referer.isNotBlank()) requestBuilder.header("Referer", referer)
             val request = requestBuilder.build()
             val response = try { client.newCall(request).execute() } catch (e: Exception) {
@@ -142,8 +152,15 @@ class SecureHttpClient {
                 if (declared > policy.maxResponseBytes) return@withContext BinaryFetchResult(false, current, statusCode = r.code, errorCode = "HTTP_BODY_TOO_LARGE", errorMessage = "Ответ превышает лимит ${policy.maxResponseBytes} байт.")
                 val input = body.byteStream()
                 val out = ByteArrayOutputStream(minOf(policy.maxResponseBytes, 64 * 1024))
-                val buf = ByteArray(8192); var total = 0
-                while (true) { val n = input.read(buf); if (n < 0) break; total += n; if (total > policy.maxResponseBytes) return@withContext BinaryFetchResult(false, current, statusCode = r.code, errorCode = "HTTP_BODY_TOO_LARGE", errorMessage = "Ответ превышает лимит ${policy.maxResponseBytes} байт."); out.write(buf, 0, n) }
+                val buf = ByteArray(8192)
+                var total = 0
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    total += n
+                    if (total > policy.maxResponseBytes) return@withContext BinaryFetchResult(false, current, statusCode = r.code, errorCode = "HTTP_BODY_TOO_LARGE", errorMessage = "Ответ превышает лимит ${policy.maxResponseBytes} байт.")
+                    out.write(buf, 0, n)
+                }
                 val bytes = out.toByteArray()
                 if (!r.isSuccessful) return@withContext BinaryFetchResult(false, current, r.code, body.contentType()?.toString().orEmpty(), bytes, "HTTP_${r.code}", "HTTP ${r.code}")
                 return@withContext BinaryFetchResult(true, current, r.code, body.contentType()?.toString().orEmpty(), bytes)
@@ -162,6 +179,7 @@ class SecureHttpClient {
     private fun clientFor(policy: NetworkPolicy, sourceKey: String, followRedirects: Boolean): OkHttpClient {
         val cookies = if (policy.allowCookies) cookieStores.getOrPut(sourceKey) { MemoryCookieJar() } else CookieJar.NO_COOKIES
         return OkHttpClient.Builder()
+            .connectionPool(sharedConnectionPool)
             .followRedirects(followRedirects)
             .followSslRedirects(followRedirects)
             .connectTimeout(15, TimeUnit.SECONDS)
