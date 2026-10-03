@@ -33,6 +33,24 @@ data class PlaybackPositionEntity(
     val updatedAt: Long,
 )
 
+@Entity(tableName = "history")
+data class HistoryEntity(
+    @PrimaryKey val mediaKey: String,
+    val id: String,
+    val remoteId: String,
+    val watchUrl: String,
+    val title: String,
+    val thumbnailUrl: String,
+    val duration: String,
+    val views: String,
+    val sourceName: String,
+    val sourceBaseUrl: String,
+    val sourceEngine: String,
+    val positionMs: Long,
+    val durationMs: Long,
+    val updatedAt: Long,
+)
+
 enum class DownloadState { QUEUED, RUNNING, PAUSED, COMPLETED, FAILED, CANCELED }
 
 @Entity(tableName = "downloads")
@@ -80,6 +98,14 @@ interface PlaybackPositionDao {
 }
 
 @Dao
+interface HistoryDao {
+    @Query("SELECT * FROM history ORDER BY updatedAt DESC") fun observeAll(): Flow<List<HistoryEntity>>
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(item: HistoryEntity)
+    @Query("DELETE FROM history WHERE mediaKey=:key") suspend fun delete(key: String)
+    @Query("DELETE FROM history") suspend fun clear()
+}
+
+@Dao
 interface DownloadDao {
     @Query("SELECT * FROM downloads ORDER BY createdAt DESC") fun observeAll(): Flow<List<DownloadEntity>>
     @Query("SELECT * FROM downloads WHERE state='COMPLETED' ORDER BY updatedAt DESC") fun observeCompleted(): Flow<List<DownloadEntity>>
@@ -93,11 +119,12 @@ interface DownloadDao {
     @Query("DELETE FROM downloads WHERE id=:id") suspend fun delete(id: String)
 }
 
-@Database(entities = [FavoriteEntity::class, PlaybackPositionEntity::class, DownloadEntity::class], version = 3, exportSchema = true)
+@Database(entities = [FavoriteEntity::class, PlaybackPositionEntity::class, HistoryEntity::class, DownloadEntity::class], version = 4, exportSchema = true)
 @TypeConverters(DbConverters::class)
 abstract class NoodleDatabase : RoomDatabase() {
     abstract fun favorites(): FavoriteDao
     abstract fun playbackPositions(): PlaybackPositionDao
+    abstract fun history(): HistoryDao
     abstract fun downloads(): DownloadDao
 
     companion object {
@@ -118,10 +145,17 @@ abstract class NoodleDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE downloads ADD COLUMN includeSubtitles INTEGER NOT NULL DEFAULT 0")
             }
         }
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS history (mediaKey TEXT NOT NULL, id TEXT NOT NULL, remoteId TEXT NOT NULL, watchUrl TEXT NOT NULL, title TEXT NOT NULL, thumbnailUrl TEXT NOT NULL, duration TEXT NOT NULL, views TEXT NOT NULL, sourceName TEXT NOT NULL, sourceBaseUrl TEXT NOT NULL, sourceEngine TEXT NOT NULL, positionMs INTEGER NOT NULL, durationMs INTEGER NOT NULL, updatedAt INTEGER NOT NULL, PRIMARY KEY(mediaKey))"
+                )
+            }
+        }
         @Volatile private var instance: NoodleDatabase? = null
         fun get(context: Context): NoodleDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, NoodleDatabase::class.java, "noodle-mobile.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build().also { instance = it }
         }
     }
@@ -135,3 +169,5 @@ class DbConverters {
 private const val SEP = '\u001F'
 fun FavoriteEntity.toVideoItem() = VideoItem(id=id, remoteId=remoteId, watchUrl=watchUrl, title=title, thumbnailUrl=thumbnailUrl, duration=duration, views=views, sourceName=sourceName, sourceBaseUrl=sourceBaseUrl, sourceEngine=sourceEngine, favoriteKey=favoriteKey, tags=tags.split(SEP).filter { it.isNotBlank() }, note=note, favoriteTimestamp=createdAt)
 fun VideoItem.toFavoriteEntity(now: Long = System.currentTimeMillis()) = FavoriteEntity(favoriteKey=favoriteKey.ifBlank { "$sourceBaseUrl|${remoteId.ifBlank { watchUrl }}" }, id=id, remoteId=remoteId, watchUrl=watchUrl, title=title, thumbnailUrl=thumbnailUrl, duration=duration, views=views, sourceName=sourceName, sourceBaseUrl=sourceBaseUrl, sourceEngine=sourceEngine, tags=tags.joinToString(SEP.toString()), note=note, createdAt=if(favoriteTimestamp>0) favoriteTimestamp else now)
+fun HistoryEntity.toVideoItem() = VideoItem(id=id, remoteId=remoteId, watchUrl=watchUrl, title=title, thumbnailUrl=thumbnailUrl, duration=duration, views=views, sourceName=sourceName, sourceBaseUrl=sourceBaseUrl, sourceEngine=sourceEngine, favoriteKey=mediaKey)
+fun VideoItem.toHistoryEntity(positionMs: Long, durationMs: Long, now: Long = System.currentTimeMillis()) = HistoryEntity(mediaKey=favoriteKey.ifBlank { "$sourceBaseUrl|${remoteId.ifBlank { watchUrl }}" }, id=id, remoteId=remoteId, watchUrl=watchUrl, title=title, thumbnailUrl=thumbnailUrl, duration=duration, views=views, sourceName=sourceName, sourceBaseUrl=sourceBaseUrl, sourceEngine=sourceEngine, positionMs=positionMs.coerceAtLeast(0), durationMs=durationMs.coerceAtLeast(0), updatedAt=now)
