@@ -19,6 +19,7 @@ import pro.noodle.mobile.core.player.PlaybackRepository
 import pro.noodle.mobile.core.player.PlaybackSession
 import pro.noodle.mobile.core.search.BundledSearchRepository
 import pro.noodle.mobile.core.search.SourceSearchError
+import pro.noodle.mobile.core.storage.UserMediaRepository
 
 data class SearchUiState(
     val query: String = "",
@@ -31,11 +32,10 @@ data class SearchUiState(
 )
 
 class SearchViewModel(app: Application) : AndroidViewModel(app) {
-    // A single client instance is deliberately shared so cookie-enabled SNP sessions remain isolated
-    // by sourceKey but survive search -> resolve -> Media3 within this ViewModel lifetime.
     private val http = SecureHttpClient()
     private val searchRepo = BundledSearchRepository(app, http)
     private val playbackRepo = PlaybackRepository(app, http)
+    private val userMedia = UserMediaRepository(app)
     private val _state = MutableStateFlow(SearchUiState())
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
     private var generation = 0L
@@ -96,6 +96,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         resolveJob?.cancel()
         _state.update { it.copy(resolving = true, message = "") }
         resolveJob = viewModelScope.launch {
+            userMedia.saveHistory(video, 0L, 0L)
             val r = playbackRepo.resolve(video, adapter)
             _state.update {
                 if (r.success && r.session != null) it.copy(resolving = false, playback = r.session)
