@@ -16,6 +16,7 @@ import pro.noodle.mobile.core.catalog.MarketplaceRepository
 import pro.noodle.mobile.core.catalog.TrustedCatalogKey
 import pro.noodle.mobile.core.catalog.VerifiedCatalog
 import pro.noodle.mobile.core.studio.AdapterStudioService
+import pro.noodle.mobile.core.studio.StudioAiModel
 import pro.noodle.mobile.core.studio.StudioAiProvider
 import pro.noodle.mobile.core.studio.StudioAiRouter
 
@@ -35,6 +36,7 @@ data class SourceToolsUiState(
     val studioProvider: StudioAiProvider = StudioAiProvider.LOCAL,
     val studioModel: String = "",
     val studioModels: List<String> = emptyList(),
+    val studioModelCatalog: List<StudioAiModel> = emptyList(),
     val studioConnected: Boolean = true,
     val studioAccount: String = "Локальный анализ",
     val studioAuthBusy: Boolean = false,
@@ -162,6 +164,7 @@ class SourceToolsViewModel(app: Application) : AndroidViewModel(app) {
                 studioProvider = provider,
                 studioModel = model,
                 studioModels = emptyList(),
+                studioModelCatalog = emptyList(),
                 studioConnected = account.connected,
                 studioAccount = account.accountLabel,
                 studioLoginUrl = "",
@@ -241,6 +244,7 @@ class SourceToolsViewModel(app: Application) : AndroidViewModel(app) {
                 studioConnected = account.connected,
                 studioAccount = account.accountLabel,
                 studioModels = emptyList(),
+                studioModelCatalog = emptyList(),
                 studioModel = "",
                 studioLoginUrl = "",
                 studioLoginCode = "",
@@ -257,19 +261,36 @@ class SourceToolsViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun loadStudioModels(provider: StudioAiProvider) {
         if (provider == StudioAiProvider.LOCAL) return
         _state.update { it.copy(studioAuthBusy = true, error = "") }
-        val models = runCatching { studioAi.models(provider) }.getOrElse { error ->
+        val catalog = runCatching { studioAi.modelCatalog(provider) }.getOrElse { error ->
             _state.update { it.copy(studioAuthBusy = false, error = "STUDIO_AI_MODELS: ${error.message}") }
             return
         }
+        val models = catalog.map(StudioAiModel::id)
         val saved = studioAi.selectedModel(provider)
-        val selected = saved.takeIf { it in models } ?: models.firstOrNull().orEmpty()
+        val preferred = when (provider) {
+            StudioAiProvider.KILO -> catalog.firstOrNull { it.id.equals("kilo-auto/free", true) }
+                ?: catalog.firstOrNull { it.id.equals("openrouter/free", true) }
+                ?: catalog.firstOrNull { it.isFree }
+            StudioAiProvider.CLINE -> catalog.firstOrNull { it.isFree }
+            StudioAiProvider.LOCAL -> null
+        }
+        val selected = saved.takeIf { it in models }
+            ?: preferred?.id
+            ?: models.firstOrNull().orEmpty()
         if (selected.isNotBlank()) studioAi.selectModel(provider, selected)
+        val freeCount = catalog.count { it.isFree }
         _state.update {
             it.copy(
                 studioAuthBusy = false,
                 studioModels = models,
+                studioModelCatalog = catalog,
                 studioModel = selected,
                 studioConnected = true,
+                studioMessage = if (catalog.isNotEmpty()) {
+                    "Каталог ${provider.title}: ${catalog.size} моделей${if (freeCount > 0) " • free: $freeCount" else ""}."
+                } else {
+                    it.studioMessage
+                },
             )
         }
     }
