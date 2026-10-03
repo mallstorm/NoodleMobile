@@ -18,6 +18,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import pro.noodle.mobile.core.model.VideoItem
 import pro.noodle.mobile.core.recommendations.RelatedVideosRepository
 
@@ -37,6 +38,8 @@ internal fun RelatedVideosSection(
     LaunchedEffect(currentVideo.id, currentVideo.watchUrl) {
         loading = true
         error = ""
+        // Give Media3 the network first. Related cards start shortly after playback preparation.
+        delay(1_200)
         runCatching { repository.load(currentVideo) }
             .onSuccess { items = it }
             .onFailure { error = it.message.orEmpty() }
