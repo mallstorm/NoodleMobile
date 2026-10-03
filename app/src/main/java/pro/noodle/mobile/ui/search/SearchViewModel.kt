@@ -52,14 +52,24 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         val adapter = searchRepo.adapterFor(video) ?: return null
         val result = http.fetchBytes(
             url = url,
-            policy = pro.noodle.mobile.core.network.NetworkPolicy(adapter.allowedHosts, allowCookies = adapter.allowCookies, maxResponseBytes = 3 * 1024 * 1024),
+            policy = pro.noodle.mobile.core.network.NetworkPolicy(
+                adapter.allowedHosts,
+                allowCookies = adapter.allowCookies,
+                maxResponseBytes = 3 * 1024 * 1024,
+            ),
             sourceKey = adapter.id,
             accept = "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.5",
             referer = adapter.baseUrl,
         )
-        if (!result.success || result.bytes.isEmpty()) { thumbnailMisses += url; return null }
+        if (!result.success || result.bytes.isEmpty()) {
+            thumbnailMisses += url
+            return null
+        }
         val bitmap = BitmapFactory.decodeByteArray(result.bytes, 0, result.bytes.size)
-        if (bitmap == null) { thumbnailMisses += url; return null }
+        if (bitmap == null) {
+            thumbnailMisses += url
+            return null
+        }
         thumbnailCache[url] = bitmap
         return bitmap
     }
@@ -88,6 +98,13 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun addFavorite(video: VideoItem) {
+        viewModelScope.launch {
+            userMedia.addFavorite(video)
+            _state.update { it.copy(message = "Добавлено в избранное") }
+        }
+    }
+
     fun open(video: VideoItem) {
         val adapter = searchRepo.adapterFor(video) ?: run {
             _state.update { it.copy(message = "SNP источника не найден.") }
@@ -99,8 +116,11 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
             userMedia.saveHistory(video, 0L, 0L)
             val r = playbackRepo.resolve(video, adapter)
             _state.update {
-                if (r.success && r.session != null) it.copy(resolving = false, playback = r.session)
-                else it.copy(resolving = false, message = "${r.errorCode}: ${r.errorMessage}")
+                if (r.success && r.session != null) {
+                    it.copy(resolving = false, playback = r.session)
+                } else {
+                    it.copy(resolving = false, message = "${r.errorCode}: ${r.errorMessage}")
+                }
             }
         }
     }
