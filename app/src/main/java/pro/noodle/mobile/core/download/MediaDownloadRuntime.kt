@@ -101,7 +101,16 @@ object MediaDownloadRuntime {
             val client = SecureHttpClient().streamingClient(policy, sourceKey)
             // Keep the exact same User-Agent that was used to obtain signed media URLs.
             // Some CDNs bind short-lived signatures to the request fingerprint.
-            return OkHttpDataSource.Factory(client).setUserAgent(BuildIdentity.USER_AGENT)
+            val headers = buildMap<String, String> {
+                put("Accept", "video/*,application/vnd.apple.mpegurl,application/dash+xml,*/*;q=0.8")
+                val sourceHost = sourceKey.trim().lowercase()
+                if (sourceHost.contains('.') && sourceHost.none { it.isWhitespace() || it == '/' || it == ':' }) {
+                    put("Referer", "https://$sourceHost/")
+                }
+            }
+            return OkHttpDataSource.Factory(client)
+                .setUserAgent(BuildIdentity.USER_AGENT)
+                .setDefaultRequestProperties(headers)
         }
 
         fun cacheFactory(policy: NetworkPolicy, sourceKey: String, readOnly: Boolean): CacheDataSource.Factory {
