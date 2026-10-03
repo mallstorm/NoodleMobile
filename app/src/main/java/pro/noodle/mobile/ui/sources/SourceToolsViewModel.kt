@@ -4,52 +4,352 @@ import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import pro.noodle.mobile.core.catalog.*
+import pro.noodle.mobile.core.catalog.CatalogEntry
+import pro.noodle.mobile.core.catalog.CatalogSettingsRepository
+import pro.noodle.mobile.core.catalog.MarketplaceRepository
+import pro.noodle.mobile.core.catalog.TrustedCatalogKey
+import pro.noodle.mobile.core.catalog.VerifiedCatalog
 import pro.noodle.mobile.core.studio.AdapterStudioService
+import pro.noodle.mobile.core.studio.StudioAiProvider
+import pro.noodle.mobile.core.studio.StudioAiRouter
 
 
 data class SourceToolsUiState(
-    val catalogUrl:String="", val catalog:VerifiedCatalog?=null, val marketplaceBusy:Boolean=false,
-    val trustedKeys:List<TrustedCatalogKey> = emptyList(), val message:String="", val error:String="",
-    val studioUrl:String="", val studioJson:String="", val studioBusy:Boolean=false, val studioMessage:String="",
+    val catalogUrl: String = "",
+    val catalog: VerifiedCatalog? = null,
+    val marketplaceBusy: Boolean = false,
+    val trustedKeys: List<TrustedCatalogKey> = emptyList(),
+    val message: String = "",
+    val error: String = "",
+    val studioUrl: String = "",
+    val studioInstruction: String = "",
+    val studioJson: String = "",
+    val studioBusy: Boolean = false,
+    val studioMessage: String = "",
+    val studioProvider: StudioAiProvider = StudioAiProvider.LOCAL,
+    val studioModel: String = "",
+    val studioModels: List<String> = emptyList(),
+    val studioConnected: Boolean = true,
+    val studioAccount: String = "Локальный анализ",
+    val studioAuthBusy: Boolean = false,
+    val studioLoginUrl: String = "",
+    val studioLoginCode: String = "",
+    val studioTestStatus: String = "",
+    val studioTestDetails: String = "",
+    val studioAttempts: Int = 0,
 )
 
-class SourceToolsViewModel(app:Application):AndroidViewModel(app){
-    private val market=MarketplaceRepository(app)
-    private val catalogSettings=CatalogSettingsRepository(app)
-    private val studio=AdapterStudioService(app)
-    private val _state=MutableStateFlow(SourceToolsUiState(trustedKeys=market.trustedKeys().list()))
-    val state:StateFlow<SourceToolsUiState> = _state.asStateFlow()
-    init{viewModelScope.launch{catalogSettings.settings.collect{c->_state.update{it.copy(catalogUrl=c.indexUrl)}}}}
-    fun setCatalogUrl(v:String)=_state.update{it.copy(catalogUrl=v)}
-    fun saveCatalogUrl()=viewModelScope.launch{market.saveIndexUrl(_state.value.catalogUrl);_state.update{it.copy(message="URL каталога сохранён.",error="")}}
-    fun refreshCatalog()=viewModelScope.launch{
-        _state.update{it.copy(marketplaceBusy=true,message="",error="")}
-        val r=market.refresh(_state.value.catalogUrl)
-        _state.update{it.copy(marketplaceBusy=false,catalog=if(r.success)r.catalog else it.catalog,message=if(r.success)r.message else "",error=if(r.success)"" else "${r.errorCode}: ${r.message}",trustedKeys=market.trustedKeys().list())}
+class SourceToolsViewModel(app: Application) : AndroidViewModel(app) {
+    private val market = MarketplaceRepository(app)
+    private val catalogSettings = CatalogSettingsRepository(app)
+    private val studio = AdapterStudioService(app)
+    private val studioAi = StudioAiRouter(app)
+    private val initialProvider = studioAi.selectedProvider()
+    private val initialAccount = studioAi.status(initialProvider)
+
+    private val _state = MutableStateFlow(
+        SourceToolsUiState(
+            trustedKeys = market.trustedKeys().list(),
+            studioProvider = initialProvider,
+            studioModel = studioAi.selectedModel(initialProvider),
+            studioConnected = initialAccount.connected,
+            studioAccount = initialAccount.accountLabel,
+        ),
+    )
+    val state: StateFlow<SourceToolsUiState> = _state.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            catalogSettings.settings.collect { settings ->
+                _state.update { it.copy(catalogUrl = settings.indexUrl) }
+            }
+        }
+        if (initialProvider != StudioAiProvider.LOCAL && initialAccount.connected) refreshStudioModels()
     }
-    fun install(e:CatalogEntry,onDone:()->Unit={})=viewModelScope.launch{
-        _state.update{it.copy(marketplaceBusy=true,message="",error="")};val r=market.install(e)
-        _state.update{it.copy(marketplaceBusy=false,message=if(r.success)r.message else "",error=if(r.success)"" else "${r.errorCode}: ${r.message}")};onDone()
+
+    fun setCatalogUrl(value: String) = _state.update { it.copy(catalogUrl = value) }
+
+    fun saveCatalogUrl() = viewModelScope.launch {
+        market.saveIndexUrl(_state.value.catalogUrl)
+        _state.update { it.copy(message = "URL каталога сохранён.", error = "") }
     }
-    fun importKeys(uri:Uri)=viewModelScope.launch{
-        val app=getApplication<Application>();val text=runCatching{app.contentResolver.openInputStream(uri)?.bufferedReader()?.use{it.readText()}.orEmpty()}.getOrElse{_state.update{s->s.copy(error="KEY_IMPORT_IO: ${it.message}")};return@launch}
-        val r=market.trustedKeys().importRegistry(text);_state.update{it.copy(trustedKeys=market.trustedKeys().list(),message=if(r.valid)r.message else "",error=if(r.valid)"" else "${r.errorCode}: ${r.message}")}
+
+    fun refreshCatalog() = viewModelScope.launch {
+        _state.update { it.copy(marketplaceBusy = true, message = "", error = "") }
+        val result = market.refresh(_state.value.catalogUrl)
+        _state.update {
+            it.copy(
+                marketplaceBusy = false,
+                catalog = if (result.success) result.catalog else it.catalog,
+                message = if (result.success) result.message else "",
+                error = if (result.success) "" else "${result.errorCode}: ${result.message}",
+                trustedKeys = market.trustedKeys().list(),
+            )
+        }
     }
-    fun exportKeys(uri:Uri)=viewModelScope.launch{
-        val app=getApplication<Application>();runCatching{app.contentResolver.openOutputStream(uri,"wt")?.bufferedWriter()?.use{it.write(market.trustedKeys().exportUserRegistry())}?:error("Не удалось открыть файл назначения")}.onSuccess{_state.update{it.copy(message="Пользовательские trusted keys экспортированы.",error="")}}.onFailure{e->_state.update{it.copy(error="KEY_EXPORT_IO: ${e.message}")}}
+
+    fun install(entry: CatalogEntry, onDone: () -> Unit = {}) = viewModelScope.launch {
+        _state.update { it.copy(marketplaceBusy = true, message = "", error = "") }
+        val result = market.install(entry)
+        _state.update {
+            it.copy(
+                marketplaceBusy = false,
+                message = if (result.success) result.message else "",
+                error = if (result.success) "" else "${result.errorCode}: ${result.message}",
+            )
+        }
+        onDone()
     }
-    fun removeKey(id:String){val r=market.trustedKeys().remove(id);_state.update{it.copy(trustedKeys=market.trustedKeys().list(),message=if(r.valid)r.message else "",error=if(r.valid)"" else "${r.errorCode}: ${r.message}")}}
-    fun setStudioUrl(v:String)=_state.update{it.copy(studioUrl=v)}
-    fun setStudioJson(v:String)=_state.update{it.copy(studioJson=v)}
-    fun analyzeStudio()=viewModelScope.launch{
-        _state.update{it.copy(studioBusy=true,studioMessage="",error="")};val r=studio.analyze(_state.value.studioUrl)
-        _state.update{it.copy(studioBusy=false,studioJson=if(r.success)r.json else it.studioJson,studioMessage=if(r.success)r.message else "",error=if(r.success)"" else "${r.errorCode}: ${r.message}")}
+
+    fun importKeys(uri: Uri) = viewModelScope.launch {
+        val app = getApplication<Application>()
+        val text = runCatching {
+            app.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }.orEmpty()
+        }.getOrElse { error ->
+            _state.update { it.copy(error = "KEY_IMPORT_IO: ${error.message}") }
+            return@launch
+        }
+        val result = market.trustedKeys().importRegistry(text)
+        _state.update {
+            it.copy(
+                trustedKeys = market.trustedKeys().list(),
+                message = if (result.valid) result.message else "",
+                error = if (result.valid) "" else "${result.errorCode}: ${result.message}",
+            )
+        }
     }
-    fun saveStudio(onDone:()->Unit={})=viewModelScope.launch{
-        _state.update{it.copy(studioBusy=true,error="")};val r=studio.saveJson(_state.value.studioJson)
-        _state.update{it.copy(studioBusy=false,studioMessage=if(r.success)r.message else it.studioMessage,error=if(r.success)"" else "${r.errorCode}: ${r.message}")};if(r.success)onDone()
+
+    fun exportKeys(uri: Uri) = viewModelScope.launch {
+        val app = getApplication<Application>()
+        runCatching {
+            app.contentResolver.openOutputStream(uri, "wt")?.bufferedWriter()?.use {
+                it.write(market.trustedKeys().exportUserRegistry())
+            } ?: error("Не удалось открыть файл назначения")
+        }.onSuccess {
+            _state.update { it.copy(message = "Пользовательские trusted keys экспортированы.", error = "") }
+        }.onFailure { error ->
+            _state.update { it.copy(error = "KEY_EXPORT_IO: ${error.message}") }
+        }
+    }
+
+    fun removeKey(id: String) {
+        val result = market.trustedKeys().remove(id)
+        _state.update {
+            it.copy(
+                trustedKeys = market.trustedKeys().list(),
+                message = if (result.valid) result.message else "",
+                error = if (result.valid) "" else "${result.errorCode}: ${result.message}",
+            )
+        }
+    }
+
+    fun setStudioUrl(value: String) = _state.update { it.copy(studioUrl = value) }
+    fun setStudioInstruction(value: String) = _state.update { it.copy(studioInstruction = value) }
+    fun setStudioJson(value: String) = _state.update { it.copy(studioJson = value) }
+
+    fun setStudioProvider(provider: StudioAiProvider) {
+        studioAi.selectProvider(provider)
+        val account = studioAi.status(provider)
+        val model = studioAi.selectedModel(provider)
+        _state.update {
+            it.copy(
+                studioProvider = provider,
+                studioModel = model,
+                studioModels = emptyList(),
+                studioConnected = account.connected,
+                studioAccount = account.accountLabel,
+                studioLoginUrl = "",
+                studioLoginCode = "",
+                studioTestStatus = "",
+                studioTestDetails = "",
+                error = "",
+            )
+        }
+        if (provider != StudioAiProvider.LOCAL && account.connected) refreshStudioModels()
+    }
+
+    fun setStudioModel(model: String) {
+        studioAi.selectModel(_state.value.studioProvider, model)
+        _state.update { it.copy(studioModel = model) }
+    }
+
+    fun beginStudioLogin() = viewModelScope.launch {
+        val provider = _state.value.studioProvider
+        if (provider == StudioAiProvider.LOCAL) return@launch
+        _state.update {
+            it.copy(
+                studioAuthBusy = true,
+                studioLoginUrl = "",
+                studioLoginCode = "",
+                studioMessage = "Запрашиваю код входа ${provider.title}…",
+                error = "",
+            )
+        }
+        val login = runCatching { studioAi.beginLogin(provider) }.getOrElse { error ->
+            _state.update {
+                it.copy(
+                    studioAuthBusy = false,
+                    error = "STUDIO_AI_LOGIN: ${error.message}",
+                    studioMessage = "",
+                )
+            }
+            return@launch
+        }
+        _state.update {
+            it.copy(
+                studioLoginUrl = login.verificationUrl,
+                studioLoginCode = login.userCode,
+                studioMessage = "Откройте страницу входа и подтвердите доступ. NoodleMobile ожидает подтверждение…",
+            )
+        }
+        val account = runCatching { studioAi.awaitLogin(login) }.getOrElse { error ->
+            _state.update {
+                it.copy(
+                    studioAuthBusy = false,
+                    error = "STUDIO_AI_LOGIN: ${error.message}",
+                    studioMessage = "",
+                )
+            }
+            return@launch
+        }
+        _state.update {
+            it.copy(
+                studioAuthBusy = false,
+                studioConnected = true,
+                studioAccount = account.accountLabel,
+                studioLoginUrl = "",
+                studioLoginCode = "",
+                studioMessage = "${provider.title} подключён${account.accountLabel.takeIf { label -> label.isNotBlank() }?.let { label -> ": $label" }.orEmpty()}.",
+                error = "",
+            )
+        }
+        loadStudioModels(provider)
+    }
+
+    fun disconnectStudioAi() {
+        val provider = _state.value.studioProvider
+        studioAi.disconnect(provider)
+        val account = studioAi.status(provider)
+        _state.update {
+            it.copy(
+                studioConnected = account.connected,
+                studioAccount = account.accountLabel,
+                studioModels = emptyList(),
+                studioModel = "",
+                studioLoginUrl = "",
+                studioLoginCode = "",
+                studioMessage = if (provider == StudioAiProvider.LOCAL) it.studioMessage else "${provider.title} отключён.",
+                error = "",
+            )
+        }
+    }
+
+    fun refreshStudioModels() = viewModelScope.launch {
+        loadStudioModels(_state.value.studioProvider)
+    }
+
+    private suspend fun loadStudioModels(provider: StudioAiProvider) {
+        if (provider == StudioAiProvider.LOCAL) return
+        _state.update { it.copy(studioAuthBusy = true, error = "") }
+        val models = runCatching { studioAi.models(provider) }.getOrElse { error ->
+            _state.update { it.copy(studioAuthBusy = false, error = "STUDIO_AI_MODELS: ${error.message}") }
+            return
+        }
+        val saved = studioAi.selectedModel(provider)
+        val selected = saved.takeIf { it in models } ?: models.firstOrNull().orEmpty()
+        if (selected.isNotBlank()) studioAi.selectModel(provider, selected)
+        _state.update {
+            it.copy(
+                studioAuthBusy = false,
+                studioModels = models,
+                studioModel = selected,
+                studioConnected = true,
+            )
+        }
+    }
+
+    fun analyzeStudio() = viewModelScope.launch {
+        _state.update {
+            it.copy(
+                studioBusy = true,
+                studioMessage = "",
+                studioTestStatus = "",
+                studioTestDetails = "",
+                studioAttempts = 0,
+                error = "",
+            )
+        }
+        val result = studio.analyze(_state.value.studioUrl)
+        applyStudioResult(result)
+    }
+
+    fun generateStudio() = viewModelScope.launch {
+        val state = _state.value
+        _state.update {
+            it.copy(
+                studioBusy = true,
+                studioMessage = "Adapter Studio анализирует страницу и готовит SNP…",
+                studioTestStatus = "",
+                studioTestDetails = "",
+                studioAttempts = 0,
+                error = "",
+            )
+        }
+        val result = studio.generate(
+            url = state.studioUrl,
+            instruction = state.studioInstruction,
+            provider = state.studioProvider,
+            model = state.studioModel,
+        )
+        if (result.model.isNotBlank()) setStudioModel(result.model)
+        applyStudioResult(result)
+    }
+
+    fun testStudio() = viewModelScope.launch {
+        val json = _state.value.studioJson
+        if (json.isBlank()) return@launch
+        _state.update { it.copy(studioBusy = true, studioMessage = "Выполняется live test…", error = "") }
+        applyStudioResult(studio.testJson(json), preserveJsonOnFailure = true)
+    }
+
+    private fun applyStudioResult(
+        result: pro.noodle.mobile.core.studio.StudioAnalyzeResult,
+        preserveJsonOnFailure: Boolean = false,
+    ) {
+        _state.update {
+            it.copy(
+                studioBusy = false,
+                studioJson = when {
+                    result.json.isNotBlank() -> result.json
+                    preserveJsonOnFailure -> it.studioJson
+                    result.success -> it.studioJson
+                    else -> it.studioJson
+                },
+                studioMessage = if (result.success) result.message else "",
+                studioTestStatus = result.testStatus,
+                studioTestDetails = result.testDetails,
+                studioAttempts = result.attempts,
+                error = if (result.success) "" else "${result.errorCode}: ${result.message}",
+            )
+        }
+    }
+
+    fun saveStudio(onDone: () -> Unit = {}) = viewModelScope.launch {
+        _state.update { it.copy(studioBusy = true, error = "") }
+        val result = studio.saveJson(_state.value.studioJson)
+        _state.update {
+            it.copy(
+                studioBusy = false,
+                studioMessage = if (result.success) result.message else it.studioMessage,
+                error = if (result.success) "" else "${result.errorCode}: ${result.message}",
+            )
+        }
+        if (result.success) onDone()
     }
 }

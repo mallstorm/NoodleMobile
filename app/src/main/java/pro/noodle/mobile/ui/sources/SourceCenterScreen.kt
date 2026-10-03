@@ -11,7 +11,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -133,7 +132,7 @@ fun SourceCenterScreen(
         )
     }
     if (showStudio) {
-        StudioDialog(toolState, tools, onDismiss = { showStudio = false }, onSaved = vm::reload)
+        Studio2Dialog(toolState, tools, onDismiss = { showStudio = false }, onSaved = vm::reload)
     }
     if (showKeys) {
         TrustedKeysDialog(
@@ -307,46 +306,6 @@ private fun MarketplaceEntryCard(e: CatalogEntry, busy: Boolean, onInstall: () -
             Button(onClick = onInstall, enabled = !busy && e.compatible) { Text("Установить") }
         }
     }
-}
-
-@Composable
-private fun StudioDialog(
-    state: SourceToolsUiState,
-    vm: SourceToolsViewModel,
-    onDismiss: () -> Unit,
-    onSaved: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } },
-        title = { Text("Adapter Studio Mobile") },
-        text = {
-            Column(Modifier.fillMaxWidth().heightIn(max = 650.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = state.studioUrl,
-                    onValueChange = vm::setStudioUrl,
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("HTTPS URL сайта") },
-                    singleLine = true,
-                )
-                Button(onClick = vm::analyzeStudio, enabled = !state.studioBusy && state.studioUrl.isNotBlank()) { Text("Анализировать") }
-                if (state.studioBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
-                if (state.studioMessage.isNotBlank()) Text(state.studioMessage, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
-                if (state.error.isNotBlank()) Text(state.error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                if (state.studioJson.isNotBlank()) {
-                    Text("Schema v3 preview — можно отредактировать перед сохранением", fontWeight = FontWeight.SemiBold)
-                    OutlinedTextField(
-                        value = state.studioJson,
-                        onValueChange = vm::setStudioJson,
-                        modifier = Modifier.fillMaxWidth().height(330.dp),
-                        textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace),
-                        label = { Text("adapter.json") },
-                    )
-                    Button(onClick = { vm.saveStudio(onSaved) }, enabled = !state.studioBusy) { Text("Сохранить custom SNP") }
-                }
-            }
-        },
-    )
 }
 
 @Composable
