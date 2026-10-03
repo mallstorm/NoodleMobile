@@ -1,14 +1,10 @@
 package pro.noodle.mobile.ui.player
 
 import android.app.Activity
-import android.app.PictureInPictureParams
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
-import android.util.Rational
-import android.view.ViewGroup
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.horizontalScroll
@@ -24,7 +20,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.C
@@ -35,7 +30,6 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.*
 import okhttp3.OkHttpClient
 import pro.noodle.mobile.core.download.AdaptiveDownloadSelection
@@ -48,9 +42,14 @@ import pro.noodle.mobile.core.settings.AppSettings
 import pro.noodle.mobile.core.settings.AppSettingsRepository
 import pro.noodle.mobile.core.storage.UserMediaRepository
 
-@OptIn(UnstableApi::class)
+@OptIn(UnstableApi::class, ExperimentalMaterial3Api::class)
 @Composable
-fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack: () -> Unit) {
+fun PlayerScreen(
+    session: PlaybackSession,
+    streamingClient: OkHttpClient,
+    onBack: () -> Unit,
+    onOpenRelated: (VideoItem) -> Unit = {},
+) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val activity = context.findActivity()
     val video = session.video
@@ -65,6 +64,7 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
 
     var message by remember { mutableStateOf("") }
     var fullscreen by remember { mutableStateOf(false) }
+    var showPlaybackSettings by remember { mutableStateOf(false) }
     var selectedVariant by remember(video.id) { mutableIntStateOf(-1) }
     var selectedAudio by remember(video.id) { mutableIntStateOf(-1) }
     var selectedText by remember(video.id) { mutableIntStateOf(-1) }
@@ -176,7 +176,7 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
         onDispose {
             player.removeListener(listener)
             val pos = player.currentPosition.coerceAtLeast(0)
-            val dur = player.duration.coerceAtLeast(0)
+            val dur = player.duration.takeIf { it > 0 && it != C.TIME_UNSET } ?: 0L
             player.release()
             ioScope.launch {
                 if (appSettings.rememberPlaybackPosition) {
@@ -233,57 +233,80 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
         )
     }
 
-    if (fullscreen) {
-        AndroidView(
-            factory = { ctx ->
-                PlayerView(ctx).apply {
-                    this.player = player
-                    useController = true
-                    layoutParams = ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                    )
+    if (showPlaybackSettings) {
+        PlayerSettingsSheet(
+            video = video,
+            player = player,
+            selectedSource = selectedIndex,
+            selectedVariant = selectedVariant,
+            selectedAudio = selectedAudio,
+            selectedText = selectedText,
+            onSource = { selectedIndex = it },
+            onVariant = { idx ->
+                selectedVariant = idx
+                val builder = player.trackSelectionParameters.buildUpon()
+                if (idx < 0) builder.setMaxVideoSize(Int.MAX_VALUE, Int.MAX_VALUE)
+                else {
+                    val v = video.variants[idx]
+                    if (v.width > 0 && v.height > 0) builder.setMaxVideoSize(v.width, v.height)
                 }
+                player.trackSelectionParameters = builder.build()
             },
-            update = { it.player = player },
+            onAudio = { idx ->
+                selectedAudio = idx
+                val builder = player.trackSelectionParameters.buildUpon()
+                if (idx >= 0) builder.setPreferredAudioLanguage(video.audioTracks[idx].language.ifBlank { null })
+                else builder.setPreferredAudioLanguage(null)
+                player.trackSelectionParameters = builder.build()
+            },
+            onText = { idx ->
+                selectedText = idx
+                val builder = player.trackSelectionParameters.buildUpon()
+                when {
+                    idx == -2 -> {
+                        builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                        builder.setPreferredTextLanguage(null)
+                    }
+                    idx < 0 -> {
+                        builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                        builder.setPreferredTextLanguage(null)
+                    }
+                    else -> {
+                        builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                        builder.setPreferredTextLanguage(video.textTracks[idx].language.ifBlank { null })
+                    }
+                }
+                player.trackSelectionParameters = builder.build()
+            },
+            onDismiss = { showPlaybackSettings = false },
+        )
+    }
+
+    val backFromPlayer = {
+        if (fullscreen) fullscreen = false else onBack()
+    }
+
+    if (fullscreen) {
+        PlayerVideoSurface(
+            player = player,
+            fullscreen = true,
+            onBack = backFromPlayer,
+            onToggleFullscreen = { fullscreen = false },
+            onOpenSettings = { showPlaybackSettings = true },
+            activity = activity,
             modifier = Modifier.fillMaxSize(),
         )
         return
     }
 
     Column(Modifier.fillMaxSize()) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onBack) { Icon(Icons.Outlined.ArrowBack, "Назад") }
-            Icon(Icons.Outlined.PlayCircle, null, tint = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.width(8.dp))
-            Text("NoodleMobile", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            if (Build.VERSION.SDK_INT >= 26) {
-                IconButton(
-                    onClick = {
-                        activity?.enterPictureInPictureMode(
-                            PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build(),
-                        )
-                    },
-                ) { Icon(Icons.Outlined.PictureInPictureAlt, "PiP") }
-            }
-            IconButton(onClick = { fullscreen = true }) { Icon(Icons.Outlined.Fullscreen, "Полный экран") }
-        }
-
-        AndroidView(
-            factory = { ctx ->
-                PlayerView(ctx).apply {
-                    this.player = player
-                    useController = true
-                    layoutParams = ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                    )
-                }
-            },
-            update = { it.player = player },
+        PlayerVideoSurface(
+            player = player,
+            fullscreen = false,
+            onBack = backFromPlayer,
+            onToggleFullscreen = { fullscreen = true },
+            onOpenSettings = { showPlaybackSettings = true },
+            activity = activity,
             modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
         )
 
@@ -304,8 +327,8 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
                 Text(
                     listOf(
                         video.views.takeIf { it.isNotBlank() },
+                        video.duration.takeIf { it.isNotBlank() },
                         source.label.takeIf { it.isNotBlank() },
-                        source.protocol.takeIf { it.isNotBlank() },
                     ).filterNotNull().joinToString(" • ").ifBlank { video.sourceName },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -364,111 +387,53 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
                     }
                     PlayerActionButton(Icons.Outlined.Download, "Скачать") { requestDownload() }
                     PlayerActionButton(Icons.Outlined.Share, "Поделиться") { shareVideo() }
-                    PlayerActionButton(Icons.Outlined.Fullscreen, "На весь экран") { fullscreen = true }
+                    PlayerActionButton(Icons.Outlined.MoreHoriz, "Ещё") { showPlaybackSettings = true }
                 }
             }
 
             if (message.isNotBlank()) {
                 item {
-                    Surface(
-                        color = if (message.contains("ERROR", true) || message.contains("FAILED", true)) {
-                            MaterialTheme.colorScheme.errorContainer
-                        } else MaterialTheme.colorScheme.surfaceVariant,
-                        shape = MaterialTheme.shapes.medium,
-                    ) {
-                        Text(message, Modifier.padding(10.dp), style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-            }
-
-            if (video.sources.size > 1) {
-                item {
-                    ChoiceRow(
-                        "Источник",
-                        video.sources.mapIndexed { index, s ->
-                            s.label.ifBlank { s.protocol.ifBlank { "Источник ${index + 1}" } }
+                    PlaybackMessageCard(
+                        message = message,
+                        onRetry = {
+                            message = ""
+                            player.prepare()
+                            player.play()
                         },
-                        selectedIndex,
-                    ) { selectedIndex = it }
-                }
-            }
-
-            if (video.variants.isNotEmpty()) {
-                item {
-                    ChoiceRow(
-                        "Качество",
-                        listOf("Auto") + video.variants.map {
-                            it.label.ifBlank { if (it.height > 0) "${it.height}p" else it.id }
-                        },
-                        selectedVariant + 1,
-                    ) { idx ->
-                        selectedVariant = idx - 1
-                        val builder = player.trackSelectionParameters.buildUpon()
-                        if (idx <= 0) {
-                            builder.setMaxVideoSize(Int.MAX_VALUE, Int.MAX_VALUE)
-                        } else {
-                            val v = video.variants[idx - 1]
-                            if (v.width > 0 && v.height > 0) builder.setMaxVideoSize(v.width, v.height)
-                        }
-                        player.trackSelectionParameters = builder.build()
-                    }
-                }
-            }
-
-            if (video.audioTracks.isNotEmpty()) {
-                item {
-                    ChoiceRow(
-                        "Аудио",
-                        listOf("Auto") + video.audioTracks.map { it.label.ifBlank { it.language.ifBlank { "Track" } } },
-                        selectedAudio + 1,
-                    ) { idx ->
-                        selectedAudio = idx - 1
-                        val builder = player.trackSelectionParameters.buildUpon()
-                        if (idx > 0) {
-                            val track = video.audioTracks[idx - 1]
-                            builder.setPreferredAudioLanguage(track.language.ifBlank { null })
-                        } else builder.setPreferredAudioLanguage(null)
-                        player.trackSelectionParameters = builder.build()
-                    }
-                }
-            }
-
-            if (video.textTracks.isNotEmpty()) {
-                item {
-                    ChoiceRow(
-                        "Субтитры",
-                        listOf("Выкл", "Auto") + video.textTracks.map { it.label.ifBlank { it.language.ifBlank { "Track" } } },
-                        selectedText + 1,
-                    ) { idx ->
-                        selectedText = idx - 1
-                        val builder = player.trackSelectionParameters.buildUpon()
-                        when (idx) {
-                            0 -> {
-                                builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-                                builder.setPreferredTextLanguage(null)
-                            }
-                            1 -> {
-                                builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                                builder.setPreferredTextLanguage(null)
-                            }
-                            else -> {
-                                builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                                val track = video.textTracks[idx - 2]
-                                builder.setPreferredTextLanguage(track.language.ifBlank { null })
-                            }
-                        }
-                        player.trackSelectionParameters = builder.build()
-                    }
+                    )
                 }
             }
 
             item {
+                RelatedVideosSection(
+                    currentVideo = video,
+                    columns = appSettings.relatedVideosColumns,
+                    onColumnsChange = { columns ->
+                        ioScope.launch { settingsRepo.setRelatedVideosColumns(columns) }
+                    },
+                    onOpen = onOpenRelated,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaybackMessageCard(message: String, onRetry: () -> Unit) {
+    var details by remember(message) { mutableStateOf(false) }
+    val isError = message.contains("ERROR", true) || message.contains("FAILED", true) || message.contains("HTTP", true)
+    Surface(
+        color = if (isError) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant,
+        shape = MaterialTheme.shapes.medium,
+    ) {
+        Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(if (isError) "Не удалось воспроизвести видео" else message, fontWeight = FontWeight.SemiBold)
+            if (isError) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Скорость", modifier = Modifier.padding(top = 10.dp), style = MaterialTheme.typography.labelMedium)
-                    AssistChip(onClick = { player.setPlaybackSpeed(1f) }, label = { Text("1×") })
-                    AssistChip(onClick = { player.setPlaybackSpeed(1.5f) }, label = { Text("1.5×") })
-                    AssistChip(onClick = { player.setPlaybackSpeed(2f) }, label = { Text("2×") })
+                    TextButton(onClick = onRetry) { Text("Повторить") }
+                    TextButton(onClick = { details = !details }) { Text(if (details) "Скрыть детали" else "Подробности") }
                 }
+                if (details) Text(message, style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -505,6 +470,78 @@ private fun ChoiceRow(title: String, options: List<String>, selected: Int, onSel
         Text(title, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 10.dp))
         options.forEachIndexed { index, text ->
             FilterChip(selected = index == selected, onClick = { onSelect(index) }, label = { Text(text) })
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PlayerSettingsSheet(
+    video: VideoItem,
+    player: Player,
+    selectedSource: Int,
+    selectedVariant: Int,
+    selectedAudio: Int,
+    selectedText: Int,
+    onSource: (Int) -> Unit,
+    onVariant: (Int) -> Unit,
+    onAudio: (Int) -> Unit,
+    onText: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("Настройки воспроизведения", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+
+            if (video.sources.size > 1) {
+                ChoiceRow(
+                    "Источник",
+                    video.sources.mapIndexed { index, s -> s.label.ifBlank { s.protocol.ifBlank { "Источник ${index + 1}" } } },
+                    selectedSource,
+                    onSource,
+                )
+            }
+            if (video.variants.isNotEmpty()) {
+                ChoiceRow(
+                    "Качество",
+                    listOf("Auto") + video.variants.map { it.label.ifBlank { if (it.height > 0) "${it.height}p" else it.id } },
+                    selectedVariant + 1,
+                ) { onVariant(it - 1) }
+            }
+            if (video.audioTracks.isNotEmpty()) {
+                ChoiceRow(
+                    "Аудио",
+                    listOf("Auto") + video.audioTracks.map { it.label.ifBlank { it.language.ifBlank { "Track" } } },
+                    selectedAudio + 1,
+                ) { onAudio(it - 1) }
+            }
+            if (video.textTracks.isNotEmpty()) {
+                ChoiceRow(
+                    "Субтитры",
+                    listOf("Выкл", "Auto") + video.textTracks.map { it.label.ifBlank { it.language.ifBlank { "Track" } } },
+                    selectedText + 2,
+                ) { idx ->
+                    when (idx) {
+                        0 -> onText(-2)
+                        1 -> onText(-1)
+                        else -> onText(idx - 2)
+                    }
+                }
+            }
+
+            Text("Скорость", fontWeight = FontWeight.SemiBold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(0.5f, 1f, 1.5f, 2f).forEach { speed ->
+                    AssistChip(
+                        onClick = { player.setPlaybackSpeed(speed) },
+                        label = { Text(if (speed == 1f) "1×" else "${speed}×") },
+                    )
+                }
+            }
+            Spacer(Modifier.height(16.dp))
         }
     }
 }
