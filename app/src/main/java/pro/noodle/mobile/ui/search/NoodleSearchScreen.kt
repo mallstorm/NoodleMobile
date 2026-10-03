@@ -1,35 +1,49 @@
 package pro.noodle.mobile.ui.search
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.FilterList
-import androidx.compose.material.icons.outlined.PlayCircle
-import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import pro.noodle.mobile.core.model.VideoItem
+import pro.noodle.mobile.core.version.BuildIdentity
 import pro.noodle.mobile.ui.player.PlayerScreen
 
 private enum class DurationFilter(val title: String) {
-    ANY("Любая"), SHORT("< 5 мин"), MEDIUM("5–20 мин"), LONG("> 20 мин")
+    ANY("Все"), SHORT("Короткие"), MEDIUM("Средние"), LONG("Длинные")
+}
+
+private enum class ResultSort(val title: String) {
+    SOURCE_ORDER("По выдаче"), VIEWS("По просмотрам"), DURATION("По длительности")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NoodleSearchScreen(vm: SearchViewModel) {
+fun NoodleSearchScreen(
+    vm: SearchViewModel,
+    onOpenSettings: () -> Unit = {},
+) {
     val state by vm.state.collectAsState()
     state.playback?.let { session ->
         val client = remember(session.sourceKey, session.video.id) { vm.streamingClient(session) }
@@ -37,67 +51,171 @@ fun NoodleSearchScreen(vm: SearchViewModel) {
         return
     }
 
+    val focus = LocalFocusManager.current
     var filterSheet by remember { mutableStateOf(false) }
+    var errorDialog by remember { mutableStateOf(false) }
     var sourceFilter by remember { mutableStateOf<String?>(null) }
     var durationFilter by remember { mutableStateOf(DurationFilter.ANY) }
+    var sort by remember { mutableStateOf(ResultSort.SOURCE_ORDER) }
+    var sortMenu by remember { mutableStateOf(false) }
+    var gridMode by remember { mutableStateOf(true) }
 
-    val sourceNames = remember(state.items) { state.items.map { it.sourceName }.filter { it.isNotBlank() }.distinct() }
-    val visibleItems = remember(state.items, sourceFilter, durationFilter) {
-        state.items.filter { item ->
+    val sourceNames = remember(state.items) {
+        state.items.map { it.sourceName }.filter { it.isNotBlank() }.distinct()
+    }
+    val visibleItems = remember(state.items, sourceFilter, durationFilter, sort) {
+        val filtered = state.items.filter { item ->
             (sourceFilter == null || item.sourceName == sourceFilter) && matchesDuration(item.duration, durationFilter)
+        }
+        when (sort) {
+            ResultSort.SOURCE_ORDER -> filtered
+            ResultSort.VIEWS -> filtered.sortedByDescending { parseViewsScore(it.views) }
+            ResultSort.DURATION -> filtered.sortedByDescending { parseDurationSeconds(it.duration) ?: 0 }
         }
     }
 
     Column(
-        Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        Modifier
+            .fillMaxSize()
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(11.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = state.query,
-                onValueChange = vm::setQuery,
-                modifier = Modifier.weight(1f),
-                placeholder = { Text("Искать по всем источникам…") },
-                leadingIcon = { Icon(Icons.Outlined.Search, null) },
-                singleLine = true,
-                shape = MaterialTheme.shapes.extraLarge,
-            )
-            FilledTonalIconButton(onClick = { filterSheet = true }) {
-                Icon(Icons.Outlined.FilterList, "Фильтры")
+        NoodleHeader(
+            errorCount = state.errors.size,
+            onStatusClick = { errorDialog = true },
+            onSettingsClick = onOpenSettings,
+        )
+
+        OutlinedTextField(
+            value = state.query,
+            onValueChange = vm::setQuery,
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("Поиск по всем источникам") },
+            leadingIcon = {
+                IconButton(
+                    onClick = {
+                        focus.clearFocus()
+                        vm.search()
+                    },
+                    enabled = !state.loading && state.query.isNotBlank(),
+                ) {
+                    Icon(Icons.Outlined.Search, "Найти")
+                }
+            },
+            trailingIcon = {
+                IconButton(onClick = { filterSheet = true }) {
+                    Icon(Icons.Outlined.Tune, "Фильтры", tint = MaterialTheme.colorScheme.secondary)
+                }
+            },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(
+                onSearch = {
+                    focus.clearFocus()
+                    vm.search()
+                },
+            ),
+            singleLine = true,
+            shape = MaterialTheme.shapes.extraLarge,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+            ),
+        )
+
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            DurationFilter.entries.forEach { filter ->
+                FilterChip(
+                    selected = durationFilter == filter && sourceFilter == null,
+                    onClick = {
+                        durationFilter = filter
+                        if (filter != DurationFilter.ANY) sourceFilter = null
+                    },
+                    label = { Text(filter.title) },
+                )
+            }
+            sourceNames.take(3).forEach { source ->
+                FilterChip(
+                    selected = sourceFilter == source,
+                    onClick = {
+                        sourceFilter = if (sourceFilter == source) null else source
+                        if (sourceFilter != null) durationFilter = DurationFilter.ANY
+                    },
+                    label = { Text(shortSourceName(source), maxLines = 1) },
+                )
+            }
+            if (sourceNames.size > 3) {
+                AssistChip(onClick = { filterSheet = true }, label = { Text("+${sourceNames.size - 3}") })
             }
         }
 
         Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            FilterChip(
-                selected = sourceFilter == null,
-                onClick = { sourceFilter = null },
-                label = { Text("Все") },
+            Text(
+                if (state.items.isEmpty()) "Поиск по подключённым источникам" else "Найдено: ${visibleItems.size} видео",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
             )
-            sourceNames.take(4).forEach { source ->
-                FilterChip(
-                    selected = sourceFilter == source,
-                    onClick = { sourceFilter = if (sourceFilter == source) null else source },
-                    label = { Text(shortSourceName(source), maxLines = 1) },
-                )
+
+            Box {
+                OutlinedButton(
+                    onClick = { sortMenu = true },
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                ) {
+                    Text(sort.title, style = MaterialTheme.typography.labelMedium)
+                    Spacer(Modifier.width(4.dp))
+                    Icon(Icons.Outlined.KeyboardArrowDown, null, modifier = Modifier.size(18.dp))
+                }
+                DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
+                    ResultSort.entries.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option.title) },
+                            onClick = {
+                                sort = option
+                                sortMenu = false
+                            },
+                            leadingIcon = {
+                                if (sort == option) Icon(Icons.Outlined.Check, null)
+                            },
+                        )
+                    }
+                }
             }
-            if (sourceNames.size > 4) AssistChip(onClick = { filterSheet = true }, label = { Text("+${sourceNames.size - 4}") })
+
+            Spacer(Modifier.width(7.dp))
+            Surface(
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surfaceVariant,
+            ) {
+                Row {
+                    IconButton(onClick = { gridMode = true }) {
+                        Icon(
+                            Icons.Outlined.GridView,
+                            "Сетка",
+                            tint = if (gridMode) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    IconButton(onClick = { gridMode = false }) {
+                        Icon(
+                            Icons.Outlined.ViewList,
+                            "Список",
+                            tint = if (!gridMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
         }
 
-        Button(
-            onClick = vm::search,
-            enabled = !state.loading && state.query.isNotBlank(),
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.large,
-        ) {
-            Icon(Icons.Outlined.Search, null)
-            Spacer(Modifier.width(8.dp))
-            Text(if (state.loading) "Ищем…" else "Найти")
+        if (state.loading || state.resolving) {
+            LinearProgressIndicator(Modifier.fillMaxWidth())
         }
-
-        if (state.loading || state.resolving) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (state.message.isNotBlank()) {
             Text(
                 state.message,
@@ -105,28 +223,31 @@ fun NoodleSearchScreen(vm: SearchViewModel) {
                 style = MaterialTheme.typography.bodySmall,
             )
         }
-        if (state.errors.isNotEmpty()) {
-            Text(
-                "Недоступно источников: ${state.errors.size}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.tertiary,
-            )
-        }
 
         if (visibleItems.isEmpty() && state.items.isNotEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("По выбранным фильтрам ничего нет", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-        } else {
+        } else if (gridMode) {
             LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(9.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(bottom = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(11.dp),
             ) {
                 items(visibleItems, key = { it.id }) { video ->
                     SearchGridCard(video, vm)
+                }
+            }
+        } else {
+            androidx.compose.foundation.lazy.LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(9.dp),
+            ) {
+                items(visibleItems.size, key = { visibleItems[it].id }) { index ->
+                    SearchListCard(visibleItems[index], vm)
                 }
             }
         }
@@ -140,19 +261,37 @@ fun NoodleSearchScreen(vm: SearchViewModel) {
             ) {
                 Text("Фильтры", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 Text("Источники", style = MaterialTheme.typography.titleMedium)
-                FlowChips(sourceNames, sourceFilter) { sourceFilter = it }
+                FilterChip(
+                    selected = sourceFilter == null,
+                    onClick = { sourceFilter = null },
+                    label = { Text("Все источники") },
+                )
+                sourceNames.forEach { source ->
+                    FilterChip(
+                        selected = sourceFilter == source,
+                        onClick = { sourceFilter = if (sourceFilter == source) null else source },
+                        label = { Text(source) },
+                    )
+                }
                 Text("Длительность", style = MaterialTheme.typography.titleMedium)
                 Row(
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
                     DurationFilter.entries.forEach { f ->
-                        FilterChip(selected = durationFilter == f, onClick = { durationFilter = f }, label = { Text(f.title) })
+                        FilterChip(
+                            selected = durationFilter == f,
+                            onClick = { durationFilter = f },
+                            label = { Text(f.title) },
+                        )
                     }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
-                        onClick = { sourceFilter = null; durationFilter = DurationFilter.ANY },
+                        onClick = {
+                            sourceFilter = null
+                            durationFilter = DurationFilter.ANY
+                        },
                         modifier = Modifier.weight(1f),
                     ) { Text("Сброс") }
                     Button(onClick = { filterSheet = false }, modifier = Modifier.weight(1f)) { Text("Применить") }
@@ -161,80 +300,241 @@ fun NoodleSearchScreen(vm: SearchViewModel) {
             }
         }
     }
+
+    if (errorDialog) {
+        AlertDialog(
+            onDismissRequest = { errorDialog = false },
+            confirmButton = {
+                TextButton(onClick = { errorDialog = false }) { Text("Закрыть") }
+            },
+            title = { Text("Состояние источников") },
+            text = {
+                if (state.errors.isEmpty()) {
+                    Text("Ошибок источников в текущем поиске нет.")
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        state.errors.take(6).forEach { e ->
+                            Text("${e.sourceName}: ${e.errorCode}", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            },
+        )
+    }
 }
 
 @Composable
-private fun FlowChips(sources: List<String>, selected: String?, onSelect: (String?) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        FilterChip(selected = selected == null, onClick = { onSelect(null) }, label = { Text("Все источники") })
-        sources.forEach { source ->
-            FilterChip(
-                selected = selected == source,
-                onClick = { onSelect(if (selected == source) null else source) },
-                label = { Text(source) },
+private fun NoodleHeader(
+    errorCount: Int,
+    onStatusClick: () -> Unit,
+    onSettingsClick: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Noodle",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    "Mobile",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+                Spacer(Modifier.width(8.dp))
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = MaterialTheme.shapes.large,
+                ) {
+                    Text(
+                        BuildIdentity.VERSION_NAME,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Text(
+                "Все источники. Больше контента.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+
+        BadgedBox(
+            badge = {
+                if (errorCount > 0) Badge { Text(errorCount.coerceAtMost(9).toString()) }
+            },
+        ) {
+            FilledTonalIconButton(onClick = onStatusClick) {
+                Icon(Icons.Outlined.NotificationsNone, "Состояние источников")
+            }
+        }
+        Spacer(Modifier.width(6.dp))
+        FilledTonalIconButton(onClick = onSettingsClick) {
+            Icon(Icons.Outlined.Settings, "Настройки")
         }
     }
 }
 
 @Composable
 private fun SearchGridCard(video: VideoItem, vm: SearchViewModel) {
-    ElevatedCard(onClick = { vm.open(video) }, modifier = Modifier.fillMaxWidth()) {
+    ElevatedCard(
+        onClick = { vm.open(video) },
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
         Column {
-            val bitmap by produceState<android.graphics.Bitmap?>(initialValue = null, key1 = video.thumbnailUrl) {
-                value = vm.loadThumbnail(video)
-            }
-            Box(Modifier.fillMaxWidth().aspectRatio(16f / 10f)) {
-                if (bitmap != null) {
-                    Image(
-                        bitmap = bitmap!!.asImageBitmap(),
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                    )
-                } else {
-                    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceVariant) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Outlined.PlayCircle, null, modifier = Modifier.size(38.dp), tint = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-                }
-                if (video.duration.isNotBlank()) {
-                    Surface(
-                        modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp),
-                        color = MaterialTheme.colorScheme.background.copy(alpha = .82f),
-                        shape = MaterialTheme.shapes.small,
-                    ) {
-                        Text(video.duration, Modifier.padding(horizontal = 6.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall)
-                    }
-                }
-            }
-            Column(Modifier.padding(9.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            SearchPreview(video, vm, modifier = Modifier.fillMaxWidth().aspectRatio(16f / 10f))
+            Column(Modifier.padding(horizontal = 10.dp, vertical = 9.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
                     video.title,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
+                Surface(
+                    color = sourceColor(video.sourceName).copy(alpha = .18f),
+                    shape = MaterialTheme.shapes.medium,
+                ) {
+                    Text(
+                        shortSourceName(video.sourceName).ifBlank { "Источник" },
+                        Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = sourceColor(video.sourceName),
+                        maxLines = 1,
+                    )
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = MaterialTheme.shapes.small) {
-                        Text(
-                            shortSourceName(video.sourceName),
-                            Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            maxLines = 1,
-                        )
-                    }
                     if (video.views.isNotBlank()) {
-                        Spacer(Modifier.width(6.dp))
-                        Text(video.views, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Icon(Icons.Outlined.Visibility, null, modifier = Modifier.size(17.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.width(4.dp))
+                        Text(video.views, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    IconButton(onClick = { vm.addFavorite(video) }, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Outlined.FavoriteBorder, "В избранное", modifier = Modifier.size(20.dp))
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun SearchListCard(video: VideoItem, vm: SearchViewModel) {
+    ElevatedCard(
+        onClick = { vm.open(video) },
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            SearchPreview(video, vm, modifier = Modifier.width(150.dp).aspectRatio(16f / 10f))
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(video.title, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(shortSourceName(video.sourceName), color = sourceColor(video.sourceName), style = MaterialTheme.typography.labelMedium)
+                if (video.views.isNotBlank()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Outlined.Visibility, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(video.views, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            IconButton(onClick = { vm.addFavorite(video) }) {
+                Icon(Icons.Outlined.FavoriteBorder, "В избранное")
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchPreview(video: VideoItem, vm: SearchViewModel, modifier: Modifier = Modifier) {
+    val bitmap by produceState<android.graphics.Bitmap?>(initialValue = null, key1 = video.thumbnailUrl) {
+        value = vm.loadThumbnail(video)
+    }
+    val source = sourceColor(video.sourceName)
+    Box(modifier) {
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap!!.asImageBitmap(),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+        } else {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.linearGradient(
+                            listOf(
+                                source.copy(alpha = .62f),
+                                MaterialTheme.colorScheme.surfaceVariant,
+                                MaterialTheme.colorScheme.background,
+                            ),
+                        ),
+                    ),
+            )
+        }
+
+        Surface(
+            modifier = Modifier.align(Alignment.TopStart).padding(7.dp),
+            color = Color.Black.copy(alpha = .28f),
+            shape = MaterialTheme.shapes.small,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary),
+        ) {
+            Text(
+                "VIDEO",
+                Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.tertiary,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+
+        IconButton(
+            onClick = {},
+            enabled = false,
+            modifier = Modifier.align(Alignment.TopEnd).size(36.dp),
+        ) {
+            Icon(Icons.Outlined.MoreVert, null, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = .85f))
+        }
+
+        if (video.duration.isNotBlank()) {
+            Surface(
+                modifier = Modifier.align(Alignment.BottomEnd).padding(7.dp),
+                color = Color.Black.copy(alpha = .76f),
+                shape = MaterialTheme.shapes.small,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            ) {
+                Text(
+                    video.duration,
+                    Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color.White,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun sourceColor(source: String): Color {
+    val values = listOf(
+        MaterialTheme.colorScheme.primary,
+        MaterialTheme.colorScheme.secondary,
+        MaterialTheme.colorScheme.tertiary,
+    )
+    return values[(source.hashCode() and Int.MAX_VALUE) % values.size]
 }
 
 private fun shortSourceName(value: String): String {
@@ -265,4 +565,16 @@ private fun parseDurationSeconds(raw: String): Int? {
         2 -> parts[0] * 60 + parts[1]
         else -> parts.takeLast(3).let { it[0] * 3600 + it[1] * 60 + it[2] }
     }
+}
+
+private fun parseViewsScore(raw: String): Double {
+    val normalized = raw.lowercase().replace(',', '.').replace(" ", "")
+    val number = Regex("[0-9]+(?:\\.[0-9]+)?").find(normalized)?.value?.toDoubleOrNull() ?: return 0.0
+    val multiplier = when {
+        "млрд" in normalized || "b" in normalized -> 1_000_000_000.0
+        "млн" in normalized || "m" in normalized -> 1_000_000.0
+        "тыс" in normalized || "k" in normalized -> 1_000.0
+        else -> 1.0
+    }
+    return number * multiplier
 }
