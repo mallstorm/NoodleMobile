@@ -3,6 +3,8 @@ package pro.noodle.mobile.core.recommendations
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import pro.noodle.mobile.core.model.VideoItem
 import pro.noodle.mobile.core.network.NetworkPolicy
 import pro.noodle.mobile.core.network.SecureHttpClient
@@ -17,6 +19,7 @@ class RelatedVideosRepository(
     private val thumbnailCache = ConcurrentHashMap<String, Bitmap>()
     private val thumbnailMisses = ConcurrentHashMap.newKeySet<String>()
     private val relatedCache = ConcurrentHashMap<String, List<VideoItem>>()
+    private val thumbnailSlots = Semaphore(2)
 
     suspend fun load(current: VideoItem, limit: Int = 8): List<VideoItem> {
         val cacheKey = current.watchUrl.ifBlank { current.id }.lowercase()
@@ -45,12 +48,12 @@ class RelatedVideosRepository(
         return result
     }
 
-    suspend fun loadThumbnail(video: VideoItem): Bitmap? {
+    suspend fun loadThumbnail(video: VideoItem): Bitmap? = thumbnailSlots.withPermit {
         val url = video.thumbnailUrl.trim()
-        if (url.isBlank()) return null
-        thumbnailCache[url]?.let { return it }
-        if (url in thumbnailMisses) return null
-        val adapter = search.adapterFor(video) ?: return null
+        if (url.isBlank()) return@withPermit null
+        thumbnailCache[url]?.let { return@withPermit it }
+        if (url in thumbnailMisses) return@withPermit null
+        val adapter = search.adapterFor(video) ?: return@withPermit null
         val result = http.fetchBytes(
             url = url,
             policy = NetworkPolicy(
@@ -64,15 +67,15 @@ class RelatedVideosRepository(
         )
         if (!result.success || result.bytes.isEmpty()) {
             thumbnailMisses += url
-            return null
+            return@withPermit null
         }
         val bitmap = BitmapFactory.decodeByteArray(result.bytes, 0, result.bytes.size)
         if (bitmap == null) {
             thumbnailMisses += url
-            return null
+            return@withPermit null
         }
         thumbnailCache[url] = bitmap
-        return bitmap
+        bitmap
     }
 
     private fun relatedQuery(video: VideoItem): String {
