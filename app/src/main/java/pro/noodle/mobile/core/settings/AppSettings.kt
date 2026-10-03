@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.map
 internal val Context.noodleSettingsStore by preferencesDataStore("noodle_settings")
 
 data class AppSettings(
-    val theme: String = "blue_glass",
+    val theme: String = "noodle_neon",
     val parallelDownloads: Int = 2,
     val backgroundMonitoring: Boolean = false,
     val monitoringIntervalHours: Int = 24,
@@ -25,7 +25,7 @@ class AppSettingsRepository(private val context: Context) {
         val rememberPlaybackPosition = booleanPreferencesKey("remember_playback_position")
     }
     val settings: Flow<AppSettings> = context.noodleSettingsStore.data.map { p -> AppSettings(
-        theme = p[Keys.theme] ?: "blue_glass",
+        theme = p[Keys.theme] ?: "noodle_neon",
         parallelDownloads = (p[Keys.parallelDownloads] ?: 2).coerceIn(1, 3),
         backgroundMonitoring = p[Keys.backgroundMonitoring] ?: false,
         monitoringIntervalHours = (p[Keys.monitoringIntervalHours] ?: 24).coerceIn(6,168),
