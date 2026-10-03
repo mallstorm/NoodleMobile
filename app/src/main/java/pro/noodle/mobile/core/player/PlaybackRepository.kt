@@ -4,6 +4,8 @@ import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import pro.noodle.mobile.core.adapter.AdapterDefinition
+import pro.noodle.mobile.core.model.MediaSource
+import pro.noodle.mobile.core.model.TextTrack
 import pro.noodle.mobile.core.model.VideoItem
 import pro.noodle.mobile.core.network.NetworkPolicy
 import pro.noodle.mobile.core.network.SecureHttpClient
@@ -30,8 +32,19 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
     private val webExtractor = SandboxedWebExtractor(context.applicationContext)
 
     suspend fun resolve(video: VideoItem, adapter: AdapterDefinition): PlaybackLoadResult = withContext(Dispatchers.IO) {
-        val policy = NetworkPolicy(adapter.allowedHosts, allowCookies = adapter.allowCookies, maxResponseBytes = 5 * 1024 * 1024)
-        val page = http.fetchText(video.watchUrl, policy, adapter.id)
+        if (!isStaticEntryAllowed(video.watchUrl, adapter)) {
+            return@withContext PlaybackLoadResult(
+                false,
+                errorCode = "PLAYBACK_ENTRY_BLOCKED",
+                errorMessage = "Страница ролика не прошла исходную SNP/security policy.",
+            )
+        }
+
+        // Exact public HTTPS hosts discovered while following the resolver chain. We never add
+        // wildcard hosts and never allow HTTP/private addresses. This handles rotating CDN/iframe
+        // domains without turning the SNP policy into an unrestricted network client.
+        val discoveredHosts = linkedSetOf<String>()
+        val page = fetchWithSafeDiscoveredRedirects(video.watchUrl, adapter, discoveredHosts)
         var initialText = page.text
         var initialUrl = page.finalUrl.ifBlank { video.watchUrl }
         var usedWeb = false
@@ -40,7 +53,7 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
             if (!adapter.allowJavaScript) {
                 return@withContext PlaybackLoadResult(false, errorCode = page.errorCode, errorMessage = page.errorMessage)
             }
-            val extracted = webExtractor.extract(video.watchUrl, adapter)
+            val extracted = webExtractor.extract(video.watchUrl, adapter, additionalAllowedHosts = discoveredHosts)
             if (!extracted.success) {
                 return@withContext PlaybackLoadResult(
                     false,
@@ -54,15 +67,18 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
         }
 
         val fetcher = ResolverFetcher { url ->
-            if (!isAllowed(url, adapter)) null
-            else http.fetchTextBlocking(url, policy, adapter.id).takeIf { it.success }?.text
+            fetchResolverText(url, adapter, discoveredHosts)
         }
         var resolved = ResolverPipeline.resolve(initialText, initialUrl, adapter.engine, adapter.viewStrategies, fetcher)
-        var safeSources = resolved.sources.filter { isAllowed(it.url, adapter) }
+        var safeSources = resolved.sources.filter { admitMediaSource(it, adapter, discoveredHosts) }
 
         // Static HTML sometimes loads successfully but the real player config appears only after JS.
         if (safeSources.isEmpty() && adapter.allowJavaScript && !usedWeb) {
-            val extracted = webExtractor.extract(initialUrl, adapter)
+            val extracted = webExtractor.extract(
+                initialUrl,
+                adapter,
+                additionalAllowedHosts = discoveredHosts,
+            )
             if (extracted.success) {
                 val jsResolved = ResolverPipeline.resolve(
                     extracted.html,
@@ -72,45 +88,164 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
                     fetcher,
                 )
                 if (jsResolved.success || jsResolved.sources.isNotEmpty()) resolved = jsResolved
-                safeSources = resolved.sources.filter { isAllowed(it.url, adapter) }
+                safeSources = resolved.sources.filter { admitMediaSource(it, adapter, discoveredHosts) }
             }
         }
 
         if (!resolved.success && safeSources.isEmpty()) {
-            return@withContext PlaybackLoadResult(false, errorCode = resolved.errorCode, errorMessage = resolved.errorMessage)
-        }
-
-        // Resolver output is untrusted remote data. Validate every URL before it reaches Media3.
-        val safeTextTracks = resolved.tracks.filter { isAllowed(it.url, adapter) }
-        if (safeSources.isEmpty()) {
-            val blockedHosts = resolved.sources.mapNotNull { source ->
-                runCatching { URI(source.url).host?.lowercase()?.takeIf { it.isNotBlank() } }.getOrNull()
-            }.distinct().take(6)
-            val hostDetails = blockedHosts.joinToString(", ").takeIf { it.isNotBlank() }?.let { " Заблокированные hosts: $it." }.orEmpty()
             return@withContext PlaybackLoadResult(
                 false,
-                errorCode = "PLAYBACK_NO_ALLOWED_SOURCE",
-                errorMessage = "Источник ${adapter.id}: Resolver нашёл media URL, но ни один из них не прошёл SNP host/security policy.$hostDetails",
+                errorCode = resolved.errorCode.ifBlank { "PLAYBACK_RESOLVE_FAILED" },
+                errorMessage = resolved.errorMessage.ifBlank { "Resolver не смог извлечь воспроизводимый поток." },
             )
         }
 
+        val safeTextTracks = resolved.tracks.filter { admitTextTrack(it, adapter, discoveredHosts) }
+        if (safeSources.isEmpty()) {
+            val blockedHosts = resolved.sources.mapNotNull { source -> hostOf(source.url) }.distinct().take(6)
+            val hostDetails = blockedHosts.joinToString(", ").takeIf { it.isNotBlank() }
+                ?.let { " Заблокированные hosts: $it." }.orEmpty()
+            return@withContext PlaybackLoadResult(
+                false,
+                errorCode = "PLAYBACK_NO_ALLOWED_SOURCE",
+                errorMessage = "Resolver нашёл media URL, но поток не прошёл HTTPS/public-host policy.$hostDetails",
+            )
+        }
+
+        val sessionPolicy = policyFor(adapter, discoveredHosts)
         val out = video.copy(
             title = resolved.title.ifBlank { video.title },
-            thumbnailUrl = resolved.thumbnailUrl.takeIf { it.isBlank() || isAllowed(it, adapter) }.orEmpty().ifBlank { video.thumbnailUrl },
-            playerPageUrl = resolved.playerPageUrl.takeIf { it.isBlank() || isAllowed(it, adapter) }.orEmpty().ifBlank { video.watchUrl },
+            thumbnailUrl = resolved.thumbnailUrl
+                .takeIf { it.isBlank() || isCurrentlyAllowed(it, adapter, discoveredHosts) }
+                .orEmpty()
+                .ifBlank { video.thumbnailUrl },
+            playerPageUrl = resolved.playerPageUrl
+                .takeIf { it.isBlank() || isCurrentlyAllowed(it, adapter, discoveredHosts) }
+                .orEmpty()
+                .ifBlank { video.watchUrl },
             sources = safeSources,
             variants = resolved.variants,
             audioTracks = resolved.audioTracks,
             textTracks = safeTextTracks,
         )
-        PlaybackLoadResult(true, PlaybackSession(out, policy, adapter.id))
+        PlaybackLoadResult(true, PlaybackSession(out, sessionPolicy, adapter.id))
     }
 
-    private fun isAllowed(url: String, adapter: AdapterDefinition): Boolean {
-        if (url.isBlank()) return false
+    private suspend fun fetchWithSafeDiscoveredRedirects(
+        url: String,
+        adapter: AdapterDefinition,
+        discoveredHosts: MutableSet<String>,
+    ): pro.noodle.mobile.core.network.TextFetchResult {
+        var result = http.fetchText(url, policyFor(adapter, discoveredHosts), adapter.id)
+        var attempts = 0
+        while (!result.success && result.errorCode == "URL_HOST_NOT_ALLOWED" && attempts < MAX_DISCOVERED_HOSTS) {
+            if (!discoverPublicHttpsHost(result.finalUrl, adapter, discoveredHosts)) break
+            attempts++
+            result = http.fetchText(url, policyFor(adapter, discoveredHosts), adapter.id)
+        }
+        return result
+    }
+
+    private fun fetchResolverText(
+        url: String,
+        adapter: AdapterDefinition,
+        discoveredHosts: MutableSet<String>,
+    ): String? {
+        if (!isCurrentlyAllowed(url, adapter, discoveredHosts) &&
+            !discoverPublicHttpsHost(url, adapter, discoveredHosts)
+        ) return null
+
+        var attempts = 0
+        while (attempts <= MAX_DISCOVERED_HOSTS) {
+            val result = http.fetchTextBlocking(url, policyFor(adapter, discoveredHosts), adapter.id)
+            if (result.success) return result.text
+            if (result.errorCode != "URL_HOST_NOT_ALLOWED") return null
+            if (!discoverPublicHttpsHost(result.finalUrl, adapter, discoveredHosts)) return null
+            attempts++
+        }
+        return null
+    }
+
+    private fun admitMediaSource(
+        source: MediaSource,
+        adapter: AdapterDefinition,
+        discoveredHosts: MutableSet<String>,
+    ): Boolean {
+        if (isCurrentlyAllowed(source.url, adapter, discoveredHosts)) return true
+        if (!looksLikeMedia(source)) return false
+        return discoverPublicHttpsHost(source.url, adapter, discoveredHosts)
+    }
+
+    private fun admitTextTrack(
+        track: TextTrack,
+        adapter: AdapterDefinition,
+        discoveredHosts: MutableSet<String>,
+    ): Boolean {
+        if (isCurrentlyAllowed(track.url, adapter, discoveredHosts)) return true
+        val lower = track.url.substringBefore('?').lowercase()
+        if (!(lower.endsWith(".vtt") || lower.endsWith(".srt") || lower.endsWith(".ttml") || lower.endsWith(".xml"))) {
+            return false
+        }
+        return discoverPublicHttpsHost(track.url, adapter, discoveredHosts)
+    }
+
+    private fun looksLikeMedia(source: MediaSource): Boolean {
+        val lower = source.url.substringBefore('?').lowercase()
+        val protocol = source.protocol.lowercase()
+        val mime = source.mimeType.lowercase()
+        return protocol in setOf("hls", "dash", "http", "https", "progressive") ||
+            lower.endsWith(".m3u8") || lower.endsWith(".mpd") || lower.endsWith(".mp4") ||
+            lower.endsWith(".webm") || lower.endsWith(".m4v") ||
+            mime.startsWith("video/") || mime.contains("mpegurl") || mime.contains("dash+xml")
+    }
+
+    private fun discoverPublicHttpsHost(
+        url: String,
+        adapter: AdapterDefinition,
+        discoveredHosts: MutableSet<String>,
+    ): Boolean {
+        val decision = UrlPolicy.evaluateNavigation(url, allowHttp = false, resolveDns = true)
+        if (!decision.allowed) return false
+        val host = hostOf(decision.normalizedUrl) ?: return false
+        if (adapter.allowedHosts.isEmpty() || UrlPolicy.isHostAllowed(host, adapter.allowedHosts)) return true
+        if (host in discoveredHosts) return true
+        if (discoveredHosts.size >= MAX_DISCOVERED_HOSTS) return false
+        discoveredHosts += host
+        return true
+    }
+
+    private fun isStaticEntryAllowed(url: String, adapter: AdapterDefinition): Boolean {
+        val decision = UrlPolicy.evaluateNavigation(url, allowHttp = false, resolveDns = true)
+        if (!decision.allowed) return false
+        val host = hostOf(decision.normalizedUrl) ?: return false
+        return adapter.allowedHosts.isEmpty() || UrlPolicy.isHostAllowed(host, adapter.allowedHosts)
+    }
+
+    private fun isCurrentlyAllowed(
+        url: String,
+        adapter: AdapterDefinition,
+        discoveredHosts: Set<String>,
+    ): Boolean {
         val decision = UrlPolicy.evaluateNavigation(url, allowHttp = false, resolveDns = false)
         if (!decision.allowed) return false
-        val host = runCatching { URI(decision.normalizedUrl).host.orEmpty() }.getOrDefault("")
-        return adapter.allowedHosts.isEmpty() || UrlPolicy.isHostAllowed(host, adapter.allowedHosts)
+        val host = hostOf(decision.normalizedUrl) ?: return false
+        return adapter.allowedHosts.isEmpty() ||
+            UrlPolicy.isHostAllowed(host, adapter.allowedHosts) ||
+            host in discoveredHosts
+    }
+
+    private fun policyFor(adapter: AdapterDefinition, discoveredHosts: Set<String>): NetworkPolicy =
+        NetworkPolicy(
+            allowedHosts = (adapter.allowedHosts + discoveredHosts).distinct(),
+            allowCookies = adapter.allowCookies,
+            maxResponseBytes = 5 * 1024 * 1024,
+        )
+
+    private fun hostOf(url: String): String? = runCatching {
+        URI(url).host?.lowercase()?.trimEnd('.')?.takeIf { it.isNotBlank() }
+    }.getOrNull()
+
+    companion object {
+        private const val MAX_DISCOVERED_HOSTS = 8
     }
 }
