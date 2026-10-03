@@ -66,13 +66,13 @@ private fun NoodleApp(settingsVm: SettingsViewModel) {
     val offlinePlayback by downloadsVm.offlinePlayback.collectAsState()
     val playerActive =
         (section == Section.SEARCH && searchState.playback != null) ||
-        (section == Section.FAVORITES && favoritesState.playback != null) ||
-        (section == Section.HISTORY && historyState.playback != null) ||
-        (section == Section.DOWNLOADS && offlinePlayback != null)
+            (section == Section.FAVORITES && favoritesState.playback != null) ||
+            (section == Section.HISTORY && historyState.playback != null) ||
+            (section == Section.DOWNLOADS && offlinePlayback != null)
 
     Scaffold(
         topBar = {
-            if (!playerActive) {
+            if (!playerActive && section != Section.SEARCH) {
                 TopAppBar(
                     title = {
                         Column {
@@ -81,7 +81,11 @@ private fun NoodleApp(settingsVm: SettingsViewModel) {
                                 Spacer(Modifier.width(8.dp))
                                 Text("NoodleMobile", fontWeight = FontWeight.Bold)
                             }
-                            Text(BuildIdentity.STAGE_LABEL, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                BuildIdentity.STAGE_LABEL,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     },
                 )
@@ -89,13 +93,18 @@ private fun NoodleApp(settingsVm: SettingsViewModel) {
         },
         bottomBar = {
             if (!playerActive) {
-                NavigationBar {
+                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                     Section.entries.forEach { s ->
                         NavigationBarItem(
                             selected = section == s,
                             onClick = { section = s },
                             icon = { Icon(iconFor(s), null) },
                             label = { Text(s.title) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                            ),
                         )
                     }
                 }
@@ -104,7 +113,10 @@ private fun NoodleApp(settingsVm: SettingsViewModel) {
     ) { pad ->
         Box(Modifier.padding(if (playerActive) PaddingValues(0.dp) else pad).fillMaxSize()) {
             when (section) {
-                Section.SEARCH -> NoodleSearchScreen(searchVm)
+                Section.SEARCH -> NoodleSearchScreen(
+                    vm = searchVm,
+                    onOpenSettings = { section = Section.MORE },
+                )
                 Section.DOWNLOADS -> DownloadsScreen(downloadsVm)
                 Section.FAVORITES -> FavoritesScreen(favoritesVm)
                 Section.HISTORY -> HistoryScreen(historyVm)
@@ -137,12 +149,21 @@ private fun FavoritesScreen(vm: FavoritesViewModel = viewModel()) {
     ) {
         item {
             Text("Избранное", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text("Сохранённые ролики доступны здесь в любой момент", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "Сохранённые ролики доступны здесь в любой момент",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             if (state.resolving) LinearProgressIndicator(Modifier.fillMaxWidth())
             if (state.message.isNotBlank()) Text(state.message, color = MaterialTheme.colorScheme.error)
         }
         if (state.items.isEmpty()) {
-            item { Text("Пока пусто. Добавьте видео кнопкой ♥ в плеере.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            item {
+                Text(
+                    "Пока пусто. Добавьте видео кнопкой ♥ в плеере.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         items(state.items, key = { it.favoriteKey }) { v ->
             ElevatedCard(onClick = { vm.open(v) }, modifier = Modifier.fillMaxWidth()) {
@@ -151,7 +172,11 @@ private fun FavoritesScreen(vm: FavoritesViewModel = viewModel()) {
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(v.title, fontWeight = FontWeight.SemiBold, maxLines = 2)
-                        Text(v.sourceName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            v.sourceName,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                     IconButton(onClick = { vm.remove(v) }) { Icon(Icons.Outlined.Delete, "Удалить") }
                 }
@@ -172,7 +197,11 @@ private fun DownloadsScreen(vm: DownloadsViewModel) {
     }
     var mode by remember { mutableStateOf(0) }
     val shown = when (mode) {
-        1 -> list.filter { it.state == DownloadState.RUNNING || it.state == DownloadState.QUEUED || it.state == DownloadState.PAUSED }
+        1 -> list.filter {
+            it.state == DownloadState.RUNNING ||
+                it.state == DownloadState.QUEUED ||
+                it.state == DownloadState.PAUSED
+        }
         2 -> library
         else -> list
     }
@@ -183,45 +212,83 @@ private fun DownloadsScreen(vm: DownloadsViewModel) {
     ) {
         item {
             Text("Загрузки", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text("Офлайн-библиотека и текущие загрузки", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "Офлайн-библиотека и текущие загрузки",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.padding(top = 8.dp)) {
                 FilterChip(selected = mode == 0, onClick = { mode = 0 }, label = { Text("Все") })
                 FilterChip(selected = mode == 1, onClick = { mode = 1 }, label = { Text("В процессе") })
                 FilterChip(selected = mode == 2, onClick = { mode = 2 }, label = { Text("Готово (${library.size})") })
             }
-            if (message.isNotBlank()) Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            if (message.isNotBlank()) {
+                Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
         }
         if (shown.isEmpty()) item { Text("Здесь пока пусто", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         items(shown, key = { it.id }) { d ->
             ElevatedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Outlined.Download, null, tint = when (d.state) {
-                            DownloadState.COMPLETED -> MaterialTheme.colorScheme.secondary
-                            DownloadState.FAILED -> MaterialTheme.colorScheme.error
-                            else -> MaterialTheme.colorScheme.primary
-                        })
+                        Icon(
+                            Icons.Outlined.Download,
+                            null,
+                            tint = when (d.state) {
+                                DownloadState.COMPLETED -> MaterialTheme.colorScheme.secondary
+                                DownloadState.FAILED -> MaterialTheme.colorScheme.error
+                                else -> MaterialTheme.colorScheme.primary
+                            },
+                        )
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
                             Text(d.title, fontWeight = FontWeight.SemiBold, maxLines = 2)
-                            Text(listOf(d.protocol.takeIf { it.isNotBlank() }, d.videoSelectionLabel.takeIf { it.isNotBlank() }).filterNotNull().joinToString(" • ").ifBlank { d.state.name }, style = MaterialTheme.typography.labelMedium)
+                            Text(
+                                listOf(
+                                    d.protocol.takeIf { it.isNotBlank() },
+                                    d.videoSelectionLabel.takeIf { it.isNotBlank() },
+                                ).filterNotNull().joinToString(" • ").ifBlank { d.state.name },
+                                style = MaterialTheme.typography.labelMedium,
+                            )
                         }
                     }
                     if (d.totalBytes > 0) {
-                        LinearProgressIndicator(progress = { d.downloadedBytes.toFloat() / d.totalBytes.toFloat() }, modifier = Modifier.fillMaxWidth())
+                        LinearProgressIndicator(
+                            progress = { d.downloadedBytes.toFloat() / d.totalBytes.toFloat() },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                     } else if (d.state == DownloadState.RUNNING) {
                         LinearProgressIndicator(Modifier.fillMaxWidth())
                     }
-                    Text("${bytes(d.downloadedBytes)} / ${if (d.totalBytes > 0) bytes(d.totalBytes) else "?"}", style = MaterialTheme.typography.bodySmall)
-                    if (d.errorMessage.isNotBlank()) Text("${d.errorCode}: ${d.errorMessage}", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        "${bytes(d.downloadedBytes)} / ${if (d.totalBytes > 0) bytes(d.totalBytes) else "?"}",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    if (d.errorMessage.isNotBlank()) {
+                        Text(
+                            "${d.errorCode}: ${d.errorMessage}",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                     Row {
-                        if (d.state == DownloadState.COMPLETED) IconButton(onClick = { vm.openOffline(d.id) }) { Icon(Icons.Outlined.PlayCircle, "Открыть офлайн") }
+                        if (d.state == DownloadState.COMPLETED) {
+                            IconButton(onClick = { vm.openOffline(d.id) }) {
+                                Icon(Icons.Outlined.PlayCircle, "Открыть офлайн")
+                            }
+                        }
                         when (d.state) {
-                            DownloadState.RUNNING, DownloadState.QUEUED -> IconButton(onClick = { vm.pause(d.id) }) { Icon(Icons.Outlined.Pause, "Пауза") }
-                            DownloadState.PAUSED, DownloadState.FAILED -> IconButton(onClick = { vm.resume(d.id) }) { Icon(Icons.Outlined.PlayArrow, "Продолжить") }
+                            DownloadState.RUNNING, DownloadState.QUEUED -> IconButton(onClick = { vm.pause(d.id) }) {
+                                Icon(Icons.Outlined.Pause, "Пауза")
+                            }
+                            DownloadState.PAUSED, DownloadState.FAILED -> IconButton(onClick = { vm.resume(d.id) }) {
+                                Icon(Icons.Outlined.PlayArrow, "Продолжить")
+                            }
                             else -> Unit
                         }
-                        if (d.state != DownloadState.COMPLETED && d.state != DownloadState.CANCELED) IconButton(onClick = { vm.cancel(d.id) }) { Icon(Icons.Outlined.Cancel, "Отмена") }
+                        if (d.state != DownloadState.COMPLETED && d.state != DownloadState.CANCELED) {
+                            IconButton(onClick = { vm.cancel(d.id) }) { Icon(Icons.Outlined.Cancel, "Отмена") }
+                        }
                         IconButton(onClick = { vm.remove(d.id) }) { Icon(Icons.Outlined.Delete, "Удалить") }
                     }
                 }
@@ -244,14 +311,20 @@ private fun MoreScreen(settingsVm: SettingsViewModel) {
     var page by remember { mutableStateOf(MorePage.MENU) }
     when (page) {
         MorePage.SOURCES -> Column(Modifier.fillMaxSize()) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 IconButton(onClick = { page = MorePage.MENU }) { Icon(Icons.Outlined.ArrowBack, "Назад") }
                 Text("Источники (SNP)", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             }
             Box(Modifier.weight(1f)) { SourceCenterScreen() }
         }
         MorePage.SETTINGS -> Column(Modifier.fillMaxSize()) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 IconButton(onClick = { page = MorePage.MENU }) { Icon(Icons.Outlined.ArrowBack, "Назад") }
                 Text("Настройки", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             }
@@ -264,7 +337,11 @@ private fun MoreScreen(settingsVm: SettingsViewModel) {
         ) {
             item {
                 Text("Ещё", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text("Источники, диагностика и параметры приложения", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "Источники, диагностика и параметры приложения",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             item {
                 ElevatedCard(onClick = { page = MorePage.SOURCES }, modifier = Modifier.fillMaxWidth()) {
@@ -295,7 +372,9 @@ private fun SettingsScreen(vm: SettingsViewModel) {
     val settings by vm.settings.collectAsState()
     val diagnosticsMessage by vm.diagnosticsMessage.collectAsState()
     val report = remember { CoreSelfTest.run() }
-    val exportDiagnostics = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+    val exportDiagnostics = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip"),
+    ) { uri ->
         if (uri != null) vm.exportDiagnostics(uri)
     }
     LazyColumn(
@@ -315,11 +394,20 @@ private fun SettingsScreen(vm: SettingsViewModel) {
                             "graphite_pro" to "Graphite",
                             "aurora_light" to "Light",
                         ).forEach { (id, label) ->
-                            FilterChip(selected = settings.theme == id, onClick = { vm.theme(id) }, label = { Text(label) })
+                            FilterChip(
+                                selected = settings.theme == id,
+                                onClick = { vm.theme(id) },
+                                label = { Text(label) },
+                            )
                         }
                     }
                     Text("Параллельных загрузок: ${settings.parallelDownloads}")
-                    Slider(settings.parallelDownloads.toFloat(), { vm.parallel(it.toInt()) }, valueRange = 1f..3f, steps = 1)
+                    Slider(
+                        settings.parallelDownloads.toFloat(),
+                        { vm.parallel(it.toInt()) },
+                        valueRange = 1f..3f,
+                        steps = 1,
+                    )
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Switch(settings.rememberPlaybackPosition, vm::rememberPosition)
                         Spacer(Modifier.width(8.dp))
@@ -332,7 +420,11 @@ private fun SettingsScreen(vm: SettingsViewModel) {
                     }
                     if (settings.backgroundMonitoring) {
                         Text("Интервал мониторинга: ${settings.monitoringIntervalHours} ч")
-                        Slider(settings.monitoringIntervalHours.toFloat(), { vm.monitoringHours(it.toInt()) }, valueRange = 6f..168f)
+                        Slider(
+                            settings.monitoringIntervalHours.toFloat(),
+                            { vm.monitoringHours(it.toInt()) },
+                            valueRange = 6f..168f,
+                        )
                     }
                 }
             }
@@ -352,13 +444,19 @@ private fun SettingsScreen(vm: SettingsViewModel) {
         item {
             HorizontalDivider()
             Text("Диагностика", style = MaterialTheme.typography.titleLarge)
-            Text("ZIP проходит sanitizer и не включает cookies, Authorization и секретные ключи.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "ZIP проходит sanitizer и не включает cookies, Authorization и секретные ключи.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Button(onClick = { exportDiagnostics.launch("noodle-mobile-diagnostics.zip") }) {
                 Icon(Icons.Outlined.BugReport, null)
                 Spacer(Modifier.width(8.dp))
                 Text("Экспортировать ZIP")
             }
-            if (diagnosticsMessage.isNotBlank()) Text(diagnosticsMessage, style = MaterialTheme.typography.bodySmall)
+            if (diagnosticsMessage.isNotBlank()) {
+                Text(diagnosticsMessage, style = MaterialTheme.typography.bodySmall)
+            }
         }
     }
 }
