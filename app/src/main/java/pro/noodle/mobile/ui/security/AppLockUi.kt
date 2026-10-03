@@ -238,6 +238,8 @@ private fun PatternPad(onPattern: (String) -> Unit) {
     var size by remember { mutableStateOf(IntSize.Zero) }
     var selected by remember { mutableStateOf<List<Int>>(emptyList()) }
     var pointer by remember { mutableStateOf<Offset?>(null) }
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val outlineColor = MaterialTheme.colorScheme.outline
 
     fun nodeAt(offset: Offset): Int? {
         if (size.width <= 0 || size.height <= 0) return null
@@ -290,11 +292,11 @@ private fun PatternPad(onPattern: (String) -> Unit) {
         val stepY = size.height / 4f
         fun center(index: Int) = Offset(stepX * (index % 3 + 1), stepY * (index / 3 + 1))
         selected.zipWithNext().forEach { (a, b) ->
-            drawLine(MaterialTheme.colorScheme.primary, center(a), center(b), strokeWidth = 9f)
+            drawLine(primaryColor, center(a), center(b), strokeWidth = 9f)
         }
         if (selected.isNotEmpty() && pointer != null) {
             drawLine(
-                MaterialTheme.colorScheme.primary.copy(alpha = .55f),
+                primaryColor.copy(alpha = .55f),
                 center(selected.last()),
                 pointer!!,
                 strokeWidth = 7f,
@@ -303,7 +305,7 @@ private fun PatternPad(onPattern: (String) -> Unit) {
         repeat(9) { index ->
             val active = index in selected
             drawCircle(
-                color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                color = if (active) primaryColor else outlineColor,
                 radius = if (active) 18f else 14f,
                 center = center(index),
             )
