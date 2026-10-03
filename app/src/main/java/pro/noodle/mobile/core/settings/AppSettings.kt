@@ -15,6 +15,7 @@ data class AppSettings(
     val backgroundMonitoring: Boolean = false,
     val monitoringIntervalHours: Int = 24,
     val rememberPlaybackPosition: Boolean = true,
+    val relatedVideosColumns: Int = 2,
     val lockMode: String = "none",
     val lockSalt: String = "",
     val lockHash: String = "",
@@ -29,6 +30,7 @@ class AppSettingsRepository(private val context: Context) {
         val backgroundMonitoring = booleanPreferencesKey("background_monitoring")
         val monitoringIntervalHours = intPreferencesKey("monitoring_interval_hours")
         val rememberPlaybackPosition = booleanPreferencesKey("remember_playback_position")
+        val relatedVideosColumns = intPreferencesKey("related_videos_columns")
         val lockMode = stringPreferencesKey("lock_mode")
         val lockSalt = stringPreferencesKey("lock_salt")
         val lockHash = stringPreferencesKey("lock_hash")
@@ -49,6 +51,7 @@ class AppSettingsRepository(private val context: Context) {
             backgroundMonitoring = p[Keys.backgroundMonitoring] ?: false,
             monitoringIntervalHours = (p[Keys.monitoringIntervalHours] ?: 24).coerceIn(6, 168),
             rememberPlaybackPosition = p[Keys.rememberPlaybackPosition] ?: true,
+            relatedVideosColumns = (p[Keys.relatedVideosColumns] ?: 2).let { if (it == 1) 1 else 2 },
             lockMode = p[Keys.lockMode] ?: "none",
             lockSalt = p[Keys.lockSalt] ?: "",
             lockHash = p[Keys.lockHash] ?: "",
@@ -68,6 +71,9 @@ class AppSettingsRepository(private val context: Context) {
     suspend fun setBackgroundMonitoring(value: Boolean) = context.noodleSettingsStore.edit { it[Keys.backgroundMonitoring] = value }
     suspend fun setMonitoringIntervalHours(value: Int) = context.noodleSettingsStore.edit { it[Keys.monitoringIntervalHours] = value.coerceIn(6, 168) }
     suspend fun setRememberPlaybackPosition(value: Boolean) = context.noodleSettingsStore.edit { it[Keys.rememberPlaybackPosition] = value }
+    suspend fun setRelatedVideosColumns(value: Int) = context.noodleSettingsStore.edit {
+        it[Keys.relatedVideosColumns] = if (value == 1) 1 else 2
+    }
     suspend fun setAppLock(mode: String, salt: String = "", hash: String = "") = context.noodleSettingsStore.edit {
         it[Keys.lockMode] = mode
         if (salt.isBlank()) it.remove(Keys.lockSalt) else it[Keys.lockSalt] = salt
