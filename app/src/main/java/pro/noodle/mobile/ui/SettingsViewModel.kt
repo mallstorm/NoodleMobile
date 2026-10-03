@@ -19,6 +19,8 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     private val diagnostics = DiagnosticsService(app)
     private val _diagnosticsMessage = MutableStateFlow("")
     val diagnosticsMessage: StateFlow<String> = _diagnosticsMessage.asStateFlow()
+    private val _settingsLoaded = MutableStateFlow(false)
+    val settingsLoaded: StateFlow<Boolean> = _settingsLoaded.asStateFlow()
     private val repo = AppSettingsRepository(app)
     val settings: StateFlow<AppSettings> = repo.settings.stateIn(
         viewModelScope,
@@ -29,6 +31,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     init {
         viewModelScope.launch {
             repo.settings.collect {
+                _settingsLoaded.value = true
                 SourceMaintenanceScheduler.sync(app, it.backgroundMonitoring, it.monitoringIntervalHours)
             }
         }
