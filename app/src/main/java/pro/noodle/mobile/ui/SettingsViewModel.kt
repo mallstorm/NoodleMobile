@@ -39,6 +39,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun theme(v: String) = viewModelScope.launch { repo.setTheme(v) }
     fun uiScale(v: Int) = viewModelScope.launch { repo.setUiScalePercent(v) }
+    fun relatedVideosColumns(v: Int) = viewModelScope.launch { repo.setRelatedVideosColumns(v) }
     fun parallel(v: Int) = viewModelScope.launch {
         val n = v.coerceIn(1, 3)
         repo.setParallelDownloads(n)
