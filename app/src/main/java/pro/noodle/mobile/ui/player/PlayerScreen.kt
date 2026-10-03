@@ -28,6 +28,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import kotlinx.coroutines.*
@@ -120,7 +121,17 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
             activeSession.networkPolicy,
             activeSession.sourceKey,
         )
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                5_000,
+                30_000,
+                750,
+                1_500,
+            )
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
         ExoPlayer.Builder(context)
+            .setLoadControl(loadControl)
             .setMediaSourceFactory(DefaultMediaSourceFactory(factory))
             .build()
     }
