@@ -51,6 +51,18 @@ class SourceOverridesRepository(private val context: Context) {
         }
     }
 
+    suspend fun clear(sourceId: String) {
+        val id = sourceId.trim().lowercase()
+        if (id.isBlank()) return
+        context.noodleSettingsStore.edit { prefs ->
+            val disabled = prefs[disabledKey].orEmpty().toMutableSet().apply { remove(id) }
+            val forced = prefs[forceEnabledKey].orEmpty().toMutableSet().apply { remove(id) }
+            prefs[disabledKey] = disabled
+            prefs[forceEnabledKey] = forced
+            if (prefs[soloKey].orEmpty().equals(id, true)) prefs.remove(soloKey)
+        }
+    }
+
     suspend fun setSoloSource(sourceId: String?) {
         val id = sourceId.orEmpty().trim().lowercase()
         context.noodleSettingsStore.edit { prefs ->
