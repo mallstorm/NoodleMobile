@@ -23,6 +23,18 @@ class StudioDiscoveryHeuristicsTest {
     }
 
     @Test
+    fun detectsKvsVideosForSingularVideoPaths() {
+        val html = """
+            <div class="item"><a href="/video/demo-slug/"><img src="/thumb.jpg"><span class="title">demo</span></a></div>
+            <div class="item"><a href="/video/second-slug/"><img src="/thumb2.jpg"></a></div>
+        """.trimIndent()
+        val signals = StudioDiscoveryHeuristics.inspectSearch(html)
+        assertEquals(SiteKind.KVS_VIDEOS, signals.kind)
+        assertEquals("demo-slug", signals.remoteId)
+        assertEquals("/video/demo-slug/", signals.watchPath)
+    }
+
+    @Test
     fun detectsNoodleWatchFamily() {
         val html = """
             <a href="/watch/demo-id" class="item_link"><div class="title">demo video</div></a>
