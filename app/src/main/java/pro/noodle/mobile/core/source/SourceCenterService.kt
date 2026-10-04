@@ -32,7 +32,6 @@ data class SourceCenterItem(
 )
 
 
-
 data class SourceDetails(
     val adapterId:String, val name:String, val version:String, val publisher:String, val homepage:String,
     val baseUrl:String, val engine:String, val engineDependencies:List<String>, val capabilities:List<String>,
@@ -68,12 +67,32 @@ class SourceCenterService(context:Context){
 
     suspend fun enumerate():List<SourceCenterItem>{
         val disabled=overrides.disabledSourceIds.first()
-        return repo.listAll().map{r->val d=r.definition;SourceCenterItem(d.id,d.name,d.baseUrl,d.engine,d.schemaVersion,d.adapterVersion,d.publisher,r.compatibility.compatible,r.compatibility.status,r.compatibility.compatible&&r.packageInfo.valid&&d.enabled&&d.id.lowercase() !in disabled,d.enabled,r.bundled,r.packageInfo.trustStatus.wireName,if(r.packageInfo.valid)"" else r.packageInfo.errorCode,recovery.enumerate(d.id).size,updateManager.pendingFile(d.id).isFile,healthStore.get(d.id,"status"),semanticStore.get(d.id,"status"),updateStore.get(d.id,"state"),updateStore.get(d.id,"latest_version"),fingerprintStore.get(d.id,"status"),breakageStore.get(d.id,"status"))}
+        val forced=overrides.forceEnabledSourceIds.first()
+        return repo.listAll().map{r->
+            val d=r.definition
+            val id=d.id.lowercase()
+            val effectiveEnabled=r.compatibility.compatible&&r.packageInfo.valid&&(d.enabled||id in forced)&&id !in disabled
+            SourceCenterItem(d.id,d.name,d.baseUrl,d.engine,d.schemaVersion,d.adapterVersion,d.publisher,r.compatibility.compatible,r.compatibility.status,effectiveEnabled,d.enabled,r.bundled,r.packageInfo.trustStatus.wireName,if(r.packageInfo.valid)"" else r.packageInfo.errorCode,recovery.enumerate(d.id).size,updateManager.pendingFile(d.id).isFile,healthStore.get(d.id,"status"),semanticStore.get(d.id,"status"),updateStore.get(d.id,"state"),updateStore.get(d.id,"latest_version"),fingerprintStore.get(d.id,"status"),breakageStore.get(d.id,"status"))
+        }
     }
 
-    suspend fun setEnabled(id:String,enabled:Boolean):SourceActionResult{val r=repo.find(id)?:return fail("SNP_NOT_FOUND","SNP не найден.");if(enabled&&!r.compatibility.compatible)return fail(r.compatibility.errorCode,r.compatibility.message);if(enabled&&!r.packageInfo.valid)return fail(r.packageInfo.errorCode,r.packageInfo.errorMessage);overrides.setEnabled(id,enabled);return ok(if(enabled)"enabled" else "disabled",if(enabled)"Источник включён." else "Источник отключён.")}
+    suspend fun setEnabled(id:String,enabled:Boolean):SourceActionResult{
+        val r=repo.find(id)?:return fail("SNP_NOT_FOUND","SNP не найден.")
+        if(enabled&&!r.compatibility.compatible)return fail(r.compatibility.errorCode,r.compatibility.message)
+        if(enabled&&!r.packageInfo.valid)return fail(r.packageInfo.errorCode,r.packageInfo.errorMessage)
+        overrides.setEnabled(id,enabled)
+        if(enabled){
+            val studioCustom=!r.bundled&&r.definition.publisher.equals("local-user",true)
+            if(studioCustom){
+                overrides.setSoloSource(id)
+                return ok("enabled_solo","Источник включён в SOLO-режиме: общий поиск использует только этот SNP. Отключите его или включите другой обычный источник, чтобы выйти из SOLO.")
+            }
+            overrides.setSoloSource(null)
+        }
+        return ok(if(enabled)"enabled" else "disabled",if(enabled)"Источник включён." else "Источник отключён.")
+    }
     suspend fun importZip(zip:File):SourceActionResult{val r=repo.importCustomZip(zip);if(!r.success)return fail(r.errorCode,r.message);if(r.adapterId.isNotBlank()) overrides.setEnabled(r.adapterId,false);return ok("installed",r.message+" Источник оставлен выключенным до ручной проверки.")}
-    suspend fun removeCustom(id:String):SourceActionResult{val r=repo.find(id)?:return fail("SNP_NOT_FOUND","SNP не найден.");if(r.bundled)return fail("SNP_REMOVE_BUNDLED","Штатный SNP нельзя удалить.");val success=repo.removeCustom(id);if(success){overrides.setEnabled(id,true);return ok("removed","Пользовательский SNP удалён.")};return fail("SNP_REMOVE_FAILED","Не удалось удалить SNP.")}
+    suspend fun removeCustom(id:String):SourceActionResult{val r=repo.find(id)?:return fail("SNP_NOT_FOUND","SNP не найден.");if(r.bundled)return fail("SNP_REMOVE_BUNDLED","Штатный SNP нельзя удалить.");val success=repo.removeCustom(id);if(success){overrides.setSoloSource(null);overrides.setEnabled(id,true);return ok("removed","Пользовательский SNP удалён.")};return fail("SNP_REMOVE_FAILED","Не удалось удалить SNP.")}
     suspend fun semantic(id:String):SourceActionResult{val r=probe.semantic(id);return SourceActionResult(r.status==SemanticStatus.HEALTHY,r.status.wireName,r.message,r.errorCode)}
     suspend fun health(id:String):SourceActionResult{val r=health.checkOne(id);return SourceActionResult(r.status=="healthy",r.status,r.message,r.errorCode)}
     suspend fun fingerprint(id:String):SourceActionResult{val r=fingerprint.checkOne(id);return SourceActionResult(r.status in setOf(FingerprintStatus.BASELINE_CREATED,FingerprintStatus.UNCHANGED,FingerprintStatus.MINOR_CHANGE),r.status.wireName,r.message,r.errorCode)}
