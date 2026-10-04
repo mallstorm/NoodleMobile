@@ -67,9 +67,9 @@ class AdapterStudioService(context: Context) {
     }
 
     /**
-     * Studio 2.1: Delphi-style deterministic discovery -> deterministic Schema v3 -> live test ->
-     * fresh route re-discovery -> AI audit/repair -> final live semantic test.
-     * AI receives confirmed search/view/iframe evidence instead of guessing endpoints from one page.
+     * Primary creation path: Delphi-style deterministic discovery -> Schema v3 -> local live test.
+     * AI is used only as a repair/compiler when deterministic creation is not healthy.
+     * Independent AI route validation is intentionally NOT mandatory; it lives in auditRoutes().
      */
     suspend fun generate(
         url: String,
@@ -97,66 +97,42 @@ class AdapterStudioService(context: Context) {
             model = "",
             prefix = "Discovery: ${d.summary}",
         )
-        val deterministicHealthy = deterministic.testStatus == SemanticStatus.HEALTHY.wireName
-
-        if (provider == StudioAiProvider.LOCAL) {
+        if (deterministic.testStatus == SemanticStatus.HEALTHY.wireName) {
             return deterministic.copy(
-                message = if (deterministicHealthy) {
-                    "Discovery сам создал рабочий SNP. Для независимого AI-аудита выберите Kilo Code или Cline."
-                } else {
-                    "Discovery создал локальный SNP; live test требует проверки."
-                },
+                message = "Discovery сам создал рабочий SNP; AI не потребовался. При желании запустите AI-проверку маршрутов отдельно в Live test.",
                 testDetails = "${d.summary}\n${deterministic.testDetails}".trim(),
             )
         }
 
-        if (!ai.status(provider).connected) {
-            return if (deterministicHealthy) {
-                deterministic.copy(
-                    message = "Discovery сам создал рабочий SNP; AI-аудит маршрутов пропущен, потому что ${provider.title} не подключён.",
-                    testDetails = "${d.summary}\n${deterministic.testDetails}".trim(),
-                )
-            } else {
-                StudioAnalyzeResult(
-                    false,
-                    draft = d.draft,
-                    json = d.localJson,
-                    errorCode = "STUDIO_AI_LOGIN_REQUIRED",
-                    message = "Сначала войдите в ${provider.title}.",
-                    testStatus = deterministic.testStatus,
-                    testDetails = deterministic.testDetails,
-                )
-            }
+        if (provider == StudioAiProvider.LOCAL) {
+            return deterministic.copy(
+                message = "Discovery создал локальный SNP; live test требует проверки.",
+                testDetails = "${d.summary}\n${deterministic.testDetails}".trim(),
+            )
         }
-
-        // A healthy local adapter is not trusted blindly: hit the site again and give the model
-        // a fresh, independently collected route/evidence snapshot to audit.
-        val auditDiscovery = if (deterministicHealthy) {
-            val fresh = discovery.discover(url, d.query)
-            if (fresh.success && fresh.draft != null && fresh.localJson.isNotBlank()) fresh else d
-        } else d
+        if (!ai.status(provider).connected) {
+            return StudioAnalyzeResult(
+                false,
+                draft = d.draft,
+                json = d.localJson,
+                errorCode = "STUDIO_AI_LOGIN_REQUIRED",
+                message = "Сначала войдите в ${provider.title} или выберите «Без AI».",
+                testStatus = deterministic.testStatus,
+                testDetails = deterministic.testDetails,
+            )
+        }
 
         val effectiveInstruction = instruction.trim().ifBlank {
-            "Audit the confirmed NoodleMobile routes and adapter. Verify search, video-page and player/iframe evidence. Preserve confirmed working routes; only repair fields contradicted by the fresh evidence."
+            "Repair the NoodleMobile SNP using confirmed Discovery facts. Preserve confirmed search routes and site family; fix only fields required to make search and playback pass live test."
         }
-
         var previousJson = d.localJson
-        var feedback = if (deterministicHealthy) {
-            buildString {
-                append("The deterministic SNP already passed live test. Perform an independent route audit using the FRESH discovery evidence. ")
-                append("Original search_template=${d.searchTemplate}; fresh search_template=${auditDiscovery.searchTemplate}; ")
-                append("original engine=${d.engine}; fresh engine=${auditDiscovery.engine}. ")
-                append("Do not change a confirmed route merely to make the JSON look different. Return the audited complete adapter.json.")
-            }
-        } else {
-            "Deterministic live test before AI: status=${deterministic.testStatus}; ${deterministic.testDetails}"
-        }
+        var feedback = "Deterministic live test before AI repair: status=${deterministic.testStatus}; ${deterministic.testDetails}"
         var lastValid: StudioAnalyzeResult? = deterministic
         var selectedModel = model
 
         for (attempt in 1..MAX_AI_ATTEMPTS) {
             val userPrompt = buildUserPrompt(
-                discovery = auditDiscovery,
+                discovery = d,
                 instruction = effectiveInstruction,
                 previousJson = previousJson.takeIf { attempt > 1 }.orEmpty(),
                 feedback = feedback,
@@ -166,11 +142,7 @@ class AdapterStudioService(context: Context) {
             if (aiResult.isFailure) {
                 val error = aiResult.exceptionOrNull()
                 return lastValid?.copy(
-                    message = if (deterministicHealthy) {
-                        "Локальный SNP остаётся healthy, но AI-аудит маршрутов не завершён: ${error?.message ?: error?.javaClass?.simpleName ?: "unknown"}"
-                    } else {
-                        "Discovery завершён, но AI-запрос не прошёл: ${error?.message ?: error?.javaClass?.simpleName ?: "unknown"}"
-                    },
+                    message = "Discovery завершён, но AI-repair не прошёл: ${error?.message ?: error?.javaClass?.simpleName ?: "unknown"}",
                     attempts = attempt,
                     model = selectedModel,
                 ) ?: StudioAnalyzeResult(
@@ -207,27 +179,25 @@ class AdapterStudioService(context: Context) {
             val semanticResult = runCatching { probe.validateDefinition(validation.definition) }
             if (semanticResult.isFailure) {
                 val error = semanticResult.exceptionOrNull()
-                feedback = "Live test crashed: ${error?.javaClass?.simpleName}: ${error?.message}. Reuse confirmed search_template=${auditDiscovery.searchTemplate} and engine=${auditDiscovery.engine}."
+                feedback = "Live test crashed: ${error?.javaClass?.simpleName}: ${error?.message}. Reuse confirmed search_template=${d.searchTemplate} and engine=${d.engine}."
                 val candidate = StudioAnalyzeResult(
                     true,
                     draft = d.draft,
                     json = reply.json,
                     message = "AI сформировал Schema v3, но live test завершился исключением.",
                     testStatus = "error",
-                    testDetails = "${auditDiscovery.summary}\n$feedback",
+                    testDetails = "${d.summary}\n$feedback",
                     attempts = attempt,
                     model = selectedModel,
                 )
-                if (!deterministicHealthy) lastValid = candidate
-                if (attempt == MAX_AI_ATTEMPTS) return lastValid ?: candidate
+                lastValid = candidate
+                if (attempt == MAX_AI_ATTEMPTS) return candidate
                 continue
             }
             val semantic = semanticResult.getOrThrow()
-
             val details = buildString {
-                append(auditDiscovery.summary)
+                append(d.summary)
                 append("\n")
-                if (deterministicHealthy) append("AI route audit: fresh discovery completed • ")
                 append(semantic.message)
                 if (semantic.errorCode.isNotBlank()) append(" [${semantic.errorCode}]")
                 append(" • search=${semantic.searchResultCount}")
@@ -238,11 +208,7 @@ class AdapterStudioService(context: Context) {
                 draft = d.draft,
                 json = reply.json,
                 message = if (semantic.status == SemanticStatus.HEALTHY) {
-                    if (deterministicHealthy) {
-                        "Discovery и независимый AI-аудит маршрутов пройдены; финальный live test healthy."
-                    } else {
-                        "AI-адаптер создан на подтверждённых Discovery-данных и live test пройден."
-                    }
+                    "AI-repair создал рабочий SNP на подтверждённых Discovery-данных."
                 } else {
                     "AI-адаптер создан; Discovery подтверждён, но live test требует исправления."
                 },
@@ -251,12 +217,12 @@ class AdapterStudioService(context: Context) {
                 attempts = attempt,
                 model = selectedModel,
             )
+            lastValid = candidate
             if (semantic.status == SemanticStatus.HEALTHY) return candidate
-            if (!deterministicHealthy) lastValid = candidate
 
             feedback = buildString {
                 append("Live semantic test failed: status=${semantic.status.wireName}; $details. ")
-                append("Do not invent a new search endpoint. Confirmed search_template=${auditDiscovery.searchTemplate}; confirmed search_url=${auditDiscovery.searchUrl}; confirmed engine=${auditDiscovery.engine}. ")
+                append("Do not invent a new search endpoint. Confirmed search_template=${d.searchTemplate}; confirmed search_url=${d.searchUrl}; confirmed engine=${d.engine}. ")
                 append("If parsing is wrong, repair selectors/fields while preserving the confirmed endpoint and site family.")
             }
         }
@@ -288,6 +254,112 @@ class AdapterStudioService(context: Context) {
             message = if (semantic.status == SemanticStatus.HEALTHY) "Live test пройден." else "Live test не пройден.",
             testStatus = semantic.status.wireName,
             testDetails = "${semantic.message}${semantic.errorCode.takeIf { it.isNotBlank() }?.let { " [$it]" }.orEmpty()} • search=${semantic.searchResultCount} • playback=${semantic.playbackSourceCount}",
+        )
+    }
+
+    /**
+     * Optional second opinion. Re-enters the target resource, refreshes Discovery evidence,
+     * asks the selected model to audit routes, validates Schema v3 and then performs a final live test.
+     * A failed audit never invalidates or overwrites an already-working local SNP.
+     */
+    suspend fun auditRoutes(
+        url: String,
+        json: String,
+        instruction: String,
+        provider: StudioAiProvider,
+        model: String,
+        probeQuery: String = "",
+    ): StudioAnalyzeResult {
+        val originalValidation = AdapterValidator.validate(json)
+        if (!originalValidation.isValid || originalValidation.definition == null) {
+            return StudioAnalyzeResult(false, json = json, errorCode = originalValidation.errorCode, message = originalValidation.errorMessage, testStatus = "invalid_adapter")
+        }
+        if (provider == StudioAiProvider.LOCAL) {
+            return StudioAnalyzeResult(false, json = json, errorCode = "STUDIO_AI_AUDIT_PROVIDER_REQUIRED", message = "Для AI-проверки маршрутов выберите Kilo Code или Cline.", testStatus = "audit_not_run")
+        }
+        if (!ai.status(provider).connected) {
+            return StudioAnalyzeResult(false, json = json, errorCode = "STUDIO_AI_LOGIN_REQUIRED", message = "Сначала войдите в ${provider.title}.", testStatus = "audit_not_run")
+        }
+        if (model.isBlank()) {
+            return StudioAnalyzeResult(false, json = json, errorCode = "STUDIO_AI_MODEL_REQUIRED", message = "Выберите модель для AI-проверки.", testStatus = "audit_not_run")
+        }
+
+        val originalTest = testJson(json)
+        val query = probeQuery.ifBlank { originalValidation.definition.healthQuery }
+        val fresh = discovery.discover(url, query)
+        if (!fresh.success || fresh.draft == null) {
+            return originalTest.copy(
+                json = json,
+                message = "Локальный Live Test сохранён; дополнительный AI-аудит не выполнен, потому что повторный Discovery не подтвердил маршруты.",
+                testDetails = "${originalTest.testDetails}\nAI audit discovery: ${fresh.errorCode}: ${fresh.message}\n${fresh.evidence}".trim(),
+            )
+        }
+
+        val auditInstruction = instruction.trim().ifBlank {
+            "Audit the current NoodleMobile SNP against the fresh Discovery evidence. Confirm real search, video-page, iframe/player and media routes. Preserve routes that are already confirmed. Return a corrected adapter only when the evidence requires it."
+        }
+        var feedback = "Existing local Live Test: status=${originalTest.testStatus}; ${originalTest.testDetails}"
+        var selectedModel = model
+        var previousCandidate = json
+
+        for (attempt in 1..MAX_AI_AUDIT_ATTEMPTS) {
+            val prompt = buildAuditPrompt(
+                discovery = fresh,
+                currentJson = json,
+                instruction = auditInstruction,
+                feedback = feedback,
+                previousCandidate = previousCandidate.takeIf { attempt > 1 }.orEmpty(),
+            )
+            val reply = runCatching { ai.complete(provider, selectedModel, buildSystemPrompt(), prompt) }.getOrElse { error ->
+                return originalTest.copy(
+                    json = json,
+                    message = "Локальный Live Test сохранён; AI-проверка маршрутов не завершена: ${error.message ?: error.javaClass.simpleName}",
+                    testDetails = "${originalTest.testDetails}\nFresh Discovery: ${fresh.summary}".trim(),
+                    attempts = attempt,
+                    model = selectedModel,
+                )
+            }
+            selectedModel = reply.model
+            previousCandidate = reply.json
+            val validation = AdapterValidator.validate(reply.json)
+            if (!validation.isValid || validation.definition == null) {
+                feedback = "AI audit candidate failed Schema v3 validation: ${validation.errorCode}: ${validation.errorMessage}. Keep confirmed routes and return a valid complete adapter.json."
+                continue
+            }
+
+            val semantic = runCatching { probe.validateDefinition(validation.definition) }.getOrElse { error ->
+                feedback = "AI audit candidate live test crashed: ${error.javaClass.simpleName}: ${error.message}. Preserve confirmed search_template=${fresh.searchTemplate} and engine=${fresh.engine}."
+                null
+            } ?: continue
+
+            val details = buildString {
+                append("AI route audit • fresh Discovery: ${fresh.summary}\n")
+                append(semantic.message)
+                if (semantic.errorCode.isNotBlank()) append(" [${semantic.errorCode}]")
+                append(" • search=${semantic.searchResultCount}")
+                append(" • playback=${semantic.playbackSourceCount}")
+            }
+            if (semantic.status == SemanticStatus.HEALTHY) {
+                return StudioAnalyzeResult(
+                    success = true,
+                    draft = fresh.draft,
+                    json = reply.json,
+                    message = "AI-проверка маршрутов пройдена; финальный Live Test healthy.",
+                    testStatus = semantic.status.wireName,
+                    testDetails = details,
+                    attempts = attempt,
+                    model = selectedModel,
+                )
+            }
+            feedback = "AI audit live test failed: status=${semantic.status.wireName}; $details. Do not invent endpoints; use confirmed search_template=${fresh.searchTemplate}, search_url=${fresh.searchUrl}, engine=${fresh.engine}."
+        }
+
+        return originalTest.copy(
+            json = json,
+            message = "Исходный SNP оставлен без изменений: дополнительный AI-аудит не смог подтвердить улучшенный вариант.",
+            testDetails = "${originalTest.testDetails}\nFresh Discovery: ${fresh.summary}\n$feedback".trim(),
+            attempts = MAX_AI_AUDIT_ATTEMPTS,
+            model = selectedModel,
         )
     }
 
@@ -352,6 +424,27 @@ class AdapterStudioService(context: Context) {
         appendLine(); appendLine("Return only the complete adapter.json object. No markdown and no explanation.")
     }
 
+    private fun buildAuditPrompt(
+        discovery: StudioDiscoveryResult,
+        currentJson: String,
+        instruction: String,
+        feedback: String,
+        previousCandidate: String,
+    ): String = buildString {
+        appendLine("OPTIONAL AI ROUTE AUDIT FOR NOODLEMOBILE")
+        appendLine("TARGET URL: ${discovery.finalUrl}")
+        appendLine("AUDIT TASK:"); appendLine(instruction); appendLine()
+        appendLine(discovery.evidence); appendLine()
+        appendLine("CURRENT USER-APPROVED/EDITABLE SNP:"); appendLine(currentJson)
+        if (previousCandidate.isNotBlank()) { appendLine(); appendLine("PREVIOUS AUDIT CANDIDATE:"); appendLine(previousCandidate) }
+        appendLine(); appendLine("CURRENT LOCAL LIVE-TEST RESULT:"); appendLine(feedback)
+        appendLine(); appendLine("FRESH SEARCH HTML SAMPLE:"); appendLine(compactHtml(discovery.searchHtml, 24_000))
+        if (discovery.viewHtml.isNotBlank()) { appendLine(); appendLine("FRESH VIDEO PAGE HTML SAMPLE:"); appendLine(compactHtml(discovery.viewHtml, 24_000)) }
+        if (discovery.iframeHtml.isNotBlank()) { appendLine(); appendLine("FRESH IFRAME/PLAYER HTML SAMPLE:"); appendLine(compactHtml(discovery.iframeHtml, 12_000)) }
+        appendLine()
+        appendLine("This is validation, not mandatory creation. Preserve a working route unless fresh evidence contradicts it. Return only the complete audited adapter.json object.")
+    }
+
     private fun buildSystemPrompt(): String {
         val engines = (EngineRegistry.knownEngineIds + RuntimeEngineRegistry.implementedIds).distinct().sorted().joinToString(", ")
         return """
@@ -359,8 +452,8 @@ class AdapterStudioService(context: Context) {
             The adapter is declarative configuration, not executable code. Never return Kotlin, JavaScript, shell commands or markdown.
             NoodleMobile runtime engines available in this installed build: $engines.
             Resolver/view strategies include: primary, jwplayer, videojs, generic_html5, oembed, iframe, hls, dash.
-            DISCOVERY FACTS are produced by NoodleMobile itself after real HTTP probing and are authoritative. They may be a fresh second pass specifically for route auditing.
-            Do not replace a confirmed search_template, search_url, site family or view URL with a guessed endpoint. If the fresh evidence agrees with the working draft, preserve it exactly.
+            DISCOVERY FACTS are produced by NoodleMobile itself after real HTTP probing and are authoritative.
+            Do not replace a confirmed search_template, search_url, site family or view URL with a guessed endpoint. If fresh evidence agrees with the working draft, preserve it exactly.
             Prefer a detected built-in family engine (kvs_view, kvs_videos, noodle_watch_playlist, novideo_embed, sosalkino_catalog) over declarative_catalog when Discovery identifies it.
             Infer selectors or JSON paths only from supplied confirmed HTML. Do not invent selectors, endpoints, view counts or CDN hosts.
             permissions.allowed_hosts must be the minimum host set visible in confirmed navigation/player/media evidence. Do not grant unrelated domains.
@@ -377,5 +470,8 @@ class AdapterStudioService(context: Context) {
         return clean.take(head) + "\n<!-- NoodleMobile Studio Discovery: middle omitted -->\n" + clean.takeLast(maxChars - head)
     }
 
-    companion object { private const val MAX_AI_ATTEMPTS = 3 }
+    companion object {
+        private const val MAX_AI_ATTEMPTS = 3
+        private const val MAX_AI_AUDIT_ATTEMPTS = 2
+    }
 }
