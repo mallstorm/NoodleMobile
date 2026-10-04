@@ -2,6 +2,7 @@ package pro.noodle.mobile
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -120,6 +121,26 @@ private fun NoodleApp(settingsVm: SettingsViewModel) {
             (section == Section.HISTORY && historyState.playback != null) ||
             (section == Section.DOWNLOADS && offlinePlayback != null)
 
+    fun closeAllPlayback() {
+        searchVm.closePlayer()
+        favoritesVm.closePlayer()
+        historyVm.closePlayer()
+        downloadsVm.closeOffline()
+    }
+
+    fun navigateTo(target: Section) {
+        // Bottom navigation is authoritative: changing a section always tears down any
+        // currently open player so no hidden video can continue playing behind another tab.
+        closeAllPlayback()
+        section = target
+    }
+
+    // Android system Back from any player means "leave video now", not "maybe exit fullscreen".
+    // Closing the VM playback state disposes PlayerScreen and releases ExoPlayer immediately.
+    BackHandler(enabled = playerActive) {
+        closeAllPlayback()
+    }
+
     Scaffold(
         topBar = {
             if (!playerActive && section != Section.SEARCH) {
@@ -142,30 +163,28 @@ private fun NoodleApp(settingsVm: SettingsViewModel) {
             }
         },
         bottomBar = {
-            if (!playerActive) {
-                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                    Section.entries.forEach { s ->
-                        NavigationBarItem(
-                            selected = section == s,
-                            onClick = { section = s },
-                            icon = { Icon(iconFor(s), null) },
-                            label = { Text(s.title) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = MaterialTheme.colorScheme.primary,
-                                selectedTextColor = MaterialTheme.colorScheme.primary,
-                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                            ),
-                        )
-                    }
+            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                Section.entries.forEach { s ->
+                    NavigationBarItem(
+                        selected = section == s,
+                        onClick = { navigateTo(s) },
+                        icon = { Icon(iconFor(s), null) },
+                        label = { Text(s.title) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                        ),
+                    )
                 }
             }
         },
     ) { pad ->
-        Box(Modifier.padding(if (playerActive) PaddingValues(0.dp) else pad).fillMaxSize()) {
+        Box(Modifier.padding(pad).fillMaxSize()) {
             when (section) {
                 Section.SEARCH -> NoodleSearchScreen(
                     vm = searchVm,
-                    onOpenSettings = { section = Section.MORE },
+                    onOpenSettings = { navigateTo(Section.MORE) },
                 )
                 Section.DOWNLOADS -> DownloadsScreen(downloadsVm)
                 Section.FAVORITES -> FavoritesScreen(favoritesVm)
