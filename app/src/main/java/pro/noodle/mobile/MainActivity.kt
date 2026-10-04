@@ -1,5 +1,6 @@
 package pro.noodle.mobile
 
+import android.content.res.Configuration
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -15,6 +16,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
@@ -30,6 +32,7 @@ import pro.noodle.mobile.ui.favorites.FavoritesViewModel
 import pro.noodle.mobile.ui.history.HistoryScreen
 import pro.noodle.mobile.ui.history.HistoryViewModel
 import pro.noodle.mobile.ui.player.OfflinePlayerScreen
+import pro.noodle.mobile.ui.player.PlayerChromeState
 import pro.noodle.mobile.ui.player.PlayerScreen
 import pro.noodle.mobile.ui.search.NoodleSearchScreen
 import pro.noodle.mobile.ui.search.SearchViewModel
@@ -121,11 +124,18 @@ private fun NoodleApp(settingsVm: SettingsViewModel) {
             (section == Section.HISTORY && historyState.playback != null) ||
             (section == Section.DOWNLOADS && offlinePlayback != null)
 
+    // The bottom app navigation belongs to the portrait site shell only. It disappears for
+    // every landscape screen and whenever PlayerScreen explicitly owns the whole display.
+    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val playerFullscreen = PlayerChromeState.fullscreen
+    val showBottomNavigation = !isLandscape && !playerFullscreen
+
     fun closeAllPlayback() {
         searchVm.closePlayer()
         favoritesVm.closePlayer()
         historyVm.closePlayer()
         downloadsVm.closeOffline()
+        PlayerChromeState.fullscreen = false
     }
 
     fun navigateTo(target: Section) {
@@ -163,19 +173,21 @@ private fun NoodleApp(settingsVm: SettingsViewModel) {
             }
         },
         bottomBar = {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                Section.entries.forEach { s ->
-                    NavigationBarItem(
-                        selected = section == s,
-                        onClick = { navigateTo(s) },
-                        icon = { Icon(iconFor(s), null) },
-                        label = { Text(s.title) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.primary,
-                            selectedTextColor = MaterialTheme.colorScheme.primary,
-                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                        ),
-                    )
+            if (showBottomNavigation) {
+                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                    Section.entries.forEach { s ->
+                        NavigationBarItem(
+                            selected = section == s,
+                            onClick = { navigateTo(s) },
+                            icon = { Icon(iconFor(s), null) },
+                            label = { Text(s.title) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                            ),
+                        )
+                    }
                 }
             }
         },
