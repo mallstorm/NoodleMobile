@@ -6,6 +6,9 @@ import android.graphics.BitmapFactory
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,6 +27,8 @@ import pro.noodle.mobile.core.storage.UserMediaRepository
 data class SearchUiState(
     val query: String = "",
     val loading: Boolean = false,
+    val loadingMore: Boolean = false,
+    val hasMore: Boolean = true,
     val resolving: Boolean = false,
     val items: List<VideoItem> = emptyList(),
     val errors: List<SourceSearchError> = emptyList(),
@@ -40,7 +45,9 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
     private var generation = 0L
     private var searchJob: Job? = null
+    private var pagingJob: Job? = null
     private var resolveJob: Job? = null
+    private var nextPage = 1
     private val thumbnailCache = ConcurrentHashMap<String, Bitmap>()
     private val thumbnailMisses = ConcurrentHashMap.newKeySet<String>()
 
@@ -82,8 +89,21 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         generation++
         val g = generation
         searchJob?.cancel()
+        pagingJob?.cancel()
         resolveJob?.cancel()
-        _state.update { it.copy(loading = true, resolving = false, message = "", playback = null) }
+        nextPage = 1
+        _state.update {
+            it.copy(
+                loading = true,
+                loadingMore = false,
+                hasMore = true,
+                resolving = false,
+                items = emptyList(),
+                errors = emptyList(),
+                message = "",
+                playback = null,
+            )
+        }
         searchJob = viewModelScope.launch {
             val batch = searchRepo.search(q)
             if (g != generation) return@launch
@@ -92,7 +112,43 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
                     loading = false,
                     items = batch.items,
                     errors = batch.errors,
+                    hasMore = batch.items.isNotEmpty(),
                     message = if (batch.items.isEmpty()) "Ничего не найдено" else "",
+                )
+            }
+        }
+    }
+
+    fun loadMore() {
+        val snapshot = _state.value
+        val q = snapshot.query.trim()
+        if (q.isBlank() || snapshot.loading || snapshot.loadingMore || !snapshot.hasMore || snapshot.items.isEmpty()) return
+        val g = generation
+        val startPage = nextPage
+        val pages = (startPage until startPage + PAGE_BURST).toList()
+        _state.update { it.copy(loadingMore = true, message = "") }
+        pagingJob?.cancel()
+        pagingJob = viewModelScope.launch {
+            val batches = coroutineScope {
+                pages.map { page ->
+                    async { page to searchRepo.search(q, page = page, maxPerSource = PAGE_SIZE) }
+                }.awaitAll().sortedBy { it.first }
+            }
+            if (g != generation) return@launch
+            val incoming = batches.flatMap { it.second.items }
+            val old = _state.value.items
+            val seen = old.mapTo(HashSet()) { stableKey(it) }
+            val fresh = incoming.filter { seen.add(stableKey(it)) }
+            nextPage = startPage + PAGE_BURST
+            val pagingErrors = batches.flatMap { it.second.errors }
+                .distinctBy { "${it.sourceId}|${it.errorCode}|${it.message}" }
+            _state.update {
+                it.copy(
+                    loadingMore = false,
+                    items = old + fresh,
+                    errors = (it.errors + pagingErrors).distinctBy { e -> "${e.sourceId}|${e.errorCode}|${e.message}" },
+                    hasMore = fresh.isNotEmpty(),
+                    message = if (fresh.isEmpty()) "Больше результатов на следующих страницах не найдено" else "",
                 )
             }
         }
@@ -131,5 +187,13 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     fun closePlayer() {
         resolveJob?.cancel()
         _state.update { it.copy(playback = null, resolving = false) }
+    }
+
+    private fun stableKey(v: VideoItem): String =
+        "${v.sourceBaseUrl}|${v.remoteId}|${v.watchUrl}".lowercase()
+
+    companion object {
+        private const val PAGE_BURST = 4
+        private const val PAGE_SIZE = 30
     }
 }
