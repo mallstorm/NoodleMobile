@@ -333,10 +333,35 @@ class SourceToolsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun testStudio() = viewModelScope.launch {
-        val json = _state.value.studioJson
+        val state = _state.value
+        val json = state.studioJson
         if (json.isBlank()) return@launch
-        _state.update { it.copy(studioBusy = true, studioMessage = "Выполняется live test…", error = "") }
-        applyStudioResult(studio.testJson(json), preserveJsonOnFailure = true)
+        val aiAudit = state.studioProvider != StudioAiProvider.LOCAL &&
+            state.studioConnected && state.studioModel.isNotBlank() && state.studioUrl.isNotBlank()
+        _state.update {
+            it.copy(
+                studioBusy = true,
+                studioMessage = if (aiAudit) {
+                    "Live test: локальная проверка + дополнительный AI-аудит маршрутов…"
+                } else {
+                    "Выполняется локальный live test…"
+                },
+                error = "",
+            )
+        }
+        val result = if (aiAudit) {
+            studio.auditRoutes(
+                url = state.studioUrl,
+                json = json,
+                instruction = state.studioInstruction,
+                provider = state.studioProvider,
+                model = state.studioModel,
+            )
+        } else {
+            studio.testJson(json)
+        }
+        if (result.model.isNotBlank()) setStudioModel(result.model)
+        applyStudioResult(result, preserveJsonOnFailure = true)
     }
 
     private fun applyStudioResult(
