@@ -47,6 +47,17 @@ internal fun PlayerVideoSurface(
     var scrubbing by remember { mutableStateOf(false) }
     var scrubPosition by remember { mutableLongStateOf(0L) }
 
+    // Keep the root Scaffold informed about true player fullscreen. This is deliberately
+    // separate from device orientation: portrait manual fullscreen must hide app navigation too.
+    DisposableEffect(fullscreen) {
+        PlayerChromeState.fullscreen = fullscreen
+        onDispose {
+            if (PlayerChromeState.fullscreen == fullscreen) {
+                PlayerChromeState.fullscreen = false
+            }
+        }
+    }
+
     // Home/app-switch must never leave ordinary playback running in the background.
     // PiP is the explicit exception: entering PiP is an intentional background-playback action.
     DisposableEffect(player, activity) {
