@@ -25,10 +25,13 @@ data class SearchBatch(val items: List<VideoItem>, val errors: List<SourceSearch
 class BundledSearchRepository(
     context: Context,
     private val http: SecureHttpClient = SecureHttpClient(),
-    private val parallelism: Int = 5,
+    private val parallelism: Int = 6,
 ) {
     private val runtimeRepo = RuntimeAdapterRepository(context.applicationContext)
     private val overrides = SourceOverridesRepository(context.applicationContext)
+    // Shared by every search call, including concurrent pagination bursts. This prevents
+    // 4 paged searches x N sources from multiplying into an unbounded number of sockets.
+    private val networkSemaphore = Semaphore(parallelism.coerceIn(1, 6))
 
     private fun allAdapters(): List<AdapterDefinition> = runtimeRepo.listAll().map { it.definition }
 
@@ -50,10 +53,9 @@ class BundledSearchRepository(
         if (query.isBlank()) return@coroutineScope SearchBatch(emptyList(), emptyList())
         val adapters = activeAdapters()
         directUrlResult(query, adapters)?.let { return@coroutineScope it }
-        val sem = Semaphore(parallelism.coerceIn(1, 6))
         val parts = adapters.map { adapter ->
             async {
-                sem.withPermit {
+                networkSemaphore.withPermit {
                     withTimeoutOrNull(SOURCE_SEARCH_TIMEOUT_MS) {
                         searchOne(adapter, query, page, maxPerSource)
                     } ?: (emptyList<VideoItem>() to SourceSearchError(
@@ -87,8 +89,10 @@ class BundledSearchRepository(
                 "RELATED_SOURCE_NOT_FOUND",
                 "SNP текущего источника не найден.",
             )))
-        val result = withTimeoutOrNull(RELATED_SEARCH_TIMEOUT_MS) {
-            searchOne(adapter, query, page, maxPerSource.coerceIn(4, 12))
+        val result = networkSemaphore.withPermit {
+            withTimeoutOrNull(RELATED_SEARCH_TIMEOUT_MS) {
+                searchOne(adapter, query, page, maxPerSource.coerceIn(4, 12))
+            }
         } ?: (emptyList<VideoItem>() to SourceSearchError(
             adapter.id,
             adapter.name,
