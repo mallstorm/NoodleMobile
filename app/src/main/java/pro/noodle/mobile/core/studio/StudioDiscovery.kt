@@ -1,5 +1,11 @@
 package pro.noodle.mobile.core.studio
 
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withTimeoutOrNull
 import pro.noodle.mobile.core.engine.runtime.EngineParsing
 import pro.noodle.mobile.core.network.NetworkPolicy
 import pro.noodle.mobile.core.network.SecureHttpClient
@@ -30,47 +36,41 @@ internal data class StudioDiscoveryResult(
 
 /** Delphi AdapterGenerator-style deterministic discovery for Studio 2.1. */
 internal class StudioDiscovery(private val http: SecureHttpClient) {
-    suspend fun discover(url: String, query: String = ""): StudioDiscoveryResult {
+    suspend fun discover(url: String, query: String = ""): StudioDiscoveryResult = coroutineScope {
         val input = normalizeHttps(url)
-            ?: return fail("STUDIO_URL_INVALID", "Некорректный HTTPS URL.")
+            ?: return@coroutineScope fail("STUDIO_URL_INVALID", "Некорректный HTTPS URL.")
         val uri = URI(input)
         val host = uri.host.lowercase()
         val base = originOf(input)
         val probeQuery = query.trim().ifBlank { fallbackQuery(input) }
-        val probes = mutableListOf<SearchProbe>()
+        val specs = candidates()
+        val semaphore = Semaphore(SEARCH_PARALLELISM)
 
-        for (spec in candidates()) {
-            val target = render(spec, base, probeQuery)
-            val net = http.fetchText(
-                target,
-                NetworkPolicy(listOf(host, "*.$host"), maxResponseBytes = 6 * 1024 * 1024, maxRedirects = 4),
-                SOURCE_KEY,
-            )
-            if (!net.success) {
-                probes += SearchProbe(spec, target, status = net.statusCode, loaded = false, score = -1000)
-                continue
+        val probes = specs.map { spec ->
+            async {
+                semaphore.withPermit {
+                    withTimeoutOrNull(SEARCH_PROBE_TIMEOUT_MS) {
+                        probeSearch(spec, base, host, probeQuery)
+                    } ?: SearchProbe(
+                        spec = spec,
+                        requestedUrl = render(spec, base, probeQuery),
+                        status = 0,
+                        loaded = false,
+                        score = -1000,
+                        error = "timeout",
+                    )
+                }
             }
-            val signals = StudioDiscoveryHeuristics.inspectSearch(net.text)
-            probes += SearchProbe(
-                spec = spec,
-                requestedUrl = target,
-                finalUrl = net.finalUrl,
-                html = net.text,
-                status = net.statusCode,
-                loaded = true,
-                signals = signals,
-                score = StudioDiscoveryHeuristics.scoreSearch(signals, net.text, probeQuery, target),
-            )
-        }
+        }.awaitAll()
 
         val best = probes.filter { it.loaded }
             .sortedWith(compareByDescending<SearchProbe> { it.score }.thenBy { it.spec.order })
             .firstOrNull()
-            ?: return fail("STUDIO_DISCOVERY_SEARCH_UNREACHABLE", "Не удалось загрузить ни один известный вариант поиска.")
+            ?: return@coroutineScope fail("STUDIO_DISCOVERY_SEARCH_UNREACHABLE", "Не удалось загрузить ни один известный вариант поиска.")
 
         val summary = summarize(probes, best)
         if (best.signals.watchPath.isBlank()) {
-            return StudioDiscoveryResult(
+            return@coroutineScope StudioDiscoveryResult(
                 success = false,
                 finalUrl = input,
                 query = probeQuery,
@@ -79,22 +79,22 @@ internal class StudioDiscovery(private val http: SecureHttpClient) {
                 searchTemplate = best.spec.template,
                 score = best.score,
                 summary = summary,
-                evidence = evidence(probes, best, null),
+                evidence = evidence(probes, best, null, probeQuery),
                 errorCode = "STUDIO_DISCOVERY_NO_VIEW_LINK",
-                message = "Поиск доступен, но подтверждённая ссылка на видео не найдена. Измените тестовый запрос.",
+                message = "Поиск доступен, но подтверждённая ссылка на видео не найдена. Попробуйте другой тестовый запрос.",
             )
         }
 
         val view = probeView(base, host, best.signals)
         val engine = chooseEngine(best.signals, view)
         val allowedHosts = linkedSetOf(host, "*.$host").apply {
-            hostOf(view?.viewUrl.orEmpty())?.let(::add)
-            hostOf(view?.iframeUrl.orEmpty())?.let(::add)
-            StudioDiscoveryHeuristics.extractMediaHosts(view?.effectiveHtml.orEmpty()).forEach(::add)
+            hostOf(view?.viewUrl.orEmpty())?.let { add(it) }
+            hostOf(view?.iframeUrl.orEmpty())?.let { add(it) }
+            StudioDiscoveryHeuristics.extractMediaHosts(view?.effectiveHtml.orEmpty()).forEach { add(it) }
         }.filter { it.isNotBlank() }
 
         val baseDraft = AdapterStudioCore.analyze(input, best.html).getOrElse {
-            return fail("STUDIO_ANALYZE_FAILED", it.message ?: "Не удалось построить локальный SNP.")
+            return@coroutineScope fail("STUDIO_ANALYZE_FAILED", it.message ?: "Не удалось построить локальный SNP.")
         }
         val draft = baseDraft.copy(
             engine = engine,
@@ -109,7 +109,7 @@ internal class StudioDiscovery(private val http: SecureHttpClient) {
                 if (!view?.iframeUrl.isNullOrBlank()) add("Iframe: ${view?.iframeUrl}")
             },
         )
-        return StudioDiscoveryResult(
+        StudioDiscoveryResult(
             success = true,
             finalUrl = input,
             query = probeQuery,
@@ -125,37 +125,63 @@ internal class StudioDiscovery(private val http: SecureHttpClient) {
             engine = engine,
             score = best.score,
             summary = summary,
-            evidence = evidence(probes, best, view),
+            evidence = evidence(probes, best, view, probeQuery),
             message = "Discovery завершён: подтверждён поиск и определён $engine.",
+        )
+    }
+
+    private suspend fun probeSearch(spec: SearchSpec, base: String, host: String, query: String): SearchProbe {
+        val target = render(spec, base, query)
+        val net = http.fetchText(
+            target,
+            NetworkPolicy(listOf(host, "*.$host"), maxResponseBytes = SEARCH_MAX_BYTES, maxRedirects = 4),
+            SOURCE_KEY,
+        )
+        if (!net.success) {
+            return SearchProbe(spec, target, status = net.statusCode, loaded = false, score = -1000, error = net.errorCode)
+        }
+        val signals = StudioDiscoveryHeuristics.inspectSearch(net.text)
+        return SearchProbe(
+            spec = spec,
+            requestedUrl = target,
+            finalUrl = net.finalUrl,
+            html = net.text,
+            status = net.statusCode,
+            loaded = true,
+            signals = signals,
+            score = StudioDiscoveryHeuristics.scoreSearch(signals, net.text, query, target),
         )
     }
 
     private suspend fun probeView(base: String, mainHost: String, search: SearchSignals): ViewProbe? {
         val urls = linkedSetOf<String>()
-        fun add(raw: String) {
+        fun addUrl(raw: String) {
             if (raw.isBlank()) return
-            EngineParsing.absolute(raw, base).takeIf { it.startsWith("https://", true) }?.let(urls::add)
+            EngineParsing.absolute(raw, base).takeIf { it.startsWith("https://", true) }?.let { urls.add(it) }
         }
-        add(search.watchPath)
+        addUrl(search.watchPath)
         when (search.kind) {
-            SiteKind.KVS_VIEW -> if (search.remoteId.isNotBlank()) add("/view/${search.remoteId}/")
-            SiteKind.KVS_VIDEOS -> if (search.remoteId.isNotBlank()) add("/videos/${search.remoteId}/")
-            SiteKind.NOODLE -> if (search.remoteId.isNotBlank()) add("/watch/${search.remoteId}")
-            SiteKind.NOVIDEO -> if (search.remoteId.isNotBlank()) add("/novideo/${search.remoteId}.html")
+            SiteKind.KVS_VIEW -> if (search.remoteId.isNotBlank()) addUrl("/view/${search.remoteId}/")
+            SiteKind.KVS_VIDEOS -> if (search.remoteId.isNotBlank()) addUrl("/videos/${search.remoteId}/")
+            SiteKind.NOODLE -> if (search.remoteId.isNotBlank()) addUrl("/watch/${search.remoteId}")
+            SiteKind.NOVIDEO -> if (search.remoteId.isNotBlank()) addUrl("/novideo/${search.remoteId}.html")
             SiteKind.UNKNOWN -> Unit
         }
         val trimmed = search.watchPath.trimEnd('/')
-        if (trimmed.isNotBlank()) { add(trimmed); add("$trimmed/") }
+        if (trimmed.isNotBlank()) { addUrl(trimmed); addUrl("$trimmed/") }
 
         var best: ViewProbe? = null
         for (candidate in urls.take(5)) {
             val candidateHost = hostOf(candidate) ?: mainHost
-            val net = http.fetchText(
-                candidate,
-                NetworkPolicy(listOf(mainHost, "*.$mainHost", candidateHost), maxResponseBytes = 8 * 1024 * 1024, maxRedirects = 4),
-                SOURCE_KEY,
-            )
+            val net = withTimeoutOrNull(VIEW_PROBE_TIMEOUT_MS) {
+                http.fetchText(
+                    candidate,
+                    NetworkPolicy(listOf(mainHost, "*.$mainHost", candidateHost), maxResponseBytes = VIEW_MAX_BYTES, maxRedirects = 4),
+                    SOURCE_KEY,
+                )
+            } ?: continue
             if (!net.success) continue
+
             var current = ViewProbe(viewUrl = net.finalUrl, viewHtml = net.text)
             var effectiveHtml = net.text
             var effectiveUrl = net.finalUrl
@@ -165,12 +191,14 @@ internal class StudioDiscovery(private val http: SecureHttpClient) {
                 val iframeUrl = EngineParsing.absolute(iframeRaw, net.finalUrl)
                 val iframeHost = hostOf(iframeUrl)
                 if (iframeUrl.startsWith("https://", true) && !iframeHost.isNullOrBlank()) {
-                    val iframe = http.fetchText(
-                        iframeUrl,
-                        NetworkPolicy(listOf(mainHost, "*.$mainHost", candidateHost, iframeHost), maxResponseBytes = 8 * 1024 * 1024, maxRedirects = 4),
-                        SOURCE_KEY,
-                    )
-                    if (iframe.success) {
+                    val iframe = withTimeoutOrNull(IFRAME_PROBE_TIMEOUT_MS) {
+                        http.fetchText(
+                            iframeUrl,
+                            NetworkPolicy(listOf(mainHost, "*.$mainHost", candidateHost, iframeHost), maxResponseBytes = VIEW_MAX_BYTES, maxRedirects = 4),
+                            SOURCE_KEY,
+                        )
+                    }
+                    if (iframe?.success == true) {
                         current = current.copy(iframeUrl = iframe.finalUrl, iframeHtml = iframe.text)
                         effectiveHtml = iframe.text
                         effectiveUrl = iframe.finalUrl
@@ -202,11 +230,12 @@ internal class StudioDiscovery(private val http: SecureHttpClient) {
     }
 
     private fun summarize(all: List<SearchProbe>, best: SearchProbe) =
-        "Проверено ${all.size} вариантов поиска • выбран ${best.spec.label} • score=${best.score} • engine=${best.signals.kind.wire} • matches=${best.signals.viewCount}/${best.signals.videosCount}/${best.signals.watchCount}"
+        "Проверено ${all.size} вариантов поиска • выбран ${best.spec.label} • score=${best.score} • engine=${best.signals.kind.wire} • matches=${best.signals.totalRecognized}"
 
-    private fun evidence(all: List<SearchProbe>, best: SearchProbe, view: ViewProbe?): String = buildString {
+    private fun evidence(all: List<SearchProbe>, best: SearchProbe, view: ViewProbe?, query: String): String = buildString {
         appendLine("DISCOVERY FACTS (confirmed by NoodleMobile; authoritative):")
-        appendLine("probe_query=${best.spec.queryEncoding}")
+        appendLine("probe_query=$query")
+        appendLine("query_encoding=${best.spec.queryEncoding}")
         appendLine("search_candidate=${best.spec.label}")
         appendLine("search_template=${best.spec.template}")
         appendLine("search_url=${best.finalUrl.ifBlank { best.requestedUrl }}")
@@ -215,7 +244,7 @@ internal class StudioDiscovery(private val http: SecureHttpClient) {
         appendLine("detected_kind=${best.signals.kind.wire}")
         appendLine("watch_path=${best.signals.watchPath}")
         appendLine("remote_id=${best.signals.remoteId}")
-        appendLine("search_matches=view:${best.signals.viewCount},videos:${best.signals.videosCount},watch:${best.signals.watchCount}")
+        appendLine("search_matches=view:${best.signals.viewCount},videos:${best.signals.videosCount},watch:${best.signals.watchCount},generic:${best.signals.genericCount}")
         if (view != null) {
             appendLine("view_url=${view.viewUrl}")
             appendLine("iframe_url=${view.iframeUrl}")
@@ -224,7 +253,7 @@ internal class StudioDiscovery(private val http: SecureHttpClient) {
         }
         appendLine("top_candidates:")
         all.sortedByDescending { it.score }.take(8).forEach {
-            appendLine("- ${it.spec.label}: loaded=${it.loaded}, http=${it.status}, score=${it.score}, kind=${it.signals.kind.wire}, url=${it.finalUrl.ifBlank { it.requestedUrl }}")
+            appendLine("- ${it.spec.label}: loaded=${it.loaded}, http=${it.status}, score=${it.score}, kind=${it.signals.kind.wire}, matches=${it.signals.totalRecognized}, error=${it.error}, url=${it.finalUrl.ifBlank { it.requestedUrl }}")
         }
     }
 
@@ -275,7 +304,7 @@ internal class StudioDiscovery(private val http: SecureHttpClient) {
     private fun fail(code: String, message: String) = StudioDiscoveryResult(false, errorCode = code, message = message)
 
     private data class SearchSpec(val order: Int, val label: String, val template: String, val plus: Boolean = false) {
-        val queryEncoding: String get() = if (plus) "plus" else "percent"
+        val queryEncoding: String get() = if (plus) "plus" else "percent20"
     }
     private data class SearchProbe(
         val spec: SearchSpec,
@@ -286,6 +315,7 @@ internal class StudioDiscovery(private val http: SecureHttpClient) {
         val loaded: Boolean,
         val signals: SearchSignals = SearchSignals(),
         val score: Int,
+        val error: String = "",
     )
     private data class ViewProbe(
         val viewUrl: String,
@@ -298,10 +328,20 @@ internal class StudioDiscovery(private val http: SecureHttpClient) {
         val score: Int = 0,
     )
 
-    companion object { private const val SOURCE_KEY = "@adapter-studio-discovery" }
+    companion object {
+        private const val SOURCE_KEY = "@adapter-studio-discovery"
+        private const val SEARCH_PARALLELISM = 5
+        private const val SEARCH_PROBE_TIMEOUT_MS = 8_000L
+        private const val VIEW_PROBE_TIMEOUT_MS = 9_000L
+        private const val IFRAME_PROBE_TIMEOUT_MS = 8_000L
+        private const val SEARCH_MAX_BYTES = 4 * 1024 * 1024
+        private const val VIEW_MAX_BYTES = 6 * 1024 * 1024
+    }
 }
 
-internal enum class SiteKind(val wire: String) { UNKNOWN("unknown"), KVS_VIEW("kvs_view"), KVS_VIDEOS("kvs_videos"), NOODLE("noodle_watch_playlist"), NOVIDEO("novideo_embed") }
+internal enum class SiteKind(val wire: String) {
+    UNKNOWN("unknown"), KVS_VIEW("kvs_view"), KVS_VIDEOS("kvs_videos"), NOODLE("noodle_watch_playlist"), NOVIDEO("novideo_embed")
+}
 
 internal data class SearchSignals(
     val kind: SiteKind = SiteKind.UNKNOWN,
@@ -310,11 +350,12 @@ internal data class SearchSignals(
     val viewCount: Int = 0,
     val videosCount: Int = 0,
     val watchCount: Int = 0,
+    val genericCount: Int = 0,
     val hasFlashvars: Boolean = false,
     val hasPlaylist: Boolean = false,
     val hasVideoUrl: Boolean = false,
     val hasPreview: Boolean = false,
-)
+) { val totalRecognized: Int get() = viewCount + videosCount + watchCount + genericCount }
 
 internal data class ViewSignals(
     val hasFlashvars: Boolean = false,
@@ -329,45 +370,106 @@ internal object StudioDiscoveryHeuristics {
     private val watchLink = Regex("<a[^>]*href=[\"']/watch/([^\"']+)[\"'][^>]*>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
     private val novideoLink = Regex("<a[^>]*href=[\"']((?:https?://[^/\"']+)?(/novideo/([^\"'/?#]+)\\.html))[\"'][^>]*>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
     private val outLink = Regex("/out/\\?ps=([^\"'\\s<>]+)", RegexOption.IGNORE_CASE)
+    private val genericAnchor = Regex("<a\\b[^>]*href=([\"'])([^\"'#]+)\\1[^>]*>([\\s\\S]*?)</a>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
 
     fun inspectSearch(html: String): SearchSignals {
-        val views = viewLink.findAll(html).toList(); val videos = videosLink.findAll(html).toList(); val watches = watchLink.findAll(html).toList(); val novideos = novideoLink.findAll(html).toList(); val outs = outLink.findAll(html).toList()
-        var kind = SiteKind.UNKNOWN; var watchPath = ""; var remoteId = ""
+        val views = viewLink.findAll(html).toList()
+        val videos = videosLink.findAll(html).filter { !imageLike(it.groupValues[1]) }.toList()
+        val watches = watchLink.findAll(html).toList()
+        val novideos = novideoLink.findAll(html).toList()
+        val outs = outLink.findAll(html).toList()
+        val generic = genericVideoAnchors(html)
+        var kind = SiteKind.UNKNOWN
+        var watchPath = ""
+        var remoteId = ""
         when {
             views.isNotEmpty() -> { kind = SiteKind.KVS_VIEW; watchPath = views.first().groupValues[1]; remoteId = views.first().groupValues[2] }
-            videos.isNotEmpty() -> { kind = SiteKind.KVS_VIDEOS; watchPath = videos.firstOrNull { !imageLike(it.groupValues[1]) }?.groupValues?.get(1).orEmpty(); remoteId = watchPath.removePrefix("/videos/").trimEnd('/') }
+            videos.isNotEmpty() -> { kind = SiteKind.KVS_VIDEOS; watchPath = videos.first().groupValues[1]; remoteId = watchPath.removePrefix("/videos/").trimEnd('/') }
             watches.isNotEmpty() -> { kind = SiteKind.NOODLE; remoteId = watches.first().groupValues[1]; watchPath = "/watch/$remoteId" }
             novideos.isNotEmpty() -> { kind = SiteKind.NOVIDEO; val m = novideos.first(); watchPath = m.groupValues[2].ifBlank { m.groupValues[1] }; remoteId = m.groupValues[3] }
             outs.isNotEmpty() -> { kind = SiteKind.NOVIDEO; watchPath = decodeOut(outs.first().groupValues[1]); remoteId = Regex("/novideo/([^\"'/?#]+)\\.html", RegexOption.IGNORE_CASE).find(watchPath)?.groupValues?.getOrNull(1).orEmpty() }
+            generic.isNotEmpty() -> { watchPath = generic.first(); remoteId = watchPath.substringBefore('?').trimEnd('/').substringAfterLast('/') }
         }
-        return SearchSignals(kind, watchPath, remoteId, views.size, videos.size, watches.size + novideos.size + outs.size, hasFlashvars(html), hasPlaylist(html), hasVideo(html), hasPreview(html))
+        return SearchSignals(
+            kind = kind,
+            watchPath = watchPath,
+            remoteId = remoteId,
+            viewCount = views.size,
+            videosCount = videos.size,
+            watchCount = watches.size + novideos.size + outs.size,
+            genericCount = generic.size,
+            hasFlashvars = hasFlashvars(html),
+            hasPlaylist = hasPlaylist(html),
+            hasVideoUrl = hasVideo(html),
+            hasPreview = hasPreview(html),
+        )
     }
 
     fun scoreSearch(s: SearchSignals, html: String, query: String, url: String): Int {
-        var n = 8 + when (s.kind) { SiteKind.KVS_VIEW -> 38; SiteKind.KVS_VIDEOS -> 36; SiteKind.NOODLE -> 34; SiteKind.NOVIDEO -> 33; SiteKind.UNKNOWN -> 0 }
-        n += minOf(18, s.viewCount * 2) + minOf(18, s.videosCount * 2) + minOf(18, s.watchCount * 2)
-        if (s.watchPath.isNotBlank()) n += 14; if (s.remoteId.isNotBlank()) n += 8; if (s.hasFlashvars) n += 14; if (s.hasPlaylist) n += 12; if (s.hasPreview) n += 8; if (s.hasVideoUrl) n += 8
-        if (html.length > 12_000) n += 4; if (url.contains("/search", true)) n += 3
-        val needle = query.trim().lowercase().take(48); if (needle.isNotBlank() && html.lowercase().contains(needle)) n += 6
+        var n = 8 + when (s.kind) {
+            SiteKind.KVS_VIEW -> 38
+            SiteKind.KVS_VIDEOS -> 36
+            SiteKind.NOODLE -> 34
+            SiteKind.NOVIDEO -> 33
+            SiteKind.UNKNOWN -> 0
+        }
+        n += minOf(18, s.viewCount * 2) + minOf(18, s.videosCount * 2) + minOf(18, s.watchCount * 2) + minOf(10, s.genericCount)
+        if (s.watchPath.isNotBlank()) n += 14
+        if (s.remoteId.isNotBlank()) n += 8
+        if (s.hasFlashvars) n += 14
+        if (s.hasPlaylist) n += 12
+        if (s.hasPreview) n += 8
+        if (s.hasVideoUrl) n += 8
+        if (html.length > 12_000) n += 4
+        if (url.contains("/search", true)) n += 3
+        val needle = query.trim().lowercase().take(48)
+        if (needle.isNotBlank() && html.lowercase().contains(needle)) n += 6
         return n
     }
 
     fun inspectView(html: String) = ViewSignals(hasFlashvars(html), hasPlaylist(html), hasVideo(html), hasPreview(html))
-    fun scoreView(s: ViewSignals, html: String): Int { var n = 0; if (s.hasFlashvars) n += 18; if (s.hasPlaylist) n += 16; if (s.hasVideoUrl) n += 14; if (s.hasPreview) n += 8; if (html.length > 10_000) n += 4; if (s.strong && n < 24) n += 24; return n }
+
+    fun scoreView(s: ViewSignals, html: String): Int {
+        var n = 0
+        if (s.hasFlashvars) n += 18
+        if (s.hasPlaylist) n += 16
+        if (s.hasVideoUrl) n += 14
+        if (s.hasPreview) n += 8
+        if (html.length > 10_000) n += 4
+        if (s.strong && n < 24) n += 24
+        return n
+    }
+
     fun firstIframe(html: String) = Regex("<iframe[^>]+src=[\"']([^\"']+)[\"']", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(html)?.groupValues?.getOrNull(1).orEmpty()
 
     fun extractMediaHosts(html: String): Set<String> {
         val out = linkedSetOf<String>()
         Regex("https://[A-Za-z0-9._-]+(?:/[^\"'<>\\s]*)?", RegexOption.IGNORE_CASE).findAll(html).forEach { m ->
-            if (m.value.contains(".mp4", true) || m.value.contains(".m3u8", true) || m.value.contains(".mpd", true) || m.value.contains("cdn", true)) runCatching { URI(m.value).host?.lowercase() }.getOrNull()?.let(out::add)
+            if (m.value.contains(".mp4", true) || m.value.contains(".m3u8", true) || m.value.contains(".mpd", true) || m.value.contains("cdn", true)) {
+                runCatching { URI(m.value).host?.lowercase() }.getOrNull()?.let { out.add(it) }
+            }
         }
         return out.take(8).toSet()
     }
+
+    private fun genericVideoAnchors(html: String): List<String> = genericAnchor.findAll(html).mapNotNull { m ->
+        val href = EngineParsing.htmlDecode(m.groupValues[2])
+        val block = m.groupValues[3]
+        val lower = href.lowercase()
+        val looksVisual = block.contains("<img", true) || block.contains("poster", true) || block.contains("thumbnail", true)
+        val looksVideoPath = listOf("/video/", "/videos/", "/watch/", "/view/", "/clip/", "/movie/", "/post/").any(lower::contains)
+        val excluded = listOf("/login", "/register", "/tag/", "/tags/", "/category/", "/categories/", "/search", "javascript:", "mailto:").any(lower::contains)
+        href.takeIf { !excluded && !imageLike(it) && (looksVisual || looksVideoPath) }
+    }.distinct().take(40).toList()
 
     private fun hasFlashvars(h: String) = Regex("flashvars\\s*=\\s*\\{", RegexOption.IGNORE_CASE).containsMatchIn(h)
     private fun hasPlaylist(h: String) = Regex("window\\.playlist\\s*=", RegexOption.IGNORE_CASE).containsMatchIn(h)
     private fun hasPreview(h: String) = listOf("\\bpreview_url\\s*:\\s*[\"']", "\\bposter\\s*:\\s*[\"']", "og:image", "<video[^>]+poster=").any { Regex(it, RegexOption.IGNORE_CASE).containsMatchIn(h) }
     private fun hasVideo(h: String) = listOf("\\bvideo_url\\s*:\\s*[\"']", "\\bvideo_alt_url(?:_[a-z0-9]+)?\\s*:\\s*[\"']", "og:video", "<source[^>]+src=", "https://[^\"'<>\\s]+\\.(?:mp4|m3u8|mpd)").any { Regex(it, RegexOption.IGNORE_CASE).containsMatchIn(h) }
     private fun imageLike(path: String) = listOf(".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg").any(path.substringBefore('?').lowercase()::endsWith)
-    private fun decodeOut(value: String): String = runCatching { val decoded = URLDecoder.decode(value, Charsets.UTF_8.name()); val json = String(Base64.getDecoder().decode(decoded), Charsets.UTF_8).replace("\\/", "/"); Regex("(/novideo/[^\"'\\s<>]+\\.html)", RegexOption.IGNORE_CASE).find(json)?.groupValues?.getOrNull(1).orEmpty() }.getOrDefault("")
+    private fun decodeOut(value: String): String = runCatching {
+        val decoded = URLDecoder.decode(value, Charsets.UTF_8.name())
+        val json = String(Base64.getDecoder().decode(decoded), Charsets.UTF_8).replace("\\/", "/")
+        Regex("(/novideo/[^\"'\\s<>]+\\.html)", RegexOption.IGNORE_CASE).find(json)?.groupValues?.getOrNull(1).orEmpty()
+    }.getOrDefault("")
 }
