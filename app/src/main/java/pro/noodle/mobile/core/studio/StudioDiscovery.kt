@@ -86,7 +86,7 @@ internal class StudioDiscovery(private val http: SecureHttpClient) {
         }
 
         val view = probeView(base, host, best.signals)
-        val engine = chooseEngine(best.signals, view)
+        val engine = chooseEngine(best.signals)
         val allowedHosts = linkedSetOf(host, "*.$host").apply {
             hostOf(view?.viewUrl.orEmpty())?.let { add(it) }
             hostOf(view?.iframeUrl.orEmpty())?.let { add(it) }
@@ -162,7 +162,10 @@ internal class StudioDiscovery(private val http: SecureHttpClient) {
         addUrl(search.watchPath)
         when (search.kind) {
             SiteKind.KVS_VIEW -> if (search.remoteId.isNotBlank()) addUrl("/view/${search.remoteId}/")
-            SiteKind.KVS_VIDEOS -> if (search.remoteId.isNotBlank()) addUrl("/videos/${search.remoteId}/")
+            SiteKind.KVS_VIDEOS -> if (search.remoteId.isNotBlank()) {
+                addUrl("/video/${search.remoteId}/")
+                addUrl("/videos/${search.remoteId}/")
+            }
             SiteKind.NOODLE -> if (search.remoteId.isNotBlank()) addUrl("/watch/${search.remoteId}")
             SiteKind.NOVIDEO -> if (search.remoteId.isNotBlank()) addUrl("/novideo/${search.remoteId}.html")
             SiteKind.UNKNOWN -> Unit
@@ -217,16 +220,12 @@ internal class StudioDiscovery(private val http: SecureHttpClient) {
         return best
     }
 
-    private fun chooseEngine(search: SearchSignals, view: ViewProbe?): String = when (search.kind) {
+    private fun chooseEngine(search: SearchSignals): String = when (search.kind) {
         SiteKind.KVS_VIEW -> "kvs_view"
         SiteKind.KVS_VIDEOS -> "kvs_videos"
         SiteKind.NOODLE -> "noodle_watch_playlist"
         SiteKind.NOVIDEO -> "novideo_embed"
-        SiteKind.UNKNOWN -> when {
-            view?.signals?.hasPlaylist == true -> "noodle_watch_playlist"
-            view?.signals?.hasFlashvars == true -> "kvs_view"
-            else -> "declarative_catalog"
-        }
+        SiteKind.UNKNOWN -> "declarative_catalog"
     }
 
     private fun summarize(all: List<SearchProbe>, best: SearchProbe) =
@@ -366,7 +365,7 @@ internal data class ViewSignals(
 
 internal object StudioDiscoveryHeuristics {
     private val viewLink = Regex("<a[^>]*href=[\"']((?:https?://[^/\"']+)?/view/(\\d+)/?)[\"'][^>]*>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
-    private val videosLink = Regex("<a[^>]*href=[\"'](/videos/[^\"']+)[\"'][^>]*>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+    private val videosLink = Regex("<a[^>]*href=[\"'](/(?:video|videos)/[^\"']+)[\"'][^>]*>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
     private val watchLink = Regex("<a[^>]*href=[\"']/watch/([^\"']+)[\"'][^>]*>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
     private val novideoLink = Regex("<a[^>]*href=[\"']((?:https?://[^/\"']+)?(/novideo/([^\"'/?#]+)\\.html))[\"'][^>]*>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
     private val outLink = Regex("/out/\\?ps=([^\"'\\s<>]+)", RegexOption.IGNORE_CASE)
@@ -374,7 +373,7 @@ internal object StudioDiscoveryHeuristics {
 
     fun inspectSearch(html: String): SearchSignals {
         val views = viewLink.findAll(html).toList()
-        val videos = videosLink.findAll(html).filter { !imageLike(it.groupValues[1]) }.toList()
+        val videos = videosLink.findAll(html).filter { !imageLike(it.groupValues[1]) && !isCatalogPath(it.groupValues[1]) }.toList()
         val watches = watchLink.findAll(html).toList()
         val novideos = novideoLink.findAll(html).toList()
         val outs = outLink.findAll(html).toList()
@@ -384,7 +383,11 @@ internal object StudioDiscoveryHeuristics {
         var remoteId = ""
         when {
             views.isNotEmpty() -> { kind = SiteKind.KVS_VIEW; watchPath = views.first().groupValues[1]; remoteId = views.first().groupValues[2] }
-            videos.isNotEmpty() -> { kind = SiteKind.KVS_VIDEOS; watchPath = videos.first().groupValues[1]; remoteId = watchPath.removePrefix("/videos/").trimEnd('/') }
+            videos.isNotEmpty() -> {
+                kind = SiteKind.KVS_VIDEOS
+                watchPath = videos.first().groupValues[1]
+                remoteId = watchPath.removePrefix("/videos/").removePrefix("/video/").trimEnd('/')
+            }
             watches.isNotEmpty() -> { kind = SiteKind.NOODLE; remoteId = watches.first().groupValues[1]; watchPath = "/watch/$remoteId" }
             novideos.isNotEmpty() -> { kind = SiteKind.NOVIDEO; val m = novideos.first(); watchPath = m.groupValues[2].ifBlank { m.groupValues[1] }; remoteId = m.groupValues[3] }
             outs.isNotEmpty() -> { kind = SiteKind.NOVIDEO; watchPath = decodeOut(outs.first().groupValues[1]); remoteId = Regex("/novideo/([^\"'/?#]+)\\.html", RegexOption.IGNORE_CASE).find(watchPath)?.groupValues?.getOrNull(1).orEmpty() }
@@ -456,11 +459,17 @@ internal object StudioDiscoveryHeuristics {
         val href = EngineParsing.htmlDecode(m.groupValues[2])
         val block = m.groupValues[3]
         val lower = href.lowercase()
+        val normalizedPath = lower.substringBefore('?').trimEnd('/')
         val looksVisual = block.contains("<img", true) || block.contains("poster", true) || block.contains("thumbnail", true)
         val looksVideoPath = listOf("/video/", "/videos/", "/watch/", "/view/", "/clip/", "/movie/", "/post/").any(lower::contains)
-        val excluded = listOf("/login", "/register", "/tag/", "/tags/", "/category/", "/categories/", "/search", "javascript:", "mailto:").any(lower::contains)
+        val excluded = normalizedPath.isBlank() || normalizedPath == "/" || listOf("/login", "/register", "/tag/", "/tags/", "/category/", "/categories/", "/search", "javascript:", "mailto:").any(lower::contains)
         href.takeIf { !excluded && !imageLike(it) && (looksVisual || looksVideoPath) }
     }.distinct().take(40).toList()
+
+    private fun isCatalogPath(path: String): Boolean {
+        val p = path.lowercase()
+        return listOf("/videos/feed", "/videos/trending", "/videos/latest", "/videos/top", "/videos/new", "/videos/popular", "/videos/recent", "/videos/categories", "/videos/tags").any { p.contains(it) }
+    }
 
     private fun hasFlashvars(h: String) = Regex("flashvars\\s*=\\s*\\{", RegexOption.IGNORE_CASE).containsMatchIn(h)
     private fun hasPlaylist(h: String) = Regex("window\\.playlist\\s*=", RegexOption.IGNORE_CASE).containsMatchIn(h)
