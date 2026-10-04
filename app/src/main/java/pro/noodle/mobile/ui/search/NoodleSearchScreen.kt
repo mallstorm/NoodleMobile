@@ -1,5 +1,6 @@
 package pro.noodle.mobile.ui.search
 
+import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -8,6 +9,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
@@ -19,13 +22,15 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.flow.distinctUntilChanged
 import pro.noodle.mobile.core.model.VideoItem
 import pro.noodle.mobile.core.version.BuildIdentity
 import pro.noodle.mobile.ui.player.PlayerScreen
@@ -51,7 +56,10 @@ fun NoodleSearchScreen(
         return
     }
 
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     val focus = LocalFocusManager.current
+    val gridState = rememberLazyGridState()
+    val listState = rememberLazyListState()
     var filterSheet by remember { mutableStateOf(false) }
     var errorDialog by remember { mutableStateOf(false) }
     var sourceFilter by remember { mutableStateOf<String?>(null) }
@@ -74,146 +82,177 @@ fun NoodleSearchScreen(
         }
     }
 
+    // Infinite scroll: request another page burst before the user actually reaches the end.
+    // SearchViewModel deduplicates pages and BundledSearchRepository caps all network work at 6.
+    LaunchedEffect(gridMode, visibleItems.size, state.hasMore, state.loadingMore, landscape) {
+        snapshotFlow {
+            if (gridMode) gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+            else listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+        }
+            .distinctUntilChanged()
+            .collect { lastVisible ->
+                val threshold = if (landscape && gridMode) 12 else 6
+                if (visibleItems.isNotEmpty() && lastVisible >= visibleItems.lastIndex - threshold) {
+                    vm.loadMore()
+                }
+            }
+    }
+
     Column(
         Modifier
             .fillMaxSize()
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(11.dp),
+            .padding(horizontal = if (landscape) 10.dp else 14.dp, vertical = if (landscape) 6.dp else 10.dp),
+        verticalArrangement = Arrangement.spacedBy(if (landscape) 6.dp else 11.dp),
     ) {
-        NoodleHeader(
-            errorCount = state.errors.size,
-            onStatusClick = { errorDialog = true },
-            onSettingsClick = onOpenSettings,
-        )
+        if (!landscape) {
+            NoodleHeader(
+                errorCount = state.errors.size,
+                onStatusClick = { errorDialog = true },
+                onSettingsClick = onOpenSettings,
+            )
+        }
 
-        OutlinedTextField(
-            value = state.query,
-            onValueChange = vm::setQuery,
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Поиск по всем источникам") },
-            leadingIcon = {
-                IconButton(
-                    onClick = {
+        if (landscape) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                SearchField(
+                    value = state.query,
+                    onValueChange = vm::setQuery,
+                    onSearch = {
                         focus.clearFocus()
                         vm.search()
                     },
-                    enabled = !state.loading && state.query.isNotBlank(),
-                ) {
-                    Icon(Icons.Outlined.Search, "Найти")
+                    onFilters = { filterSheet = true },
+                    enabled = !state.loading,
+                    modifier = Modifier.weight(1f),
+                )
+
+                Box {
+                    FilledTonalIconButton(onClick = { sortMenu = true }) {
+                        Icon(Icons.Outlined.SwapVert, "Сортировка")
+                    }
+                    SortMenu(sort = sort, expanded = sortMenu, onDismiss = { sortMenu = false }) {
+                        sort = it
+                        sortMenu = false
+                    }
                 }
-            },
-            trailingIcon = {
-                IconButton(onClick = { filterSheet = true }) {
-                    Icon(Icons.Outlined.Tune, "Фильтры", tint = MaterialTheme.colorScheme.secondary)
+
+                Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceVariant) {
+                    Row {
+                        IconButton(onClick = { gridMode = true }) {
+                            Icon(
+                                Icons.Outlined.GridView,
+                                "Сетка",
+                                tint = if (gridMode) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        IconButton(onClick = { gridMode = false }) {
+                            Icon(
+                                Icons.Outlined.ViewList,
+                                "Список",
+                                tint = if (!gridMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                 }
-            },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(
+            }
+        } else {
+            SearchField(
+                value = state.query,
+                onValueChange = vm::setQuery,
                 onSearch = {
                     focus.clearFocus()
                     vm.search()
                 },
-            ),
-            singleLine = true,
-            shape = MaterialTheme.shapes.extraLarge,
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                focusedContainerColor = MaterialTheme.colorScheme.surface,
-                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-            ),
-        )
-
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            DurationFilter.entries.forEach { filter ->
-                FilterChip(
-                    selected = durationFilter == filter && sourceFilter == null,
-                    onClick = {
-                        durationFilter = filter
-                        if (filter != DurationFilter.ANY) sourceFilter = null
-                    },
-                    label = { Text(filter.title) },
-                )
-            }
-            sourceNames.take(3).forEach { source ->
-                FilterChip(
-                    selected = sourceFilter == source,
-                    onClick = {
-                        sourceFilter = if (sourceFilter == source) null else source
-                        if (sourceFilter != null) durationFilter = DurationFilter.ANY
-                    },
-                    label = { Text(shortSourceName(source), maxLines = 1) },
-                )
-            }
-            if (sourceNames.size > 3) {
-                AssistChip(onClick = { filterSheet = true }, label = { Text("+${sourceNames.size - 3}") })
-            }
-        }
-
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                if (state.items.isEmpty()) "Поиск по подключённым источникам" else "Найдено: ${visibleItems.size} видео",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f),
+                onFilters = { filterSheet = true },
+                enabled = !state.loading,
+                modifier = Modifier.fillMaxWidth(),
             )
 
-            Box {
-                OutlinedButton(
-                    onClick = { sortMenu = true },
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                ) {
-                    Text(sort.title, style = MaterialTheme.typography.labelMedium)
-                    Spacer(Modifier.width(4.dp))
-                    Icon(Icons.Outlined.KeyboardArrowDown, null, modifier = Modifier.size(18.dp))
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                DurationFilter.entries.forEach { filter ->
+                    FilterChip(
+                        selected = durationFilter == filter && sourceFilter == null,
+                        onClick = {
+                            durationFilter = filter
+                            if (filter != DurationFilter.ANY) sourceFilter = null
+                        },
+                        label = { Text(filter.title) },
+                    )
                 }
-                DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
-                    ResultSort.entries.forEach { option ->
-                        DropdownMenuItem(
-                            text = { Text(option.title) },
-                            onClick = {
-                                sort = option
-                                sortMenu = false
-                            },
-                            leadingIcon = {
-                                if (sort == option) Icon(Icons.Outlined.Check, null)
-                            },
-                        )
-                    }
+                sourceNames.take(3).forEach { source ->
+                    FilterChip(
+                        selected = sourceFilter == source,
+                        onClick = {
+                            sourceFilter = if (sourceFilter == source) null else source
+                            if (sourceFilter != null) durationFilter = DurationFilter.ANY
+                        },
+                        label = { Text(shortSourceName(source), maxLines = 1) },
+                    )
+                }
+                if (sourceNames.size > 3) {
+                    AssistChip(onClick = { filterSheet = true }, label = { Text("+${sourceNames.size - 3}") })
                 }
             }
 
-            Spacer(Modifier.width(7.dp))
-            Surface(
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.surfaceVariant,
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row {
-                    IconButton(onClick = { gridMode = true }) {
-                        Icon(
-                            Icons.Outlined.GridView,
-                            "Сетка",
-                            tint = if (gridMode) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                Text(
+                    if (state.items.isEmpty()) "Поиск по подключённым источникам" else "Найдено: ${visibleItems.size} видео",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+
+                Box {
+                    OutlinedButton(
+                        onClick = { sortMenu = true },
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    ) {
+                        Text(sort.title, style = MaterialTheme.typography.labelMedium)
+                        Spacer(Modifier.width(4.dp))
+                        Icon(Icons.Outlined.KeyboardArrowDown, null, modifier = Modifier.size(18.dp))
                     }
-                    IconButton(onClick = { gridMode = false }) {
-                        Icon(
-                            Icons.Outlined.ViewList,
-                            "Список",
-                            tint = if (!gridMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    SortMenu(sort = sort, expanded = sortMenu, onDismiss = { sortMenu = false }) {
+                        sort = it
+                        sortMenu = false
+                    }
+                }
+
+                Spacer(Modifier.width(7.dp))
+                Surface(
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                ) {
+                    Row {
+                        IconButton(onClick = { gridMode = true }) {
+                            Icon(
+                                Icons.Outlined.GridView,
+                                "Сетка",
+                                tint = if (gridMode) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        IconButton(onClick = { gridMode = false }) {
+                            Icon(
+                                Icons.Outlined.ViewList,
+                                "Список",
+                                tint = if (!gridMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
             }
         }
 
-        if (state.loading || state.resolving) {
+        if (state.loading || state.resolving || state.loadingMore) {
             LinearProgressIndicator(Modifier.fillMaxWidth())
         }
         if (state.message.isNotBlank()) {
@@ -230,24 +269,40 @@ fun NoodleSearchScreen(
             }
         } else if (gridMode) {
             LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
+                columns = GridCells.Fixed(if (landscape) 4 else 2),
+                state = gridState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalArrangement = Arrangement.spacedBy(11.dp),
+                horizontalArrangement = Arrangement.spacedBy(if (landscape) 8.dp else 10.dp),
+                verticalArrangement = Arrangement.spacedBy(if (landscape) 8.dp else 11.dp),
             ) {
                 items(visibleItems, key = { it.id }) { video ->
                     SearchGridCard(video, vm)
                 }
+                if (state.loadingMore) {
+                    item(key = "paging-progress") {
+                        Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                        }
+                    }
+                }
             }
         } else {
             androidx.compose.foundation.lazy.LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 14.dp),
                 verticalArrangement = Arrangement.spacedBy(9.dp),
             ) {
                 items(visibleItems.size, key = { visibleItems[it].id }) { index ->
                     SearchListCard(visibleItems[index], vm)
+                }
+                if (state.loadingMore) {
+                    item(key = "paging-progress") {
+                        Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                        }
+                    }
                 }
             }
         }
@@ -320,6 +375,61 @@ fun NoodleSearchScreen(
                 }
             },
         )
+    }
+}
+
+@Composable
+private fun SearchField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    onSearch: () -> Unit,
+    onFilters: () -> Unit,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier,
+        placeholder = { Text("Поиск по всем источникам") },
+        leadingIcon = {
+            IconButton(onClick = onSearch, enabled = enabled && value.isNotBlank()) {
+                Icon(Icons.Outlined.Search, "Найти")
+            }
+        },
+        trailingIcon = {
+            IconButton(onClick = onFilters) {
+                Icon(Icons.Outlined.Tune, "Фильтры", tint = MaterialTheme.colorScheme.secondary)
+            }
+        },
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { onSearch() }),
+        singleLine = true,
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = MaterialTheme.colorScheme.primary,
+            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+            focusedContainerColor = MaterialTheme.colorScheme.surface,
+            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+        ),
+    )
+}
+
+@Composable
+private fun SortMenu(
+    sort: ResultSort,
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    onSelect: (ResultSort) -> Unit,
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        ResultSort.entries.forEach { option ->
+            DropdownMenuItem(
+                text = { Text(option.title) },
+                onClick = { onSelect(option) },
+                leadingIcon = { if (sort == option) Icon(Icons.Outlined.Check, null) },
+            )
+        }
     }
 }
 
