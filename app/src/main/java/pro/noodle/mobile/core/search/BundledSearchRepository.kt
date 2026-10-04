@@ -34,10 +34,16 @@ class BundledSearchRepository(
 
     private suspend fun activeAdapters(): List<AdapterDefinition> {
         val disabled = overrides.disabledSourceIds.first()
+        val forced = overrides.forceEnabledSourceIds.first()
+        val solo = overrides.soloSourceId.first()
         return runtimeRepo.listAll()
             .filter { it.compatibility.compatible && it.packageInfo.valid }
             .map { it.definition }
-            .filter { it.enabled && it.id.lowercase() !in disabled }
+            .filter { d ->
+                val id = d.id.lowercase()
+                val enabled = (d.enabled || id in forced) && id !in disabled
+                enabled && (solo.isBlank() || id == solo)
+            }
     }
 
     suspend fun search(query: String, page: Int = -1, maxPerSource: Int = 30): SearchBatch = coroutineScope {
