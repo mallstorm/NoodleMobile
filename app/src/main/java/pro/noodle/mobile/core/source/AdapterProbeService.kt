@@ -6,6 +6,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import kotlinx.coroutines.CompletableDeferred
@@ -190,11 +191,19 @@ class AdapterProbeService(
 
                 override fun onPlayerError(error: PlaybackException) {
                     if (!gate.isCompleted) {
+                        val httpError = generateSequence(error.cause) { it.cause }
+                            .filterIsInstance<HttpDataSource.InvalidResponseCodeException>()
+                            .firstOrNull()
+                        val code = httpError?.responseCode
                         gate.complete(
                             Media3ProbeResult(
                                 false,
-                                error.errorCodeName,
-                                error.message.orEmpty().ifBlank { "Media3 playback error" },
+                                if (code != null) "${error.errorCodeName}_HTTP_$code" else error.errorCodeName,
+                                if (code != null) {
+                                    "HTTP $code: ${error.message.orEmpty().ifBlank { "Media3 source error" }}"
+                                } else {
+                                    error.message.orEmpty().ifBlank { "Media3 playback error" }
+                                },
                             ),
                         )
                     }
