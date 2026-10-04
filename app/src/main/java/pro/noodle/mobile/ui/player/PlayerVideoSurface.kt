@@ -19,6 +19,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -43,6 +46,19 @@ internal fun PlayerVideoSurface(
     var isPlaying by remember { mutableStateOf(false) }
     var scrubbing by remember { mutableStateOf(false) }
     var scrubPosition by remember { mutableLongStateOf(0L) }
+
+    // Home/app-switch must never leave ordinary playback running in the background.
+    // PiP is the explicit exception: entering PiP is an intentional background-playback action.
+    DisposableEffect(player, activity) {
+        val owner = activity as? LifecycleOwner
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP && activity?.isInPictureInPictureMode != true) {
+                player.pause()
+            }
+        }
+        owner?.lifecycle?.addObserver(observer)
+        onDispose { owner?.lifecycle?.removeObserver(observer) }
+    }
 
     // React only to a real orientation change. This keeps the manual fullscreen button usable
     // in portrait while still making landscape enter fullscreen and portrait leave it.
