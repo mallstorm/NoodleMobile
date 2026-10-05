@@ -29,6 +29,11 @@ data class SourceCenterItem(
     val latestVersion:String,
     val fingerprintStatus:String,
     val breakageStatus:String,
+    val reliabilityStatus:String = "unknown",
+    val reliabilityScore:Int = 0,
+    val semanticSearchCount:Int = 0,
+    val semanticPlaybackCount:Int = 0,
+    val semanticElapsedMs:Long = 0L,
 )
 
 
@@ -40,6 +45,9 @@ data class SourceDetails(
     val healthQuery:String, val healthMinResults:Int, val healthRequirePlayback:Boolean, val healthAutoRepair:Boolean,
     val repairEnabled:Boolean, val repairMode:String, val repairStrategies:List<String>, val repairFailureThreshold:Int,
     val repairCooldownMinutes:Int, val repairAutoQuarantine:Boolean, val updateFeedUrl:String, val snapshots:List<AdapterSnapshotInfo>,
+    val reliabilityStatus:String = "unknown", val reliabilityScore:Int = 0,
+    val semanticSearchCount:Int = 0, val semanticPlaybackCount:Int = 0, val semanticElapsedMs:Long = 0L,
+    val semanticMessage:String = "", val semanticErrorCode:String = "",
 )
 
 data class SourceActionResult(val success:Boolean,val status:String="",val message:String="",val errorCode:String="")
@@ -62,7 +70,15 @@ class SourceCenterService(context:Context){
 
     fun details(id:String):SourceDetails? {
         val r=repo.find(id)?:return null; val d=r.definition
-        return SourceDetails(d.id,d.name,d.adapterVersion,d.publisher,d.homepage,d.baseUrl,d.engine,d.engineDependencies,d.capabilities,d.allowedHosts,d.allowJavaScript,d.allowCookies,d.viewStrategies,d.minAppVersion,d.maxAppVersion,r.compatibility.status,r.bundled,r.packageInfo.trustStatus.wireName,d.healthQuery,d.healthMinResults,d.healthRequirePlayback,d.healthAutoRepair,d.repairEnabled,d.repairMode,d.repairStrategies,d.repairFailureThreshold,d.repairCooldownMinutes,d.repairAutoQuarantine,d.updateFeedUrl,recovery.enumerate(d.id))
+        val quality=reliability(d.id)
+        return SourceDetails(
+            d.id,d.name,d.adapterVersion,d.publisher,d.homepage,d.baseUrl,d.engine,d.engineDependencies,d.capabilities,
+            d.allowedHosts,d.allowJavaScript,d.allowCookies,d.viewStrategies,d.minAppVersion,d.maxAppVersion,r.compatibility.status,
+            r.bundled,r.packageInfo.trustStatus.wireName,d.healthQuery,d.healthMinResults,d.healthRequirePlayback,d.healthAutoRepair,
+            d.repairEnabled,d.repairMode,d.repairStrategies,d.repairFailureThreshold,d.repairCooldownMinutes,d.repairAutoQuarantine,
+            d.updateFeedUrl,recovery.enumerate(d.id),quality.status,quality.score,quality.searchCount,quality.playbackCount,
+            quality.elapsedMs,semanticStore.get(d.id,"message"),semanticStore.get(d.id,"error_code")
+        )
     }
 
     suspend fun enumerate():List<SourceCenterItem>{
@@ -72,8 +88,55 @@ class SourceCenterService(context:Context){
             val d=r.definition
             val id=d.id.lowercase()
             val effectiveEnabled=r.compatibility.compatible&&r.packageInfo.valid&&(d.enabled||id in forced)&&id !in disabled
-            SourceCenterItem(d.id,d.name,d.baseUrl,d.engine,d.schemaVersion,d.adapterVersion,d.publisher,r.compatibility.compatible,r.compatibility.status,effectiveEnabled,d.enabled,r.bundled,r.packageInfo.trustStatus.wireName,if(r.packageInfo.valid)"" else r.packageInfo.errorCode,recovery.enumerate(d.id).size,updateManager.pendingFile(d.id).isFile,healthStore.get(d.id,"status"),semanticStore.get(d.id,"status"),updateStore.get(d.id,"state"),updateStore.get(d.id,"latest_version"),fingerprintStore.get(d.id,"status"),breakageStore.get(d.id,"status"))
+            val quality=reliability(d.id)
+            SourceCenterItem(
+                d.id,d.name,d.baseUrl,d.engine,d.schemaVersion,d.adapterVersion,d.publisher,r.compatibility.compatible,
+                r.compatibility.status,effectiveEnabled,d.enabled,r.bundled,r.packageInfo.trustStatus.wireName,
+                if(r.packageInfo.valid)"" else r.packageInfo.errorCode,recovery.enumerate(d.id).size,
+                updateManager.pendingFile(d.id).isFile,healthStore.get(d.id,"status"),semanticStore.get(d.id,"status"),
+                updateStore.get(d.id,"state"),updateStore.get(d.id,"latest_version"),fingerprintStore.get(d.id,"status"),
+                breakageStore.get(d.id,"status"),quality.status,quality.score,quality.searchCount,quality.playbackCount,quality.elapsedMs
+            )
         }
+    }
+
+    private data class Reliability(
+        val status:String,
+        val score:Int,
+        val searchCount:Int,
+        val playbackCount:Int,
+        val elapsedMs:Long,
+    )
+
+    /** Product-facing quality score. It deliberately gives the strongest weight to real Media3
+     * certification; lightweight reachability/fingerprint checks can improve confidence but can
+     * never mask a broken playback certification. */
+    private fun reliability(id:String):Reliability {
+        val semantic=semanticStore.get(id,"status")
+        val health=healthStore.get(id,"status")
+        val breakage=breakageStore.get(id,"status")
+        val fingerprint=fingerprintStore.get(id,"status")
+        val search=semanticStore.getInt(id,"search_count")
+        val playback=semanticStore.getInt(id,"playback_count")
+        val elapsed=semanticStore.getLong(id,"elapsed_ms")
+        if(semantic.isBlank()&&health.isBlank()&&breakage.isBlank()&&fingerprint.isBlank()) return Reliability("unknown",0,search,playback,elapsed)
+        if(semantic in setOf("playback_failed","search_failed","invalid_adapter","error")||breakage in setOf("broken","repair_failed","quarantined")) {
+            return Reliability("broken",((search.coerceAtMost(10))*2).coerceIn(0,30),search,playback,elapsed)
+        }
+        var score=0
+        if(semantic=="healthy") score+=60 else if(semantic=="no_results") score+=15
+        if(health=="healthy") score+=15
+        if(breakage in setOf("healthy","repair_succeeded")) score+=15
+        if(fingerprint in setOf("baseline_created","unchanged","minor_change")) score+=5
+        if(playback>=5) score+=5 else if(playback>=2) score+=3
+        if(elapsed in 1..15_000) score+=3 else if(elapsed in 15_001..30_000) score+=1
+        score=score.coerceIn(0,100)
+        val status=when {
+            semantic=="healthy"&&score>=80 -> "healthy"
+            score>=45 -> "degraded"
+            else -> "unknown"
+        }
+        return Reliability(status,score,search,playback,elapsed)
     }
 
     suspend fun setEnabled(id:String,enabled:Boolean):SourceActionResult{
