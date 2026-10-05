@@ -11,6 +11,7 @@ object RuntimeEngineRegistry {
         SosalkinoCatalogEngine(),
         NovideoEmbedEngine(),
         GenericHtml5Engine(),
+        GenericPlayerConfigEngine(),
         JwPlayerEngine(),
         VideoJsEngine(),
         IFrameChainEngine(),
