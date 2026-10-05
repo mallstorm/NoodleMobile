@@ -19,6 +19,7 @@ import pro.noodle.mobile.core.studio.AdapterStudioService
 import pro.noodle.mobile.core.studio.StudioAiModel
 import pro.noodle.mobile.core.studio.StudioAiProvider
 import pro.noodle.mobile.core.studio.StudioAiRouter
+import pro.noodle.mobile.core.studio.StudioBrowserRecoveryService
 
 
 data class SourceToolsUiState(
@@ -51,6 +52,7 @@ class SourceToolsViewModel(app: Application) : AndroidViewModel(app) {
     private val market = MarketplaceRepository(app)
     private val catalogSettings = CatalogSettingsRepository(app)
     private val studio = AdapterStudioService(app)
+    private val studioBrowser = StudioBrowserRecoveryService(app)
     private val studioAi = StudioAiRouter(app)
     private val initialProvider = studioAi.selectedProvider()
     private val initialAccount = studioAi.status(initialProvider)
@@ -322,12 +324,25 @@ class SourceToolsViewModel(app: Application) : AndroidViewModel(app) {
                 error = "",
             )
         }
-        val result = studio.generate(
+        var result = studio.generate(
             url = state.studioUrl,
             instruction = state.studioInstruction,
             provider = state.studioProvider,
             model = state.studioModel,
         )
+        // HTTP Discovery is authoritative and stays first. Browser Discovery is a second-stage
+        // recovery only when the normal candidate is not healthy; a worse browser candidate never
+        // replaces an already better result.
+        if (result.testStatus != "healthy" && state.studioUrl.isNotBlank()) {
+            _state.update { it.copy(studioMessage = "HTTP Discovery не подтвердил полный playback; проверяю post-JS DOM в Browser Discovery…") }
+            val browserResult = runCatching { studioBrowser.recover(state.studioUrl) }.getOrNull()
+            if (browserResult != null) {
+                val browserBetter = browserResult.testStatus == "healthy" ||
+                    (!result.success && browserResult.success) ||
+                    (result.testStatus in setOf("discovery_failed", "search_failed", "no_results") && browserResult.testStatus !in setOf("browser_discovery_failed", "error"))
+                if (browserBetter) result = browserResult
+            }
+        }
         if (result.model.isNotBlank()) setStudioModel(result.model)
         applyStudioResult(result)
     }
