@@ -47,7 +47,7 @@ data class SourceDetails(
     val repairCooldownMinutes:Int, val repairAutoQuarantine:Boolean, val updateFeedUrl:String, val snapshots:List<AdapterSnapshotInfo>,
     val reliabilityStatus:String = "unknown", val reliabilityScore:Int = 0,
     val semanticSearchCount:Int = 0, val semanticPlaybackCount:Int = 0, val semanticElapsedMs:Long = 0L,
-    val semanticMessage:String = "", val semanticErrorCode:String = "",
+    val semanticMessage:String = "", val semanticErrorCode:String = "", val runtimeDiagnostics:String = "",
 )
 
 data class SourceActionResult(val success:Boolean,val status:String="",val message:String="",val errorCode:String="")
@@ -66,6 +66,7 @@ class SourceCenterService(context:Context){
     private val health=SourceHealthMonitor(repo)
     private val updates=AdapterRemoteUpdateService(app,repo)
     private val updateManager=AdapterUpdateManager(paths,recovery)
+    private val runtimeDiagnostics=SourceRuntimeDiagnosticsStore(app)
     private val healthStore=SourceStatusStore(FileRefs.health(paths));private val semanticStore=SourceStatusStore(FileRefs.semantic(paths));private val updateStore=SourceStatusStore(FileRefs.updates(paths));private val fingerprintStore=SourceStatusStore(FileRefs.fingerprint(paths));private val breakageStore=SourceStatusStore(FileRefs.breakage(paths))
 
     fun details(id:String):SourceDetails? {
@@ -77,7 +78,7 @@ class SourceCenterService(context:Context){
             r.bundled,r.packageInfo.trustStatus.wireName,d.healthQuery,d.healthMinResults,d.healthRequirePlayback,d.healthAutoRepair,
             d.repairEnabled,d.repairMode,d.repairStrategies,d.repairFailureThreshold,d.repairCooldownMinutes,d.repairAutoQuarantine,
             d.updateFeedUrl,recovery.enumerate(d.id),quality.status,quality.score,quality.searchCount,quality.playbackCount,
-            quality.elapsedMs,semanticStore.get(d.id,"message"),semanticStore.get(d.id,"error_code")
+            quality.elapsedMs,semanticStore.get(d.id,"message"),semanticStore.get(d.id,"error_code"),runtimeDiagnostics.summary(d.id)
         )
     }
 
@@ -90,12 +91,14 @@ class SourceCenterService(context:Context){
             val effectiveEnabled=r.compatibility.compatible&&r.packageInfo.valid&&(d.enabled||id in forced)&&id !in disabled
             val quality=reliability(d.id)
             val semanticRaw=semanticStore.get(d.id,"status")
+            val runtime=runtimeDiagnostics.summary(d.id)
             val semanticDisplay=buildString {
                 append(semanticRaw.ifBlank { "not tested" })
                 append(" • quality=${quality.status} ${quality.score}/100")
                 if(quality.searchCount>0) append(" • search=${quality.searchCount}")
                 if(quality.playbackCount>0) append(" • Media3=${quality.playbackCount}/5")
                 if(quality.elapsedMs>0) append(" • ${quality.elapsedMs}ms")
+                if(runtime.isNotBlank()) append(" • $runtime")
             }
             SourceCenterItem(
                 d.id,d.name,d.baseUrl,d.engine,d.schemaVersion,d.adapterVersion,d.publisher,r.compatibility.compatible,
