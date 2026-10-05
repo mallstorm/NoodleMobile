@@ -19,6 +19,7 @@ import pro.noodle.mobile.core.studio.AdapterStudioService
 import pro.noodle.mobile.core.studio.StudioAiModel
 import pro.noodle.mobile.core.studio.StudioAiProvider
 import pro.noodle.mobile.core.studio.StudioAiRouter
+import pro.noodle.mobile.core.studio.StudioBackupService
 import pro.noodle.mobile.core.studio.StudioBrowserRecoveryService
 
 
@@ -53,6 +54,7 @@ class SourceToolsViewModel(app: Application) : AndroidViewModel(app) {
     private val catalogSettings = CatalogSettingsRepository(app)
     private val studio = AdapterStudioService(app)
     private val studioBrowser = StudioBrowserRecoveryService(app)
+    private val studioBackup = StudioBackupService(app)
     private val studioAi = StudioAiRouter(app)
     private val initialProvider = studioAi.selectedProvider()
     private val initialAccount = studioAi.status(initialProvider)
@@ -404,10 +406,15 @@ class SourceToolsViewModel(app: Application) : AndroidViewModel(app) {
     fun saveStudio(onDone: () -> Unit = {}) = viewModelScope.launch {
         _state.update { it.copy(studioBusy = true, error = "") }
         val result = studio.saveJson(_state.value.studioJson)
+        val backup = if (result.success && result.adapterId.isNotBlank()) {
+            runCatching { studioBackup.backup(result.adapterId) }.getOrNull()
+        } else null
         _state.update {
             it.copy(
                 studioBusy = false,
-                studioMessage = if (result.success) result.message else it.studioMessage,
+                studioMessage = if (result.success) {
+                    result.message + backup?.let { file -> " Автобэкап: ${file.name}." }.orEmpty()
+                } else it.studioMessage,
                 error = if (result.success) "" else "${result.errorCode}: ${result.message}",
             )
         }
