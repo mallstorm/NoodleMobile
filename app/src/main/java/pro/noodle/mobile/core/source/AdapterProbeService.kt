@@ -62,7 +62,8 @@ class AdapterProbeService(
         val runtime = runtimeRepo.find(adapterId) ?: return result(adapterId, "", "", SemanticStatus.INVALID_ADAPTER, "", errorCode = "SNP_NOT_FOUND", message = "SNP не найден.")
         val d = runtime.definition
         val query = queryOverride.trim().ifBlank { d.healthQuery.trim().ifBlank { "video" } }
-        val search = searchOne(d, query, 8)
+        val started = System.currentTimeMillis()
+        val search = searchOne(d, query, CERTIFICATION_SEARCH_LIMIT)
         var out = if (search.second != null) {
             result(d.id, d.name, d.adapterVersion, SemanticStatus.SEARCH_FAILED, query, errorCode = search.second!!.first, message = search.second!!.second)
         } else if (search.first.size < d.healthMinResults) {
@@ -78,19 +79,22 @@ class AdapterProbeService(
             val action = updater.completePendingValidation(d.id, out.status == SemanticStatus.HEALTHY, runtime.directory)
             if (action != null) out = out.copy(action = action, message = out.message + " [$action]")
         }
+        val elapsed = (System.currentTimeMillis() - started).coerceAtLeast(0L)
         status.put(d.id, mapOf(
             "status" to pro.noodle.mobile.core.json.JsonValue.Str(out.status.wireName),
             "error_code" to pro.noodle.mobile.core.json.JsonValue.Str(out.errorCode),
             "message" to pro.noodle.mobile.core.json.JsonValue.Str(out.message),
             "search_count" to pro.noodle.mobile.core.json.JsonValue.Num(out.searchResultCount.toDouble()),
             "playback_count" to pro.noodle.mobile.core.json.JsonValue.Num(out.playbackSourceCount.toDouble()),
+            "certification_samples" to pro.noodle.mobile.core.json.JsonValue.Num(PLAYBACK_SAMPLE_COUNT.toDouble()),
+            "elapsed_ms" to pro.noodle.mobile.core.json.JsonValue.Num(elapsed.toDouble()),
         ))
         return out
     }
 
     suspend fun validateDefinition(d: AdapterDefinition, queryOverride: String = ""): AdapterSemanticResult {
         val query = queryOverride.trim().ifBlank { d.healthQuery.trim().ifBlank { "video" } }
-        val search = searchOne(d, query, 8)
+        val search = searchOne(d, query, CERTIFICATION_SEARCH_LIMIT)
         if (search.second != null) return result(d.id,d.name,d.adapterVersion,SemanticStatus.SEARCH_FAILED,query,errorCode=search.second!!.first,message=search.second!!.second)
         if (search.first.size < d.healthMinResults) return result(d.id,d.name,d.adapterVersion,SemanticStatus.NO_RESULTS,query,search.first.size,errorCode=if(search.first.isEmpty()) "SNP_SEMANTIC_NO_RESULTS" else "SNP_SEMANTIC_MIN_RESULTS",message="Получено ${search.first.size}, требуется минимум ${d.healthMinResults}.")
         if (!d.healthRequirePlayback) return result(d.id,d.name,d.adapterVersion,SemanticStatus.HEALTHY,query,search.first.size,message="Поиск прошёл успешно.")
@@ -98,17 +102,16 @@ class AdapterProbeService(
     }
 
     /**
-     * A resolver hit is not enough to call an SNP healthy. The regular player may still receive
-     * 403/404/5xx from the manifest, segment or progressive media URL. Live Test therefore runs
-     * the same Media3 datasource stack as PlayerScreen and waits until the source reaches READY.
-     * Two different search cards are sampled so a single lucky/stale URL cannot mask a broken SNP.
+     * Certification deliberately samples different positions in the result set rather than the
+     * first lucky cards. A source is healthy only when every sampled item resolves and the exact
+     * Media3 datasource stack used by PlayerScreen reaches STATE_READY.
      */
     private suspend fun validateRealPlayback(
         d: AdapterDefinition,
         query: String,
         items: List<VideoItem>,
     ): AdapterSemanticResult {
-        val samples = items.take(PLAYBACK_SAMPLE_COUNT.coerceAtMost(items.size))
+        val samples = spreadSamples(items, PLAYBACK_SAMPLE_COUNT)
         var readyCount = 0
         for ((index, item) in samples.withIndex()) {
             val resolved = playback.resolve(item, d)
@@ -151,84 +154,109 @@ class AdapterProbeService(
             query,
             items.size,
             readyCount,
-            message = "Поиск, разрешение и реальная загрузка видео прошли успешно. Media3 READY: $readyCount/${samples.size}.",
+            message = "Сертификация пройдена: поиск, resolver и реальная загрузка видео успешны. Media3 READY: $readyCount/${samples.size}.",
         )
+    }
+
+    private fun spreadSamples(items: List<VideoItem>, count: Int): List<VideoItem> {
+        if (items.isEmpty()) return emptyList()
+        if (items.size <= count) return items
+        val last = items.lastIndex
+        val indices = linkedSetOf(0, last)
+        if (count > 2) {
+            for (slot in 1 until count - 1) {
+                indices += ((last.toDouble() * slot) / (count - 1).toDouble()).toInt().coerceIn(0, last)
+            }
+        }
+        return indices.sorted().map { items[it] }.take(count)
     }
 
     @OptIn(UnstableApi::class)
     private suspend fun probeMedia3Ready(session: PlaybackSession): Media3ProbeResult {
         val video = session.video
-        val sourceIndex = video.sources.indexOfFirst { it.isDefault }.takeIf { it >= 0 } ?: 0
-        val source = video.sources.getOrNull(sourceIndex)
-            ?: return Media3ProbeResult(false, "SNP_MEDIA3_SOURCE_MISSING", "Resolver не вернул источник для Media3.")
+        val sources = buildList {
+            val defaultIndex = video.sources.indexOfFirst { it.isDefault }.takeIf { it >= 0 } ?: 0
+            video.sources.getOrNull(defaultIndex)?.let { add(it) }
+            video.sources.forEach { if (it !in this) add(it) }
+        }
+        if (sources.isEmpty()) return Media3ProbeResult(false, "SNP_MEDIA3_SOURCE_MISSING", "Resolver не вернул источник для Media3.")
 
-        return withContext(Dispatchers.Main.immediate) {
-            val factory = runCatching {
-                MediaDownloadRuntime.cacheDataSourceFactory(
-                    context.applicationContext,
-                    session.networkPolicy,
-                    session.sourceKey,
-                )
-            }.getOrElse { error ->
-                return@withContext Media3ProbeResult(false, "SNP_MEDIA3_FACTORY_ERROR", "${error.javaClass.simpleName}: ${error.message}")
-            }
+        var last = Media3ProbeResult(false, "SNP_MEDIA3_SOURCE_MISSING", "Нет воспроизводимого источника.")
+        for ((sourceIndex, source) in sources.take(MAX_MEDIA_SOURCE_FALLBACKS).withIndex()) {
+            val attempt = probeSingleMediaSource(session, source)
+            if (attempt.success) return attempt
+            last = attempt.copy(message = "source ${sourceIndex + 1}/${sources.take(MAX_MEDIA_SOURCE_FALLBACKS).size}: ${attempt.message}")
+        }
+        return last
+    }
 
-            val player = runCatching {
-                ExoPlayer.Builder(context.applicationContext)
-                    .setMediaSourceFactory(DefaultMediaSourceFactory(factory))
-                    .build()
-            }.getOrElse { error ->
-                return@withContext Media3ProbeResult(false, "SNP_MEDIA3_INIT_ERROR", "${error.javaClass.simpleName}: ${error.message}")
-            }
+    @OptIn(UnstableApi::class)
+    private suspend fun probeSingleMediaSource(session: PlaybackSession, source: pro.noodle.mobile.core.model.MediaSource): Media3ProbeResult = withContext(Dispatchers.Main.immediate) {
+        val factory = runCatching {
+            MediaDownloadRuntime.cacheDataSourceFactory(
+                context.applicationContext,
+                session.networkPolicy,
+                session.sourceKey,
+            )
+        }.getOrElse { error ->
+            return@withContext Media3ProbeResult(false, "SNP_MEDIA3_FACTORY_ERROR", "${error.javaClass.simpleName}: ${error.message}")
+        }
 
-            val gate = CompletableDeferred<Media3ProbeResult>()
-            val listener = object : Player.Listener {
-                override fun onPlaybackStateChanged(playbackState: Int) {
-                    if (playbackState == Player.STATE_READY && !gate.isCompleted) {
-                        gate.complete(Media3ProbeResult(true, message = "Media3 STATE_READY"))
-                    }
-                }
+        val player = runCatching {
+            ExoPlayer.Builder(context.applicationContext)
+                .setMediaSourceFactory(DefaultMediaSourceFactory(factory))
+                .build()
+        }.getOrElse { error ->
+            return@withContext Media3ProbeResult(false, "SNP_MEDIA3_INIT_ERROR", "${error.javaClass.simpleName}: ${error.message}")
+        }
 
-                override fun onPlayerError(error: PlaybackException) {
-                    if (!gate.isCompleted) {
-                        val httpError = generateSequence(error.cause) { it.cause }
-                            .filterIsInstance<HttpDataSource.InvalidResponseCodeException>()
-                            .firstOrNull()
-                        val code = httpError?.responseCode
-                        gate.complete(
-                            Media3ProbeResult(
-                                false,
-                                if (code != null) "${error.errorCodeName}_HTTP_$code" else error.errorCodeName,
-                                if (code != null) {
-                                    "HTTP $code: ${error.message.orEmpty().ifBlank { "Media3 source error" }}"
-                                } else {
-                                    error.message.orEmpty().ifBlank { "Media3 playback error" }
-                                },
-                            ),
-                        )
-                    }
+        val gate = CompletableDeferred<Media3ProbeResult>()
+        val listener = object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_READY && !gate.isCompleted) {
+                    gate.complete(Media3ProbeResult(true, message = "Media3 STATE_READY"))
                 }
             }
 
-            try {
-                player.addListener(listener)
-                val item = MediaItem.Builder()
-                    .setUri(Uri.parse(source.url))
-                    .apply { if (source.mimeType.isNotBlank()) setMimeType(source.mimeType) }
-                    .build()
-                player.setMediaItem(item)
-                player.playWhenReady = false
-                player.prepare()
-                withTimeoutOrNull(MEDIA3_READY_TIMEOUT_MS) { gate.await() }
-                    ?: Media3ProbeResult(
-                        false,
-                        "SNP_MEDIA3_READY_TIMEOUT",
-                        "Media3 не достиг STATE_READY за ${MEDIA3_READY_TIMEOUT_MS / 1000} с.",
+            override fun onPlayerError(error: PlaybackException) {
+                if (!gate.isCompleted) {
+                    val httpError = generateSequence(error.cause) { it.cause }
+                        .filterIsInstance<HttpDataSource.InvalidResponseCodeException>()
+                        .firstOrNull()
+                    val code = httpError?.responseCode
+                    gate.complete(
+                        Media3ProbeResult(
+                            false,
+                            if (code != null) "${error.errorCodeName}_HTTP_$code" else error.errorCodeName,
+                            if (code != null) {
+                                "HTTP $code: ${error.message.orEmpty().ifBlank { "Media3 source error" }}"
+                            } else {
+                                error.message.orEmpty().ifBlank { "Media3 playback error" }
+                            },
+                        ),
                     )
-            } finally {
-                player.removeListener(listener)
-                player.release()
+                }
             }
+        }
+
+        try {
+            player.addListener(listener)
+            val item = MediaItem.Builder()
+                .setUri(Uri.parse(source.url))
+                .apply { if (source.mimeType.isNotBlank()) setMimeType(source.mimeType) }
+                .build()
+            player.setMediaItem(item)
+            player.playWhenReady = false
+            player.prepare()
+            withTimeoutOrNull(MEDIA3_READY_TIMEOUT_MS) { gate.await() }
+                ?: Media3ProbeResult(
+                    false,
+                    "SNP_MEDIA3_READY_TIMEOUT",
+                    "Media3 не достиг STATE_READY за ${MEDIA3_READY_TIMEOUT_MS / 1000} с.",
+                )
+        } finally {
+            player.removeListener(listener)
+            player.release()
         }
     }
 
@@ -242,7 +270,7 @@ class AdapterProbeService(
         val items = engine.parseSearch(net.text, req).mapNotNull { p ->
             val watch = normalizeAllowed(p.watchPath, d) ?: return@mapNotNull null
             VideoItem(id="${d.id}|${p.remoteId.ifBlank { watch }}", remoteId=p.remoteId, watchUrl=watch, title=p.title.ifBlank { p.remoteId.ifBlank { "Без названия" } }, thumbnailUrl=normalizeAllowed(p.thumbnailUrl,d,true).orEmpty(), duration=p.durationText, views=p.viewsText, sourceName=d.name, sourceBaseUrl=d.baseUrl, sourceEngine=d.engine, playerPageUrl=watch, favoriteKey="${d.id}|${p.remoteId.ifBlank { watch }}")
-        }
+        }.distinctBy { it.watchUrl.lowercase() }.take(max.coerceAtLeast(1))
         return items to null
     }
 
@@ -251,7 +279,9 @@ class AdapterProbeService(
     private fun normalizeAllowed(raw:String,d:AdapterDefinition,allowBlank:Boolean=false):String? { if(raw.isBlank()) return if(allowBlank) "" else null; val url=EngineParsing.absolute(raw,d.baseUrl); val decision=UrlPolicy.evaluateNavigation(url,allowHttp=false,resolveDns=false); if(!decision.allowed)return null; val host=runCatching{URI(decision.normalizedUrl).host.orEmpty()}.getOrDefault(""); if(d.allowedHosts.isNotEmpty()&&!UrlPolicy.isHostAllowed(host,d.allowedHosts))return null;return decision.normalizedUrl }
 
     companion object {
-        private const val PLAYBACK_SAMPLE_COUNT = 2
+        private const val CERTIFICATION_SEARCH_LIMIT = 20
+        private const val PLAYBACK_SAMPLE_COUNT = 5
+        private const val MAX_MEDIA_SOURCE_FALLBACKS = 4
         private const val MEDIA3_READY_TIMEOUT_MS = 15_000L
     }
 }
