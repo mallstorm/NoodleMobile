@@ -319,32 +319,48 @@ class SourceToolsViewModel(app: Application) : AndroidViewModel(app) {
         _state.update {
             it.copy(
                 studioBusy = true,
-                studioMessage = "Adapter Studio анализирует страницу и готовит SNP…",
+                studioMessage = "Adapter Studio: HTTP Discovery…",
                 studioTestStatus = "",
                 studioTestDetails = "",
                 studioAttempts = 0,
                 error = "",
             )
         }
+
+        // Strict three-stage compiler: deterministic HTTP first, sandboxed browser second, AI only
+        // as the last repair layer. A healthy local/browser SNP never spends an AI request.
         var result = studio.generate(
             url = state.studioUrl,
             instruction = state.studioInstruction,
-            provider = state.studioProvider,
-            model = state.studioModel,
+            provider = StudioAiProvider.LOCAL,
+            model = "",
         )
-        // HTTP Discovery is authoritative and stays first. Browser Discovery is a second-stage
-        // recovery only when the normal candidate is not healthy; a worse browser candidate never
-        // replaces an already better result.
+
         if (result.testStatus != "healthy" && state.studioUrl.isNotBlank()) {
-            _state.update { it.copy(studioMessage = "HTTP Discovery не подтвердил полный playback; проверяю post-JS DOM в Browser Discovery…") }
+            _state.update { it.copy(studioMessage = "Adapter Studio: Browser Discovery, выполняю JavaScript и проверяю post-JS DOM…") }
             val browserResult = runCatching { studioBrowser.recover(state.studioUrl) }.getOrNull()
             if (browserResult != null) {
                 val browserBetter = browserResult.testStatus == "healthy" ||
                     (!result.success && browserResult.success) ||
-                    (result.testStatus in setOf("discovery_failed", "search_failed", "no_results") && browserResult.testStatus !in setOf("browser_discovery_failed", "error"))
+                    (result.testStatus in setOf("discovery_failed", "search_failed", "no_results", "playback_failed") && browserResult.testStatus !in setOf("browser_discovery_failed", "error"))
                 if (browserBetter) result = browserResult
             }
         }
+
+        if (result.testStatus != "healthy" && state.studioProvider != StudioAiProvider.LOCAL) {
+            _state.update { it.copy(studioMessage = "Adapter Studio: локальные уровни не сертифицированы; запускаю AI repair через ${state.studioProvider.title}…") }
+            val aiResult = studio.generate(
+                url = state.studioUrl,
+                instruction = state.studioInstruction,
+                provider = state.studioProvider,
+                model = state.studioModel,
+            )
+            val aiBetter = aiResult.testStatus == "healthy" ||
+                (!result.success && aiResult.success) ||
+                (aiResult.json.isNotBlank() && result.testStatus != "healthy")
+            if (aiBetter) result = aiResult
+        }
+
         if (result.model.isNotBlank()) setStudioModel(result.model)
         applyStudioResult(result)
     }
