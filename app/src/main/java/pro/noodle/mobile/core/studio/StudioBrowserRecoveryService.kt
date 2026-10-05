@@ -8,24 +8,35 @@ import pro.noodle.mobile.core.source.SemanticStatus
 
 /**
  * Optional post-HTTP recovery used by Studio when deterministic creation is not healthy.
- * It keeps browser execution out of the mandatory path and only upgrades the candidate when
- * the rendered post-JS DOM produces a valid Schema v3 adapter and a better live-test result.
+ * Recovery is still fully local before AI: original Delphi-style routes -> expanded CMS route
+ * catalogue -> sandboxed browser execution. The browser receives the strongest deterministic
+ * candidate, so dynamic skins benefit from the broader engine knowledge as well.
  */
 class StudioBrowserRecoveryService(context: Context) {
     private val app = context.applicationContext
-    private val discovery = StudioDiscovery(SecureHttpClient())
+    private val http = SecureHttpClient()
+    private val discovery = StudioDiscovery(http)
+    private val knownRoutes = StudioKnownRouteDiscovery(http)
     private val browser = StudioBrowserDiscovery(app)
     private val probe = AdapterProbeService(app)
 
     suspend fun recover(url: String, probeQuery: String = ""): StudioAnalyzeResult {
         val deterministic = discovery.discover(url, probeQuery)
-        val rendered = browser.recover(url, deterministic, probeQuery)
+        val expanded = knownRoutes.discover(url, probeQuery, deterministic)
+        val seed = when {
+            expanded.success && !deterministic.success -> expanded
+            expanded.success && expanded.searchTemplate.isNotBlank() &&
+                !expanded.searchTemplate.equals(deterministic.searchTemplate, true) -> expanded
+            expanded.success && expanded.score > deterministic.score -> expanded
+            else -> deterministic
+        }
+        val rendered = browser.recover(url, seed, probeQuery)
         if (!rendered.success || rendered.draft == null || rendered.localJson.isBlank()) {
             return StudioAnalyzeResult(
                 success = false,
                 json = rendered.localJson,
                 errorCode = rendered.errorCode.ifBlank { "STUDIO_BROWSER_DISCOVERY_FAILED" },
-                message = rendered.message.ifBlank { "Browser Discovery не смог подтвердить динамические маршруты." },
+                message = rendered.message.ifBlank { "Расширенный локальный Discovery/Browser Discovery не смог подтвердить динамические маршруты." },
                 testStatus = "browser_discovery_failed",
                 testDetails = rendered.evidence.ifBlank { rendered.summary },
             )
@@ -47,7 +58,7 @@ class StudioBrowserRecoveryService(context: Context) {
                 success = true,
                 draft = rendered.draft,
                 json = rendered.localJson,
-                message = "Browser Discovery создал Schema v3, но Live Test завершился исключением.",
+                message = "Расширенный Browser Discovery создал Schema v3, но Live Test завершился исключением.",
                 testStatus = "error",
                 testDetails = "${rendered.summary}\n${error.javaClass.simpleName}: ${error.message}",
             )
@@ -57,9 +68,9 @@ class StudioBrowserRecoveryService(context: Context) {
             draft = rendered.draft,
             json = rendered.localJson,
             message = if (semantic.status == SemanticStatus.HEALTHY) {
-                "Browser Discovery подтвердил динамический сайт; Live Test healthy."
+                "Расширенный локальный Discovery подтвердил движок/маршрут; Live Test healthy."
             } else {
-                "Browser Discovery подтвердил динамические маршруты; Live Test ещё требует repair."
+                "Расширенный Discovery подтвердил маршруты; Live Test ещё требует repair."
             },
             testStatus = semantic.status.wireName,
             testDetails = "${rendered.summary}\n${semantic.message}${semantic.errorCode.takeIf { it.isNotBlank() }?.let { " [$it]" }.orEmpty()} • search=${semantic.searchResultCount} • playback=${semantic.playbackSourceCount}",
