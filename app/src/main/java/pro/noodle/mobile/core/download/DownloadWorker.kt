@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.net.Uri
 import android.os.Build
+import android.os.StatFs
 import androidx.core.app.NotificationCompat
 import androidx.work.*
 import kotlinx.coroutines.flow.first
@@ -33,7 +34,7 @@ class DownloadWorker(appContext: Context, params: WorkerParameters) : CoroutineW
             else { dao.updateState(id,DownloadState.RUNNING,System.currentTimeMillis()); true }
         }
         if(!admitted) return Result.retry()
-        ensureChannel(); setForeground(foreground(item.title, item.downloadedBytes, item.totalBytes))
+        ensureChannel(); setForeground(foreground(item.title, item.downloadedBytes, item.totalBytes,0L,-1L))
         val partial=partialFile(applicationContext,id); partial.parentFile?.mkdirs()
         var offset=if(partial.exists())partial.length() else 0L
         val policy=NetworkPolicy(item.allowedHosts.lines().filter{it.isNotBlank()},allowHttp=item.allowHttp,allowCookies=item.allowCookies,maxResponseBytes=4*1024*1024)
@@ -51,8 +52,19 @@ class DownloadWorker(appContext: Context, params: WorkerParameters) : CoroutineW
             }
             val body=r.body ?: return Result.failure()
             val total=when { r.code==206 -> parseTotal(r.header("Content-Range")) ?: (offset + body.contentLength().coerceAtLeast(0)); body.contentLength()>=0 -> body.contentLength(); else -> -1 }
+            if(item.destinationUri.isBlank() && total>0){
+                val remaining=(total-offset).coerceAtLeast(0L)
+                val available=availableInternalBytes()
+                if(available>0 && remaining+MIN_FREE_RESERVE_BYTES>available){
+                    dao.updateProgress(id,DownloadState.FAILED,offset,total,"DOWNLOAD_NO_SPACE","Недостаточно места: требуется ещё ${humanBytes(remaining)}, свободно ${humanBytes(available)}.",System.currentTimeMillis())
+                    return Result.failure()
+                }
+            }
             dao.updateProgress(id,DownloadState.RUNNING,offset,total,"","",System.currentTimeMillis())
             val output=java.io.FileOutputStream(partial,offset>0).buffered()
+            var sampleBytes=offset
+            var sampleAt=System.currentTimeMillis()
+            var smoothSpeed=0L
             output.use { out ->
                 body.byteStream().use { input ->
                     val buf=ByteArray(64*1024); var lastUpdate=0L
@@ -63,15 +75,47 @@ class DownloadWorker(appContext: Context, params: WorkerParameters) : CoroutineW
                             return if(requested==DownloadState.PAUSED||requested==DownloadState.CANCELED)Result.failure() else Result.retry()
                         }
                         val n=input.read(buf);if(n<0)break;out.write(buf,0,n);offset+=n
-                        val now=System.currentTimeMillis();if(now-lastUpdate>=750){lastUpdate=now;dao.updateProgress(id,DownloadState.RUNNING,offset,total,"","",now);setForeground(foreground(item.title,offset,total))}
+                        val now=System.currentTimeMillis();if(now-lastUpdate>=750){
+                            lastUpdate=now
+                            val dt=(now-sampleAt).coerceAtLeast(1L)
+                            val instant=((offset-sampleBytes)*1000L/dt).coerceAtLeast(0L)
+                            smoothSpeed=if(smoothSpeed<=0) instant else ((smoothSpeed*3L+instant)/4L)
+                            sampleBytes=offset;sampleAt=now
+                            val eta=if(total>offset && smoothSpeed>0)(total-offset)/smoothSpeed else -1L
+                            dao.updateProgress(id,DownloadState.RUNNING,offset,total,"","",now)
+                            setForeground(foreground(item.title,offset,total,smoothSpeed,eta))
+                        }
                     }
                 }
             }
+            if(offset<=0){
+                dao.updateProgress(id,DownloadState.FAILED,offset,total,"DOWNLOAD_EMPTY_FILE","Сервер не передал данные.",System.currentTimeMillis())
+                return Result.failure()
+            }
+            if(total>0 && offset!=total){
+                dao.updateProgress(id,DownloadState.FAILED,offset,total,"DOWNLOAD_INCOMPLETE","Получено ${humanBytes(offset)} из ${humanBytes(total)}; файл оставлен partial для продолжения.",System.currentTimeMillis())
+                return Result.retry()
+            }
             val localPath=try { finalizeFile(item.destinationUri,partial,id,item.sourceUrl) } catch(e:Exception){dao.updateProgress(id,DownloadState.FAILED,offset,total,"DOWNLOAD_FINALIZE_FAILED",e.message?:e.javaClass.simpleName,System.currentTimeMillis());return Result.failure()}
+            if(!verifyFinal(localPath,offset)){
+                dao.updateProgress(id,DownloadState.FAILED,offset,total,"DOWNLOAD_INTEGRITY_FAILED","Финальный файл не прошёл проверку размера.",System.currentTimeMillis())
+                return Result.failure()
+            }
             dao.markCompleted(id,offset,if(total>0)total else offset,localPath,System.currentTimeMillis())
             return Result.success()
         }
     }
+
+    private fun verifyFinal(localPath:String,expected:Long):Boolean {
+        if(expected<=0) return false
+        if(localPath.startsWith(applicationContext.filesDir.absolutePath)) return File(localPath).isFile && File(localPath).length()==expected
+        if(localPath.startsWith("content://")) return runCatching {
+            applicationContext.contentResolver.openAssetFileDescriptor(Uri.parse(localPath),"r")?.use { afd -> afd.length<0 || afd.length==expected } ?: false
+        }.getOrDefault(false)
+        return true
+    }
+
+    private fun availableInternalBytes():Long=runCatching { StatFs(applicationContext.filesDir.absolutePath).availableBytes }.getOrDefault(-1L)
 
     private fun finalizeFile(destinationUri:String, partial:File, id:String, sourceUrl:String):String{
         if(destinationUri.isBlank()) {
@@ -88,11 +132,18 @@ class DownloadWorker(appContext: Context, params: WorkerParameters) : CoroutineW
     private fun parseTotal(value:String?):Long?=value?.substringAfter('/')?.toLongOrNull()
     private fun parseStart(value:String?):Long?=Regex("bytes\\s+(\\d+)-",RegexOption.IGNORE_CASE).find(value.orEmpty())?.groupValues?.getOrNull(1)?.toLongOrNull()
     private fun ensureChannel(){if(Build.VERSION.SDK_INT>=26){val nm=applicationContext.getSystemService(NotificationManager::class.java);nm.createNotificationChannel(NotificationChannel(CHANNEL,"Загрузки Noodle",NotificationManager.IMPORTANCE_LOW))}}
-    private fun foreground(title:String,downloaded:Long,total:Long):ForegroundInfo{
+    private fun foreground(title:String,downloaded:Long,total:Long,speed:Long,etaSeconds:Long):ForegroundInfo{
         val intent=Intent(applicationContext,MainActivity::class.java);val pi=PendingIntent.getActivity(applicationContext,0,intent,PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        val b=NotificationCompat.Builder(applicationContext,CHANNEL).setSmallIcon(android.R.drawable.stat_sys_download).setContentTitle(title).setContentText(if(total>0)"${downloaded*100/total}%" else "${downloaded/1024/1024} МБ").setOnlyAlertOnce(true).setOngoing(true).setContentIntent(pi)
+        val text=buildString {
+            if(total>0) append("${downloaded*100/total}%") else append(humanBytes(downloaded))
+            if(speed>0) append(" • ${humanBytes(speed)}/с")
+            if(etaSeconds>=0) append(" • ${formatEta(etaSeconds)}")
+        }
+        val b=NotificationCompat.Builder(applicationContext,CHANNEL).setSmallIcon(android.R.drawable.stat_sys_download).setContentTitle(title).setContentText(text).setOnlyAlertOnce(true).setOngoing(true).setContentIntent(pi)
         if(total>0)b.setProgress(100,(downloaded*100/total).toInt().coerceIn(0,100),false) else b.setProgress(0,0,true)
         return if(Build.VERSION.SDK_INT>=29)ForegroundInfo(title.hashCode(),b.build(),ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC) else ForegroundInfo(title.hashCode(),b.build())
     }
-    companion object { const val KEY_ID="download_id";private const val CHANNEL="noodle_downloads";private val gate=Mutex(); fun partialFile(context:Context,id:String)=File(context.filesDir,"downloads/$id.partial") }
+    private fun humanBytes(v:Long):String=when { v>=1024L*1024*1024 -> "%.2f ГБ".format(v/(1024.0*1024*1024)); v>=1024L*1024 -> "%.1f МБ".format(v/(1024.0*1024)); v>=1024 -> "%.1f КБ".format(v/1024.0); else -> "$v Б" }
+    private fun formatEta(seconds:Long):String=when { seconds>=3600 -> "%d:%02d:%02d".format(seconds/3600,(seconds/60)%60,seconds%60); else -> "%02d:%02d".format(seconds/60,seconds%60) }
+    companion object { const val KEY_ID="download_id";private const val CHANNEL="noodle_downloads";private const val MIN_FREE_RESERVE_BYTES=128L*1024*1024;private val gate=Mutex(); fun partialFile(context:Context,id:String)=File(context.filesDir,"downloads/$id.partial") }
 }
