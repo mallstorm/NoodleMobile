@@ -3,6 +3,7 @@ package pro.noodle.mobile.core.player
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.Request
 import pro.noodle.mobile.core.adapter.AdapterDefinition
 import pro.noodle.mobile.core.model.MediaSource
 import pro.noodle.mobile.core.model.TextTrack
@@ -113,6 +114,17 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
         }
 
         val sessionPolicy = policyFor(adapter, discoveredHosts)
+        // Before handing a list to PlayerScreen, cheaply touch the first bytes/manifest of several
+        // candidates through the exact source-isolated HTTP client. Dead 403/404 URLs are pushed to
+        // the end and a confirmed source becomes default. This removes many avoidable red-screen
+        // failures while retaining unprobed fallbacks for Media3.
+        safeSources = prioritizeReachableSources(
+            sources = safeSources,
+            policy = sessionPolicy,
+            sourceKey = adapter.id,
+            referer = resolved.playerPageUrl.ifBlank { initialUrl },
+        )
+
         val out = video.copy(
             title = resolved.title.ifBlank { video.title },
             thumbnailUrl = resolved.thumbnailUrl
@@ -129,6 +141,37 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
             textTracks = safeTextTracks,
         )
         PlaybackLoadResult(true, PlaybackSession(out, sessionPolicy, adapter.id))
+    }
+
+    private fun prioritizeReachableSources(
+        sources: List<MediaSource>,
+        policy: NetworkPolicy,
+        sourceKey: String,
+        referer: String,
+    ): List<MediaSource> {
+        if (sources.size <= 1) return sources
+        val client = http.streamingClient(policy, sourceKey)
+        val scored = sources.mapIndexed { index, source ->
+            val confirmed = if (index < SOURCE_PREFLIGHT_LIMIT) runCatching {
+                val request = Request.Builder()
+                    .url(source.url)
+                    .header("Range", "bytes=0-65535")
+                    .header("Accept", "application/vnd.apple.mpegurl,application/dash+xml,video/*,*/*;q=0.5")
+                    .apply { if (referer.isNotBlank()) header("Referer", referer) }
+                    .build()
+                client.newCall(request).execute().use { response ->
+                    response.isSuccessful || response.code == 206
+                }
+            }.getOrDefault(false) else false
+            Triple(source, confirmed, index)
+        }
+        val ordered = scored.sortedWith(
+            compareByDescending<Triple<MediaSource, Boolean, Int>> { it.second }
+                .thenByDescending { it.first.isDefault }
+                .thenBy { it.third },
+        ).map { it.first }
+        val anyConfirmed = scored.any { it.second }
+        return if (!anyConfirmed) ordered else ordered.mapIndexed { index, source -> source.copy(isDefault = index == 0) }
     }
 
     private suspend fun fetchWithSafeDiscoveredRedirects(
@@ -247,5 +290,6 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
 
     companion object {
         private const val MAX_DISCOVERED_HOSTS = 8
+        private const val SOURCE_PREFLIGHT_LIMIT = 4
     }
 }
