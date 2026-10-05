@@ -89,11 +89,19 @@ class SourceCenterService(context:Context){
             val id=d.id.lowercase()
             val effectiveEnabled=r.compatibility.compatible&&r.packageInfo.valid&&(d.enabled||id in forced)&&id !in disabled
             val quality=reliability(d.id)
+            val semanticRaw=semanticStore.get(d.id,"status")
+            val semanticDisplay=buildString {
+                append(semanticRaw.ifBlank { "not tested" })
+                append(" • quality=${quality.status} ${quality.score}/100")
+                if(quality.searchCount>0) append(" • search=${quality.searchCount}")
+                if(quality.playbackCount>0) append(" • Media3=${quality.playbackCount}/5")
+                if(quality.elapsedMs>0) append(" • ${quality.elapsedMs}ms")
+            }
             SourceCenterItem(
                 d.id,d.name,d.baseUrl,d.engine,d.schemaVersion,d.adapterVersion,d.publisher,r.compatibility.compatible,
                 r.compatibility.status,effectiveEnabled,d.enabled,r.bundled,r.packageInfo.trustStatus.wireName,
                 if(r.packageInfo.valid)"" else r.packageInfo.errorCode,recovery.enumerate(d.id).size,
-                updateManager.pendingFile(d.id).isFile,healthStore.get(d.id,"status"),semanticStore.get(d.id,"status"),
+                updateManager.pendingFile(d.id).isFile,healthStore.get(d.id,"status"),semanticDisplay,
                 updateStore.get(d.id,"state"),updateStore.get(d.id,"latest_version"),fingerprintStore.get(d.id,"status"),
                 breakageStore.get(d.id,"status"),quality.status,quality.score,quality.searchCount,quality.playbackCount,quality.elapsedMs
             )
