@@ -208,6 +208,11 @@ class BundledSearchRepository(
         return emptyList<VideoItem>() to (lastError ?: SourceSearchError(a.id, a.name, "SEARCH_FAILED", "Не удалось получить результаты поиска."))
     }
 
+    /**
+     * Adapter/engine template always wins. For legacy SNPs we additionally probe the common page
+     * conventions used by KVS, WordPress, DLE and simple catalogs. This lets infinite scroll move
+     * beyond page one even when the old SNP did not encode an explicit {page} placeholder.
+     */
     private fun searchCandidates(primary: String, template: String, baseUrl: String, query: String, page: Int): List<String> {
         val b = baseUrl.trimEnd('/')
         val q = pro.noodle.mobile.core.engine.runtime.EngineParsing.encodedQuery(query)
@@ -217,13 +222,20 @@ class BundledSearchRepository(
             if (page < 0) {
                 out += "$b/search/?q=$q"
                 out += "$b/search/$q/"
+                out += "$b/?s=$q"
             } else {
                 val p = (page + 1).coerceAtLeast(2)
                 out += "$b/search/$p/?q=$q"
                 out += "$b/search/?q=$q&page=$p"
+                out += "$b/search/?q=$q&p=$p"
+                out += "$b/search/$q/page/$p/"
+                out += "$b/search/$q/$p/"
+                out += "$b/page/$p/?s=$q"
+                out += "$b/?s=$q&paged=$p"
+                out += "$b/?q=$q&page=$p"
             }
         }
-        return out.take(5)
+        return out.take(MAX_SEARCH_CANDIDATES)
     }
 
     private fun originOf(url: String, fallback: String): String = runCatching {
@@ -256,5 +268,6 @@ class BundledSearchRepository(
     companion object {
         private const val SOURCE_SEARCH_TIMEOUT_MS = 10_000L
         private const val RELATED_SEARCH_TIMEOUT_MS = 6_000L
+        private const val MAX_SEARCH_CANDIDATES = 10
     }
 }
