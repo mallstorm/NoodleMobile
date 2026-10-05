@@ -13,6 +13,7 @@ import pro.noodle.mobile.core.network.SecureHttpClient
 import pro.noodle.mobile.core.resolver.ResolverFetcher
 import pro.noodle.mobile.core.resolver.ResolverPipeline
 import pro.noodle.mobile.core.security.UrlPolicy
+import pro.noodle.mobile.core.source.SourceRuntimeDiagnosticsStore
 import pro.noodle.mobile.core.web.SandboxedWebExtractor
 import java.net.URI
 
@@ -31,9 +32,11 @@ data class PlaybackLoadResult(
 
 class PlaybackRepository(context: Context, private val http: SecureHttpClient = SecureHttpClient()) {
     private val webExtractor = SandboxedWebExtractor(context.applicationContext)
+    private val diagnostics = SourceRuntimeDiagnosticsStore(context.applicationContext)
 
     suspend fun resolve(video: VideoItem, adapter: AdapterDefinition): PlaybackLoadResult = withContext(Dispatchers.IO) {
         if (!isStaticEntryAllowed(video.watchUrl, adapter)) {
+            diagnostics.recordPlayback(adapter.id, video.watchUrl, "", "entry_blocked", "PLAYBACK_ENTRY_BLOCKED")
             return@withContext PlaybackLoadResult(
                 false,
                 errorCode = "PLAYBACK_ENTRY_BLOCKED",
@@ -52,13 +55,16 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
 
         if (!page.success) {
             if (!adapter.allowJavaScript) {
+                diagnostics.recordPlayback(adapter.id, video.watchUrl, "", "page_failed", page.errorCode)
                 return@withContext PlaybackLoadResult(false, errorCode = page.errorCode, errorMessage = page.errorMessage)
             }
             val extracted = webExtractor.extract(video.watchUrl, adapter, additionalAllowedHosts = discoveredHosts)
             if (!extracted.success) {
+                val code = extracted.errorCode.ifBlank { page.errorCode }
+                diagnostics.recordPlayback(adapter.id, video.watchUrl, "", "web_failed", code)
                 return@withContext PlaybackLoadResult(
                     false,
-                    errorCode = extracted.errorCode.ifBlank { page.errorCode },
+                    errorCode = code,
                     errorMessage = extracted.errorMessage.ifBlank { page.errorMessage },
                 )
             }
@@ -94,9 +100,11 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
         }
 
         if (!resolved.success && safeSources.isEmpty()) {
+            val code = resolved.errorCode.ifBlank { "PLAYBACK_RESOLVE_FAILED" }
+            diagnostics.recordPlayback(adapter.id, video.watchUrl, "", "resolve_failed", code)
             return@withContext PlaybackLoadResult(
                 false,
-                errorCode = resolved.errorCode.ifBlank { "PLAYBACK_RESOLVE_FAILED" },
+                errorCode = code,
                 errorMessage = resolved.errorMessage.ifBlank { "Resolver не смог извлечь воспроизводимый поток." },
             )
         }
@@ -106,6 +114,7 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
             val blockedHosts = resolved.sources.mapNotNull { source -> hostOf(source.url) }.distinct().take(6)
             val hostDetails = blockedHosts.joinToString(", ").takeIf { it.isNotBlank() }
                 ?.let { " Заблокированные hosts: $it." }.orEmpty()
+            diagnostics.recordPlayback(adapter.id, video.watchUrl, "", "blocked_sources", "PLAYBACK_NO_ALLOWED_SOURCE")
             return@withContext PlaybackLoadResult(
                 false,
                 errorCode = "PLAYBACK_NO_ALLOWED_SOURCE",
@@ -123,6 +132,14 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
             policy = sessionPolicy,
             sourceKey = adapter.id,
             referer = resolved.playerPageUrl.ifBlank { initialUrl },
+        )
+        val selected = safeSources.firstOrNull { it.isDefault } ?: safeSources.firstOrNull()
+        diagnostics.recordPlayback(
+            adapter.id,
+            video.watchUrl,
+            selected?.url.orEmpty(),
+            if (selected != null) "resolved" else "no_source",
+            if (selected == null) "PLAYBACK_NO_SOURCE" else "",
         )
 
         val out = video.copy(
