@@ -22,6 +22,9 @@ import pro.noodle.mobile.core.player.PlaybackRepository
 import pro.noodle.mobile.core.player.PlaybackSession
 import pro.noodle.mobile.core.search.BundledSearchRepository
 import pro.noodle.mobile.core.search.SourceSearchError
+import pro.noodle.mobile.core.source.FileRefs
+import pro.noodle.mobile.core.source.RuntimeAdapterRepository
+import pro.noodle.mobile.core.source.SourceStatusStore
 import pro.noodle.mobile.core.storage.UserMediaRepository
 
 data class SearchUiState(
@@ -41,6 +44,8 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     private val searchRepo = BundledSearchRepository(app, http)
     private val playbackRepo = PlaybackRepository(app, http)
     private val userMedia = UserMediaRepository(app)
+    private val runtimeRepo = RuntimeAdapterRepository(app)
+    private val semanticStore = SourceStatusStore(FileRefs.semantic(runtimeRepo.paths))
     private val _state = MutableStateFlow(SearchUiState())
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
     private var generation = 0L
@@ -110,7 +115,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
             _state.update {
                 it.copy(
                     loading = false,
-                    items = batch.items,
+                    items = rankItems(batch.items, q),
                     errors = batch.errors,
                     hasMore = batch.items.isNotEmpty(),
                     message = if (batch.items.isEmpty()) "Ничего не найдено" else "",
@@ -145,13 +150,55 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
             _state.update {
                 it.copy(
                     loadingMore = false,
-                    items = old + fresh,
+                    items = rankItems(old + fresh, q),
                     errors = (it.errors + pagingErrors).distinctBy { e -> "${e.sourceId}|${e.errorCode}|${e.message}" },
                     hasMore = fresh.isNotEmpty(),
                     message = if (fresh.isEmpty()) "Больше результатов на следующих страницах не найдено" else "",
                 )
             }
         }
+    }
+
+    /**
+     * One deterministic product ranking used after every page merge. Exact query/title relevance
+     * dominates, then source certification and metadata completeness. This keeps fast/healthy SNPs
+     * above known-broken sources without hiding results from less tested adapters.
+     */
+    private fun rankItems(items: List<VideoItem>, query: String): List<VideoItem> {
+        val terms = query.lowercase().split(Regex("\\s+")).filter { it.length >= 2 }
+        val adapterScores = HashMap<String, Int>()
+        fun sourceScore(video: VideoItem): Int {
+            val adapter = searchRepo.adapterFor(video) ?: return 0
+            return adapterScores.getOrPut(adapter.id.lowercase()) {
+                val status = semanticStore.get(adapter.id, "status")
+                val ready = semanticStore.getInt(adapter.id, "playback_count")
+                val search = semanticStore.getInt(adapter.id, "search_count")
+                when (status) {
+                    "healthy" -> 35 + (ready.coerceAtMost(5) * 3) + search.coerceAtMost(10)
+                    "no_results" -> 5
+                    "playback_failed", "search_failed", "invalid_adapter", "error" -> -35
+                    else -> 0
+                }
+            }
+        }
+        fun score(video: VideoItem): Int {
+            val title = video.title.lowercase()
+            var score = sourceScore(video)
+            if (terms.isNotEmpty()) {
+                val matched = terms.count { it in title }
+                score += matched * 25
+                if (matched == terms.size) score += 35
+                if (title.startsWith(query.lowercase())) score += 10
+            }
+            if (video.thumbnailUrl.isNotBlank()) score += 5
+            if (video.duration.isNotBlank()) score += 4
+            if (video.views.isNotBlank()) score += 3
+            if (video.remoteId.isNotBlank()) score += 2
+            return score
+        }
+        return items.withIndex()
+            .sortedWith(compareByDescending<IndexedValue<VideoItem>> { score(it.value) }.thenBy { it.index })
+            .map { it.value }
     }
 
     fun addFavorite(video: VideoItem) {
