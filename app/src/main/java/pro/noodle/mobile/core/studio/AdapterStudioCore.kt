@@ -39,7 +39,6 @@ object AdapterStudioCore {
             name = host,
             baseUrl = "https://$host",
             engine = if (wp) "wordpress_rest" else "declarative_catalog",
-            // Generic /search is no longer guessed. StudioDiscovery must confirm a real endpoint.
             searchUrl = if (wp) "/wp-json/wp/v2/search?search={query}&page={page}&per_page=20" else "",
             itemSelector = if (wp) "" else repeated.ifBlank { "article" },
             titleSelector = if (wp) "" else "a",
@@ -67,10 +66,10 @@ object AdapterStudioCore {
         }
         val root = JsonValue.Obj(linkedMapOf(
             "version" to JsonValue.Num(3.0), "id" to JsonValue.Str(d.adapterId), "name" to JsonValue.Str(d.name), "adapter_version" to JsonValue.Str("0.1.0"), "publisher" to JsonValue.Str(publisher), "homepage" to JsonValue.Str(d.baseUrl), "min_app_version" to JsonValue.Str(BuildIdentity.SNP_COMPATIBILITY_VERSION), "base_url" to JsonValue.Str(d.baseUrl), "engine" to JsonValue.Str(d.engine),
-            "engine_dependencies" to JsonValue.Arr(listOf("jwplayer_config","videojs_config","generic_html5","oembed_provider","iframe_chain","hls_manifest","dash_manifest").filter { it != d.engine }.map { JsonValue.Str(it) }), "enabled" to JsonValue.Bool(false),
+            "engine_dependencies" to JsonValue.Arr(listOf("jwplayer_config","videojs_config","generic_player_config","generic_html5","oembed_provider","iframe_chain","hls_manifest","dash_manifest").filter { it != d.engine }.map { JsonValue.Str(it) }), "enabled" to JsonValue.Bool(false),
             "permissions" to JsonValue.Obj(linkedMapOf("allowed_hosts" to JsonValue.Arr(d.allowedHosts.map { JsonValue.Str(it) }), "allow_javascript" to JsonValue.Bool(d.allowJavaScript), "allow_cookies" to JsonValue.Bool(d.allowCookies))),
             "search" to JsonValue.Obj(searchValues),
-            "view" to JsonValue.Obj(linkedMapOf("strategies" to JsonValue.Arr(listOf("primary","jwplayer","videojs","generic_html5","oembed","iframe","hls","dash").map { JsonValue.Str(it) }))),
+            "view" to JsonValue.Obj(linkedMapOf("strategies" to JsonValue.Arr(listOf("primary","jwplayer","videojs","player_config","generic_html5","oembed","iframe","hls","dash").map { JsonValue.Str(it) }))),
             "health" to JsonValue.Obj(linkedMapOf("query" to JsonValue.Str(d.healthQuery.ifBlank { "video" }), "min_results" to JsonValue.Num(1.0), "require_playback" to JsonValue.Bool(true), "auto_repair" to JsonValue.Bool(true))),
             "repair" to JsonValue.Obj(linkedMapOf("enabled" to JsonValue.Bool(true), "mode" to JsonValue.Str("conservative"), "failure_threshold" to JsonValue.Num(3.0), "cooldown_minutes" to JsonValue.Num(60.0), "auto_quarantine" to JsonValue.Bool(false), "strategies" to JsonValue.Arr(buildList { if(d.engine=="declarative_catalog") add(JsonValue.Str("selector_relearn")); add(JsonValue.Str("resolver_refresh")) }))),
         ))
