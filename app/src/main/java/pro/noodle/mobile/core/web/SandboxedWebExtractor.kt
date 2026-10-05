@@ -18,6 +18,10 @@ import kotlin.coroutines.resume
 /**
  * One-shot WebView extractor for adapters that explicitly opt into JavaScript.
  * It is intentionally serialized because the platform CookieManager is process-global.
+ * Besides post-JS DOM, the extractor appends a local-only evidence block containing media URLs
+ * actually assigned to video/source nodes or observed by the Performance API. This lets Studio and
+ * the generic player resolver understand frameworks that never serialize the final HLS/DASH URL
+ * into the original HTML.
  */
 class SandboxedWebExtractor(private val context: Context) {
     suspend fun extract(
@@ -123,9 +127,7 @@ class SandboxedWebExtractor(private val context: Context) {
                     }
                     view.postDelayed({
                         if (finished) return@postDelayed
-                        view.evaluateJavascript(
-                            "(function(){return document.documentElement ? document.documentElement.outerHTML : '';})()"
-                        ) { encoded ->
+                        view.evaluateJavascript(RUNTIME_DOM_SCRIPT) { encoded ->
                             val html = decodeJsString(encoded)
                             close(
                                 if (html.isNotBlank()) {
@@ -135,7 +137,7 @@ class SandboxedWebExtractor(private val context: Context) {
                                 }
                             )
                         }
-                    }, 650L)
+                    }, 900L)
                 }
             }
             cont.invokeOnCancellation {
@@ -193,11 +195,43 @@ class SandboxedWebExtractor(private val context: Context) {
                 .replace("\\n", "\n")
                 .replace("\\r", "\r")
                 .replace("\\t", "\t")
+                .replace("\\/", "/")
                 .replace("\\\\", "\\")
         }.getOrDefault("")
     }
 
-    companion object { private val mutex = Mutex() }
+    companion object {
+        private val mutex = Mutex()
+
+        private val RUNTIME_DOM_SCRIPT = """
+            (function() {
+              var html = document.documentElement ? document.documentElement.outerHTML : '';
+              var urls = [];
+              function add(v) {
+                if (typeof v !== 'string') return;
+                v = v.trim();
+                if (!/^https:\/\//i.test(v)) return;
+                if (urls.indexOf(v) < 0) urls.push(v);
+              }
+              try {
+                document.querySelectorAll('video,audio,source,iframe').forEach(function(el) {
+                  add(el.currentSrc || '');
+                  add(el.src || '');
+                });
+              } catch (e) {}
+              try {
+                if (window.performance && performance.getEntriesByType) {
+                  performance.getEntriesByType('resource').forEach(function(entry) {
+                    var u = entry && entry.name ? entry.name : '';
+                    if (/\.(?:mp4|m4v|webm|m3u8|mpd)(?:[?#]|$)/i.test(u) ||
+                        /(?:manifest\/video\.m3u8|master\.m3u8|playlist\.m3u8)/i.test(u)) add(u);
+                  });
+                }
+              } catch (e) {}
+              return html + '\n<!--NOODLE_RUNTIME_MEDIA\n' + urls.slice(0, 32).join('\n') + '\n-->';
+            })();
+        """.trimIndent()
+    }
 }
 
 data class WebExtractResult(
