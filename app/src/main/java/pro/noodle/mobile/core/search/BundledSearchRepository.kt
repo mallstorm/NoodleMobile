@@ -17,6 +17,7 @@ import pro.noodle.mobile.core.network.SecureHttpClient
 import pro.noodle.mobile.core.security.UrlPolicy
 import pro.noodle.mobile.core.settings.SourceOverridesRepository
 import pro.noodle.mobile.core.source.RuntimeAdapterRepository
+import pro.noodle.mobile.core.source.SourceRuntimeDiagnosticsStore
 import java.net.URI
 
 data class SourceSearchError(val sourceId: String, val sourceName: String, val errorCode: String, val message: String)
@@ -29,6 +30,7 @@ class BundledSearchRepository(
 ) {
     private val runtimeRepo = RuntimeAdapterRepository(context.applicationContext)
     private val overrides = SourceOverridesRepository(context.applicationContext)
+    private val diagnostics = SourceRuntimeDiagnosticsStore(context.applicationContext)
     // Shared by every search call, including concurrent pagination bursts. This prevents
     // 4 paged searches x N sources from multiplying into an unbounded number of sockets.
     private val networkSemaphore = Semaphore(parallelism.coerceIn(1, 6))
@@ -175,8 +177,11 @@ class BundledSearchRepository(
         var lastError: SourceSearchError? = null
         var hadSuccessfulResponse = false
         for (url in candidates) {
+            val started = System.currentTimeMillis()
             val net = http.fetchText(url, NetworkPolicy(a.allowedHosts, allowCookies = a.allowCookies), a.id)
+            val elapsed = System.currentTimeMillis() - started
             if (!net.success) {
+                diagnostics.recordSearch(a.id, a.engine, net.finalUrl.ifBlank { url }, net.statusCode, elapsed, 0, net.errorCode)
                 lastError = SourceSearchError(a.id, a.name, net.errorCode, net.errorMessage)
                 continue
             }
@@ -202,6 +207,7 @@ class BundledSearchRepository(
                     favoriteKey = "${a.id}|${p.remoteId.ifBlank { watch }}",
                 )
             }.distinctBy { it.watchUrl.lowercase() }.take(max.coerceAtLeast(1))
+            diagnostics.recordSearch(a.id, a.engine, net.finalUrl.ifBlank { url }, net.statusCode, elapsed, items.size)
             if (items.isNotEmpty()) return items to null
         }
         if (hadSuccessfulResponse) return emptyList<VideoItem>() to SourceSearchError(a.id, a.name, "SEARCH_PARSED_ZERO", "Источник ответил, но текущий SNP не распознал ни одной видеокарточки.")
