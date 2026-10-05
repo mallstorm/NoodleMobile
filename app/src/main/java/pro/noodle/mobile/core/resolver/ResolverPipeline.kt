@@ -11,9 +11,9 @@ data class ResolverLimits(val maxHlsManifests:Int=6,val maxDashManifests:Int=4,v
 object ResolverPipeline {
     fun resolve(initialText:String,pageUrl:String,primaryEngine:String,strategies:List<String>,fetcher:ResolverFetcher?=null,limits:ResolverLimits=ResolverLimits()):EngineResolveResult{
         val strategyList=mutableListOf<String>(); val seenStrategies=linkedSetOf<String>(); val seenPages=linkedSetOf(pageUrl.lowercase()); val seenManifests=linkedSetOf<String>(); val pages=ArrayDeque<Pair<String,Int>>()
-        fun normalize(v:String):String{val x=v.trim().lowercase();return when(x){"html5","open_graph","video_object","generic"->"generic_html5";"hls","m3u8","hls_master","hls_playlist"->"hls_manifest";"dash","mpd","mpeg_dash"->"dash_manifest";"jwplayer","jw_player"->"jwplayer_config";"videojs","video_js"->"videojs_config";"iframe","iframes","embed_chain"->"iframe_chain";"oembed","official_embed"->"oembed_provider";else->EngineRegistry.normalizeId(x)}}
+        fun normalize(v:String):String{val x=v.trim().lowercase();return when(x){"html5","open_graph","video_object","generic"->"generic_html5";"player_config","js_player"->"generic_player_config";"hls","m3u8","hls_master","hls_playlist"->"hls_manifest";"dash","mpd","mpeg_dash"->"dash_manifest";"jwplayer","jw_player"->"jwplayer_config";"videojs","video_js"->"videojs_config";"iframe","iframes","embed_chain"->"iframe_chain";"oembed","official_embed"->"oembed_provider";else->EngineRegistry.normalizeId(x)}}
         fun addStrategy(v:String){val n=normalize(v);if(n.isNotBlank()&&seenStrategies.add(n))strategyList+=n}
-        addStrategy(primaryEngine);strategies.forEach(::addStrategy); listOf("jwplayer_config","videojs_config","generic_html5","oembed_provider","iframe_chain").forEach(::addStrategy)
+        addStrategy(primaryEngine);strategies.forEach(::addStrategy); listOf("jwplayer_config","videojs_config","generic_player_config","generic_html5","oembed_provider","iframe_chain").forEach(::addStrategy)
         if(initialText.trimStart().startsWith("#EXTM3U",true)||pageUrl.lowercase().contains(".m3u8"))addStrategy("hls_manifest")
         if(initialText.contains("<mpd",true)||pageUrl.lowercase().contains(".mpd"))addStrategy("dash_manifest")
         var result=EngineResolveResult()
@@ -25,7 +25,7 @@ object ResolverPipeline {
         fun expandAdaptive(){expand("hls_manifest",limits.maxHlsManifests,"HLS_DRM_UNSUPPORTED"){it.protocol.equals("hls",true)||it.mimeType.contains("mpegurl",true)||it.url.contains(".m3u8",true)};expand("dash_manifest",limits.maxDashManifests,"DASH_DRM_UNSUPPORTED"){it.protocol.equals("dash",true)||it.mimeType.contains("dash+xml",true)||it.url.contains(".mpd",true)}}
         runStrategies(initialText,pageUrl,0);expandAdaptive()
         var followed=0
-        while(fetcher!=null&&pages.isNotEmpty()&&followed<limits.maxFollowUpPages){val (url,depth)=pages.removeFirst();followed++;val body=fetcher.fetch(url).orEmpty();if(body.isBlank())continue;runStrategies(body,url,depth);expandAdaptive()}
+        while(fetcher!=null&&pages.isNotEmpty()&&followed<limits.maxFollowUpPages){val (url,depth)=pages.removeFirst();followed++;val body=f.fetch(url).orEmpty();if(body.isBlank())continue;runStrategies(body,url,depth);expandAdaptive()}
         result=when{
             result.success&&!result.errorCode.equals("HLS_DRM_UNSUPPORTED",true)&&!result.errorCode.equals("DASH_DRM_UNSUPPORTED",true)->result.copy(errorCode="",errorMessage="")
             result.handled&&result.errorCode.isBlank()->result.copy(errorCode="RESOLVER_PIPELINE_EMPTY",errorMessage="Ни одна стратегия не вернула воспроизводимый источник.")
