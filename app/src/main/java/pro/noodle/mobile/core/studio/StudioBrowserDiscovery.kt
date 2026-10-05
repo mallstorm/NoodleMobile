@@ -59,8 +59,8 @@ internal class StudioBrowserDiscovery(context: Context) {
             timeoutMs = VIEW_TIMEOUT_MS,
             additionalAllowedHosts = allowed,
         )
-        var viewHtml = renderedView.html
-        var finalViewUrl = renderedView.finalUrl.ifBlank { viewUrl }
+        val viewHtml = renderedView.html
+        val finalViewUrl = renderedView.finalUrl.ifBlank { viewUrl }
         var iframeUrl = ""
         var iframeHtml = ""
         var effectiveHtml = viewHtml
@@ -86,6 +86,11 @@ internal class StudioBrowserDiscovery(context: Context) {
             }
         }
 
+        val browserMatches = StudioEngineKnowledge.detect(
+            renderedSearch.html + "\n" + viewHtml + "\n" + effectiveHtml,
+            finalViewUrl,
+        )
+        val preferredStrategies = StudioEngineKnowledge.playbackStrategies(browserMatches)
         val mediaHosts = StudioDiscoveryHeuristics.extractMediaHosts(effectiveHtml)
         allowed += mediaHosts
         val engine = when (searchSignals.kind) {
@@ -102,21 +107,27 @@ internal class StudioBrowserDiscovery(context: Context) {
             healthQuery = query,
             allowedHosts = allowed.filter { it.isNotBlank() },
             allowJavaScript = true,
-            allowCookies = true,
-            notes = baseDraft.notes + listOf(
-                "Browser Discovery: post-JS search DOM confirmed",
-                "Search: ${renderedSearch.finalUrl.ifBlank { searchUrl }}",
-                "View: $finalViewUrl",
-                "Iframe: ${iframeUrl.ifBlank { "—" }}",
-            ),
+            allowCookies = baseDraft.allowCookies || browserMatches.any { it.profile.allowCookies },
+            notes = baseDraft.notes + buildList {
+                add("Browser Discovery: post-JS search DOM confirmed")
+                add("Search: ${renderedSearch.finalUrl.ifBlank { searchUrl }}")
+                add("View: $finalViewUrl")
+                add("Iframe: ${iframeUrl.ifBlank { "—" }}")
+                if (browserMatches.isNotEmpty()) add("Browser fingerprints: ${StudioEngineKnowledge.summary(browserMatches)}")
+                if (preferredStrategies.isNotEmpty()) add("Browser playback strategies: ${preferredStrategies.joinToString()}")
+            },
         )
         val viewSignals = StudioDiscoveryHeuristics.inspectView(effectiveHtml)
         val viewScore = StudioDiscoveryHeuristics.scoreView(viewSignals, effectiveHtml)
-        val summary = "${deterministic.summary} • WebView DOM confirmed • engine=$engine • viewScore=$viewScore"
+        val summary = buildString {
+            append("${deterministic.summary} • WebView DOM confirmed • engine=$engine • viewScore=$viewScore")
+            if (browserMatches.isNotEmpty()) append(" • ${StudioEngineKnowledge.summary(browserMatches)}")
+        }
         val evidence = buildString {
             append(deterministic.evidence)
             appendLine()
             appendLine("BROWSER_DISCOVERY FACTS:")
+            appendLine("catalogue=${StudioEngineKnowledge.catalogueSummary()}")
             appendLine("search_url=${renderedSearch.finalUrl.ifBlank { searchUrl }}")
             appendLine("search_matches=${searchSignals.totalRecognized}")
             appendLine("detected_kind=${searchSignals.kind.wire}")
@@ -124,6 +135,8 @@ internal class StudioBrowserDiscovery(context: Context) {
             appendLine("iframe_url=$iframeUrl")
             appendLine("view_score=$viewScore")
             appendLine("dynamic_js=true")
+            appendLine("profiles=${StudioEngineKnowledge.summary(browserMatches)}")
+            appendLine("playback_strategies=${preferredStrategies.joinToString(",")}")
             appendLine("media_hosts=${mediaHosts.joinToString(",")}")
         }
         return StudioDiscoveryResult(
@@ -157,7 +170,7 @@ internal class StudioBrowserDiscovery(context: Context) {
         allowedHosts = allowed.toList(),
         allowJavaScript = true,
         allowCookies = true,
-        viewStrategies = listOf("primary", "jwplayer", "videojs", "generic_html5", "iframe", "hls", "dash"),
+        viewStrategies = listOf("primary", "jwplayer", "videojs", "player_config", "generic_html5", "iframe", "hls", "dash"),
     )
 
     private fun hostOf(raw: String): String? = runCatching { URI(raw).host?.lowercase()?.trimEnd('.') }.getOrNull()
