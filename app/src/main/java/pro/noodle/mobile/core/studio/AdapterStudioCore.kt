@@ -34,6 +34,9 @@ object AdapterStudioCore {
         val id = host.replace(Regex("[^a-z0-9._-]"), "-").trim('-').take(128)
         val wp = html.contains("wp-content", true) || html.contains("/wp-json/", true)
         val repeated = if (!wp) guessRepeatedClass(html) else ""
+        val known = StudioEngineKnowledge.detect(html, url)
+        val needsJs = known.any { it.profile.requiresJavaScript }
+        val needsCookies = known.any { it.profile.allowCookies }
         AdapterStudioDraft(
             adapterId = id,
             name = host,
@@ -46,9 +49,18 @@ object AdapterStudioCore {
             thumbnailSelector = if (wp) "" else "img",
             thumbnailAttribute = if (html.contains("data-src", true)) "data-src" else "src",
             allowedHosts = listOf(host, "*.$host"),
+            allowJavaScript = needsJs,
+            allowCookies = needsCookies,
             notes = buildList {
                 add(if (wp) "Обнаружены признаки WordPress REST." else "Локальный черновик без неподтверждённого search URL.")
                 if (repeated.isNotBlank()) add("Повторяющийся CSS class: $repeated")
+                if (known.isNotEmpty()) {
+                    add("Engine knowledge: ${StudioEngineKnowledge.summary(known)}")
+                    val strategies = StudioEngineKnowledge.playbackStrategies(known)
+                    if (strategies.isNotEmpty()) add("Предпочтительные playback strategies: ${strategies.joinToString()}")
+                    val routes = StudioEngineKnowledge.searchTemplates(known)
+                    if (routes.isNotEmpty()) add("Известные search routes: ${routes.take(8).joinToString()}")
+                }
             },
         )
     }
