@@ -44,6 +44,7 @@ import pro.noodle.mobile.core.player.PlaybackSession
 import pro.noodle.mobile.core.search.BundledSearchRepository
 import pro.noodle.mobile.core.settings.AppSettings
 import pro.noodle.mobile.core.settings.AppSettingsRepository
+import pro.noodle.mobile.core.source.SourceRuntimeDiagnosticsStore
 import pro.noodle.mobile.core.storage.UserMediaRepository
 
 @OptIn(UnstableApi::class, ExperimentalMaterial3Api::class)
@@ -60,6 +61,7 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
     val resolverHttp = remember { SecureHttpClient() }
     val playbackRepo = remember { PlaybackRepository(context.applicationContext, resolverHttp) }
     val searchRepo = remember { BundledSearchRepository(context.applicationContext, resolverHttp) }
+    val runtimeDiagnostics = remember { SourceRuntimeDiagnosticsStore(context.applicationContext) }
     val appSettings by remember { settingsRepo.settings }.collectAsState(initial = AppSettings())
     val ioScope = remember { CoroutineScope(SupervisorJob() + Dispatchers.IO) }
     val isFavorite by remember(key) { userRepo.isFavorite(key) }.collectAsState(initial = false)
@@ -77,6 +79,9 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
     var selectedText by remember(video.id) { mutableIntStateOf(-1) }
     var pendingDownload by remember { mutableStateOf<MediaSource?>(null) }
     var showAdaptiveDownloadDialog by remember { mutableStateOf(false) }
+    var failedSourceUrls by remember(video.id) { mutableStateOf<Set<String>>(emptySet()) }
+    var resolverRecoveryAttempts by remember(video.id) { mutableIntStateOf(0) }
+    var handoffPositionMs by remember(video.id) { mutableLongStateOf(0L) }
 
     val createDocument = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/*")) { uri ->
         val src = pendingDownload
@@ -161,11 +166,14 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
     }
 
     LaunchedEffect(player, source.url, restoredPosition) {
-        val old = player.currentPosition.takeIf { it > 0 } ?: restoredPosition
+        val old = handoffPositionMs.takeIf { it > 0L }
+            ?: player.currentPosition.takeIf { it > 0 }
+            ?: restoredPosition
         val wasPlaying = player.playWhenReady
         player.setMediaItem(mediaItemFor(source), old.coerceAtLeast(0))
         player.prepare()
         player.playWhenReady = wasPlaying || old == 0L
+        handoffPositionMs = 0L
     }
 
     DisposableEffect(fullscreen, activity) {
@@ -183,10 +191,62 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
         }
     }
 
-    DisposableEffect(player) {
+    DisposableEffect(player, source.url, selectedIndex) {
         val listener = object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
+                handoffPositionMs = player.currentPosition.coerceAtLeast(0L)
+                runtimeDiagnostics.recordPlayback(
+                    activeSession.sourceKey,
+                    video.watchUrl,
+                    source.url,
+                    "media3_error",
+                    error.errorCodeName,
+                )
+                val newlyFailed = failedSourceUrls + source.url
+                failedSourceUrls = newlyFailed
+                val next = video.sources.indices.firstOrNull { index ->
+                    index != selectedIndex && video.sources[index].url !in newlyFailed
+                }
+                if (next != null) {
+                    message = "Автовосстановление: текущий поток недоступен, переключаюсь на источник ${next + 1}/${video.sources.size}…"
+                    selectedIndex = next
+                    return
+                }
+
+                if (resolverRecoveryAttempts < 1) {
+                    resolverRecoveryAttempts++
+                    message = "Автовосстановление: все найденные потоки отклонены, повторно разрешаю страницу видео…"
+                    ioScope.launch {
+                        val adapter = searchRepo.adapterFor(video)
+                        if (adapter == null) {
+                            withContext(Dispatchers.Main) {
+                                message = "SNP источника не найден для повторного разрешения."
+                            }
+                            return@launch
+                        }
+                        val fresh = playbackRepo.resolve(video.copy(sources = emptyList()), adapter)
+                        withContext(Dispatchers.Main) {
+                            if (fresh.success && fresh.session != null && fresh.session.video.sources.isNotEmpty()) {
+                                activeSession = fresh.session
+                                val freshDefault = fresh.session.video.sources.indexOfFirst { it.isDefault }.takeIf { it >= 0 } ?: 0
+                                selectedIndex = freshDefault
+                                failedSourceUrls = emptySet()
+                                message = "Потоки обновлены, воспроизведение восстановлено."
+                            } else {
+                                message = "${fresh.errorCode.ifBlank { error.errorCodeName }}: ${fresh.errorMessage.ifBlank { error.message.orEmpty().ifBlank { "ошибка воспроизведения" } }}"
+                            }
+                        }
+                    }
+                    return
+                }
+
                 message = "${error.errorCodeName}: ${error.message.orEmpty().ifBlank { "ошибка воспроизведения" }}"
+            }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_READY) {
+                    runtimeDiagnostics.recordPlayback(activeSession.sourceKey, video.watchUrl, source.url, "media3_ready")
+                }
             }
         }
         player.addListener(listener)
@@ -236,6 +296,8 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
                     activeSession = result.session
                     fullscreen = false
                     showPlaybackSettings = false
+                    failedSourceUrls = emptySet()
+                    resolverRecoveryAttempts = 0
                     message = ""
                 } else {
                     message = "${result.errorCode}: ${result.errorMessage}"
@@ -278,7 +340,10 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
             selectedVariant = selectedVariant,
             selectedAudio = selectedAudio,
             selectedText = selectedText,
-            onSource = { selectedIndex = it },
+            onSource = {
+                failedSourceUrls = failedSourceUrls - video.sources.getOrNull(it)?.url.orEmpty()
+                selectedIndex = it
+            },
             onVariant = { idx ->
                 selectedVariant = idx
                 val builder = player.trackSelectionParameters.buildUpon()
@@ -434,6 +499,8 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
                         message = message,
                         onRetry = {
                             message = ""
+                            failedSourceUrls = emptySet()
+                            resolverRecoveryAttempts = 0
                             player.prepare()
                             player.play()
                         },
