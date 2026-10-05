@@ -14,7 +14,7 @@ import java.net.URI
 /**
  * Second deterministic HTTP layer for video CMS families outside the original Delphi/KVS route
  * set. It fingerprints the landing/search HTML, prioritizes family-specific routes, then probes a
- * bounded global catalogue so an unknown skin can still be recognized without AI.
+ * conservative global route set so an unknown skin can still be recognized without AI.
  */
 internal class StudioKnownRouteDiscovery(private val http: SecureHttpClient) {
     suspend fun discover(
@@ -41,9 +41,10 @@ internal class StudioKnownRouteDiscovery(private val http: SecureHttpClient) {
         }
         val matches = StudioEngineKnowledge.detect(fingerprintHtml, input)
         val preferred = StudioEngineKnowledge.searchTemplates(matches)
-        val global = StudioEngineKnowledge.profiles
-            .filter { it.family == "cms" }
-            .flatMap { it.searchTemplates }
+        // Important: a large knowledge catalogue must not turn every unknown site into hundreds of
+        // blind requests. Only profiles explicitly marked as globally safe contribute fallback routes;
+        // all other routes become active as soon as their fingerprint is observed.
+        val global = StudioEngineKnowledge.globalSearchTemplates()
         val baselineTemplate = baseline?.searchTemplate.orEmpty()
         val templates = (preferred + global)
             .asSequence()
@@ -100,7 +101,8 @@ internal class StudioKnownRouteDiscovery(private val http: SecureHttpClient) {
                 "STUDIO_KNOWN_ROUTE_NO_RESULTS",
                 "Расширенный каталог CMS-маршрутов не подтвердил карточки видео.",
             )).copy(
-                evidence = baseline?.evidence.orEmpty() + "\nKNOWN_ROUTE_DISCOVERY: checked=${templates.size}; no confirmed video route; profiles=${StudioEngineKnowledge.summary(matches)}",
+                evidence = baseline?.evidence.orEmpty() +
+                    "\nKNOWN_ROUTE_DISCOVERY: checked=${templates.size}; no confirmed video route; profiles=${StudioEngineKnowledge.summary(matches)}; ${StudioEngineKnowledge.catalogueSummary()}",
             )
 
         val viewUrl = EngineParsing.absolute(best.signals.watchPath, best.url.ifBlank { base })
@@ -151,6 +153,7 @@ internal class StudioKnownRouteDiscovery(private val http: SecureHttpClient) {
                 val strategies = StudioEngineKnowledge.playbackStrategies(allMatches)
                 if (strategies.isNotEmpty()) add("Playback strategies: ${strategies.joinToString()}")
                 if (viewFinal.isNotBlank()) add("View: $viewFinal")
+                add("Knowledge catalogue: ${StudioEngineKnowledge.catalogueSummary()}")
             },
         )
         val summary = buildString {
@@ -160,6 +163,7 @@ internal class StudioKnownRouteDiscovery(private val http: SecureHttpClient) {
         val evidence = buildString {
             if (!baseline?.evidence.isNullOrBlank()) appendLine(baseline?.evidence)
             appendLine("KNOWN_ROUTE_DISCOVERY FACTS:")
+            appendLine("catalogue=${StudioEngineKnowledge.catalogueSummary()}")
             appendLine("profiles=${StudioEngineKnowledge.summary(allMatches)}")
             appendLine("routes_checked=${templates.size}")
             appendLine("search_template=${best.template}")
@@ -224,7 +228,7 @@ internal class StudioKnownRouteDiscovery(private val http: SecureHttpClient) {
     companion object {
         private const val SOURCE_KEY = "@studio-known-routes"
         private const val PARALLELISM = 6
-        private const val MAX_ROUTE_PROBES = 48
+        private const val MAX_ROUTE_PROBES = 64
         private const val PREFERRED_ROUTE_BONUS = 24
         private const val LANDING_TIMEOUT_MS = 8_000L
         private const val PROBE_TIMEOUT_MS = 8_000L
