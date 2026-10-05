@@ -21,6 +21,8 @@ data class AdapterStudioDraft(
     val viewsSelector: String = "",
     val healthQuery: String = "video",
     val allowedHosts: List<String>,
+    val allowJavaScript: Boolean = false,
+    val allowCookies: Boolean = false,
     val notes: List<String> = emptyList(),
 )
 
@@ -66,7 +68,7 @@ object AdapterStudioCore {
         val root = JsonValue.Obj(linkedMapOf(
             "version" to JsonValue.Num(3.0), "id" to JsonValue.Str(d.adapterId), "name" to JsonValue.Str(d.name), "adapter_version" to JsonValue.Str("0.1.0"), "publisher" to JsonValue.Str(publisher), "homepage" to JsonValue.Str(d.baseUrl), "min_app_version" to JsonValue.Str(BuildIdentity.SNP_COMPATIBILITY_VERSION), "base_url" to JsonValue.Str(d.baseUrl), "engine" to JsonValue.Str(d.engine),
             "engine_dependencies" to JsonValue.Arr(listOf("jwplayer_config","videojs_config","generic_html5","oembed_provider","iframe_chain","hls_manifest","dash_manifest").filter { it != d.engine }.map { JsonValue.Str(it) }), "enabled" to JsonValue.Bool(false),
-            "permissions" to JsonValue.Obj(linkedMapOf("allowed_hosts" to JsonValue.Arr(d.allowedHosts.map { JsonValue.Str(it) }), "allow_javascript" to JsonValue.Bool(false), "allow_cookies" to JsonValue.Bool(false))),
+            "permissions" to JsonValue.Obj(linkedMapOf("allowed_hosts" to JsonValue.Arr(d.allowedHosts.map { JsonValue.Str(it) }), "allow_javascript" to JsonValue.Bool(d.allowJavaScript), "allow_cookies" to JsonValue.Bool(d.allowCookies))),
             "search" to JsonValue.Obj(searchValues),
             "view" to JsonValue.Obj(linkedMapOf("strategies" to JsonValue.Arr(listOf("primary","jwplayer","videojs","generic_html5","oembed","iframe","hls","dash").map { JsonValue.Str(it) }))),
             "health" to JsonValue.Obj(linkedMapOf("query" to JsonValue.Str(d.healthQuery.ifBlank { "video" }), "min_results" to JsonValue.Num(1.0), "require_playback" to JsonValue.Bool(true), "auto_repair" to JsonValue.Bool(true))),
