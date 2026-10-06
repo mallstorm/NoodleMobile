@@ -34,7 +34,7 @@ jobs:
           rm -f mirror/NoodleMobile-source.tar.gz.b64
           printf '%s\n' "$(git rev-parse HEAD)" > mirror/SOURCE_SHA.txt
           sha256sum /tmp/NoodleMobile-source.tar.gz > mirror/SOURCE_ARCHIVE_SHA256.txt
-          wc -c /tmp/NoodleMobile-source.tar.gz.b64
+          wc -c /tmp/NoodleMobile-source.tar.gz
           ls -lh mirror/chunks
 
       - name: Commit mirror chunks
