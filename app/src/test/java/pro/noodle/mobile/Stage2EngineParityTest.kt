@@ -2,6 +2,7 @@ package pro.noodle.mobile
 
 import org.junit.Assert.*
 import org.junit.Test
+import pro.noodle.mobile.core.engine.EngineRegistry
 import pro.noodle.mobile.core.engine.impl.*
 import pro.noodle.mobile.core.engine.runtime.EngineSearchRequest
 import pro.noodle.mobile.core.engine.runtime.RuntimeEngineRegistry
@@ -10,7 +11,7 @@ import pro.noodle.mobile.core.resolver.ResolverPipeline
 
 class Stage2EngineParityTest {
     @Test fun runtimeRegistryImplementsAllCanonicalEngines() {
-        assertEquals(15, RuntimeEngineRegistry.implementedIds.size)
+        assertEquals(EngineRegistry.knownEngineIds.toSet(), RuntimeEngineRegistry.implementedIds)
     }
 
     @Test fun genericHtml5FindsSourcesAndSubtitles() {
