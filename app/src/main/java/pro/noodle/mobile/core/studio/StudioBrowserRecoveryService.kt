@@ -11,6 +11,9 @@ import pro.noodle.mobile.core.source.SemanticStatus
  * Recovery is still fully local before AI: original Delphi-style routes -> expanded CMS route
  * catalogue -> sandboxed browser execution. The browser receives the strongest deterministic
  * candidate, so dynamic skins benefit from the broader engine knowledge as well.
+ *
+ * The returned testDetails intentionally keep the browser/known-route evidence. The next AI repair
+ * stage consumes this exact candidate and evidence instead of restarting discovery from scratch.
  */
 class StudioBrowserRecoveryService(context: Context) {
     private val app = context.applicationContext
@@ -50,7 +53,7 @@ class StudioBrowserRecoveryService(context: Context) {
                 errorCode = validation.errorCode,
                 message = validation.errorMessage,
                 testStatus = "invalid_adapter",
-                testDetails = rendered.evidence,
+                testDetails = rendered.evidence.ifBlank { rendered.summary },
             )
         }
         val semantic = runCatching { probe.validateDefinition(validation.definition) }.getOrElse { error ->
@@ -60,7 +63,13 @@ class StudioBrowserRecoveryService(context: Context) {
                 json = rendered.localJson,
                 message = "Расширенный Browser Discovery создал Schema v3, но Live Test завершился исключением.",
                 testStatus = "error",
-                testDetails = "${rendered.summary}\n${error.javaClass.simpleName}: ${error.message}",
+                testDetails = buildString {
+                    append(rendered.evidence.ifBlank { rendered.summary })
+                    append("\nBROWSER LIVE TEST: ")
+                    append(error.javaClass.simpleName)
+                    append(": ")
+                    append(error.message)
+                }.trim(),
             )
         }
         return StudioAnalyzeResult(
@@ -73,7 +82,14 @@ class StudioBrowserRecoveryService(context: Context) {
                 "Расширенный Discovery подтвердил маршруты; Live Test ещё требует repair."
             },
             testStatus = semantic.status.wireName,
-            testDetails = "${rendered.summary}\n${semantic.message}${semantic.errorCode.takeIf { it.isNotBlank() }?.let { " [$it]" }.orEmpty()} • search=${semantic.searchResultCount} • playback=${semantic.playbackSourceCount}",
+            testDetails = buildString {
+                append(rendered.evidence.ifBlank { rendered.summary })
+                append("\nBROWSER LIVE TEST: ")
+                append(semantic.message)
+                if (semantic.errorCode.isNotBlank()) append(" [${semantic.errorCode}]")
+                append(" • search=${semantic.searchResultCount}")
+                append(" • playback=${semantic.playbackSourceCount}")
+            }.trim(),
         )
     }
 }
