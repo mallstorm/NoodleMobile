@@ -20,20 +20,24 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Pack tracked source snapshot
+      - name: Pack lean Android build snapshot
         shell: bash
         run: |
           set -euo pipefail
           rm -rf mirror/export mirror/chunks
           mkdir -p mirror/export mirror/chunks
           git archive --format=tar HEAD \
-            ':(exclude).github/workflows/export-ntl-mirror.yml' \
-            ':(exclude)mirror/**' | xz -9e -T0 > mirror/export/NoodleMobile-source.tar.xz
-          base64 -w 0 mirror/export/NoodleMobile-source.tar.xz > /tmp/NoodleMobile-source.tar.xz.b64
-          split -b 6000 -d -a 3 /tmp/NoodleMobile-source.tar.xz.b64 mirror/chunks/part-
+            app build.gradle.kts settings.gradle.kts gradle.properties \
+            ':(exclude)app/src/main/assets/adapters/bundled/*/_search.html' \
+            ':(exclude)app/src/main/assets/adapters/bundled/*/_view.html' \
+            ':(exclude)app/src/main/assets/adapters/bundled/*/analysis.txt' \
+            ':(exclude)app/src/main/assets/adapters/bundled/*/snippets.pas' \
+            | xz -9e -T0 > mirror/export/NoodleMobile-build.tar.xz
+          base64 -w 0 mirror/export/NoodleMobile-build.tar.xz > /tmp/NoodleMobile-build.tar.xz.b64
+          split -b 6000 -d -a 3 /tmp/NoodleMobile-build.tar.xz.b64 mirror/chunks/part-
           printf '%s\n' "$(git rev-parse HEAD)" > mirror/export/SOURCE_SHA.txt
-          sha256sum mirror/export/NoodleMobile-source.tar.xz > mirror/export/SOURCE_ARCHIVE_SHA256.txt
-          wc -c mirror/export/NoodleMobile-source.tar.xz
+          sha256sum mirror/export/NoodleMobile-build.tar.xz > mirror/export/SOURCE_ARCHIVE_SHA256.txt
+          wc -c mirror/export/NoodleMobile-build.tar.xz
           ls -lh mirror/chunks
 
       - name: Commit mirror bundle
@@ -47,5 +51,5 @@ jobs:
             echo "Mirror bundle unchanged"
             exit 0
           fi
-          git commit -m "ci: refresh xz NoodleMobile mirror"
+          git commit -m "ci: refresh lean NoodleMobile build mirror"
           git push origin HEAD:main
