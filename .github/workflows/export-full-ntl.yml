@@ -25,20 +25,14 @@ jobs:
         run: |
           set -euo pipefail
           SOURCE_SHA="$(git rev-parse HEAD)"
-          rm -rf transfer/fullparts
-          mkdir -p transfer/fullparts
-          git archive --format=tar HEAD | xz -9e -T0 > /tmp/NoodleMobile-full.tar.xz
-          sha256sum /tmp/NoodleMobile-full.tar.xz | awk '{print $1}' > transfer/fullparts/ARCHIVE_SHA256.txt
-          printf '%s\n' "$SOURCE_SHA" > transfer/fullparts/SOURCE_SHA.txt
-          base64 -w 0 /tmp/NoodleMobile-full.tar.xz > /tmp/payload.b64
-          split -b 80000 -d -a 3 /tmp/payload.b64 /tmp/part-
-          for f in /tmp/part-*; do
-            cp "$f" "transfer/fullparts/$(basename "$f").b64"
-          done
-          printf '%s\n' "$(ls transfer/fullparts/part-*.b64 | wc -l)" > transfer/fullparts/PART_COUNT.txt
-          wc -c /tmp/NoodleMobile-full.tar.xz > transfer/fullparts/ARCHIVE_SIZE.txt
+          rm -rf transfer/full transfer/fullparts
+          mkdir -p transfer/full
+          git archive --format=tar HEAD -- . ':(exclude)transfer/**' | xz -9e -T0 > transfer/full/NoodleMobile-full.tar.xz
+          sha256sum transfer/full/NoodleMobile-full.tar.xz | awk '{print $1}' > transfer/full/ARCHIVE_SHA256.txt
+          printf '%s\n' "$SOURCE_SHA" > transfer/full/SOURCE_SHA.txt
+          wc -c transfer/full/NoodleMobile-full.tar.xz | awk '{print $1}' > transfer/full/ARCHIVE_SIZE.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add transfer/fullparts
-          git commit -m "ci: export full NTL transfer bundle" || true
+          git add -A transfer
+          git commit -m "ci: export full NTL binary bundle" || true
           git push origin HEAD:main
