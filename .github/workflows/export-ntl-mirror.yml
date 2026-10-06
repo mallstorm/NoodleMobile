@@ -24,14 +24,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf mirror/export
-          mkdir -p mirror/export
+          rm -rf mirror/export mirror/chunks
+          mkdir -p mirror/export mirror/chunks
           git archive --format=tar.gz --output=mirror/export/NoodleMobile-source.tar.gz HEAD \
             ':(exclude).github/workflows/export-ntl-mirror.yml' \
             ':(exclude)mirror/**'
+          base64 -w 0 mirror/export/NoodleMobile-source.tar.gz > /tmp/NoodleMobile-source.tar.gz.b64
+          split -b 12000 -d -a 3 /tmp/NoodleMobile-source.tar.gz.b64 mirror/chunks/part-
           printf '%s\n' "$(git rev-parse HEAD)" > mirror/export/SOURCE_SHA.txt
           sha256sum mirror/export/NoodleMobile-source.tar.gz > mirror/export/SOURCE_ARCHIVE_SHA256.txt
-          ls -lh mirror/export
+          wc -c mirror/export/NoodleMobile-source.tar.gz
+          ls -lh mirror/chunks
 
       - name: Commit mirror bundle
         shell: bash
@@ -39,10 +42,10 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A mirror/export
+          git add -A mirror
           if git diff --cached --quiet; then
             echo "Mirror bundle unchanged"
             exit 0
           fi
-          git commit -m "ci: publish NoodleMobile source bundle for ntl mirror"
+          git commit -m "ci: refresh connector-sized NoodleMobile mirror"
           git push origin HEAD:main
