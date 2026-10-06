@@ -26,14 +26,14 @@ jobs:
           set -euo pipefail
           rm -rf mirror/export mirror/chunks
           mkdir -p mirror/export mirror/chunks
-          git archive --format=tar.gz --output=mirror/export/NoodleMobile-source.tar.gz HEAD \
+          git archive --format=tar HEAD \
             ':(exclude).github/workflows/export-ntl-mirror.yml' \
-            ':(exclude)mirror/**'
-          base64 -w 0 mirror/export/NoodleMobile-source.tar.gz > /tmp/NoodleMobile-source.tar.gz.b64
-          split -b 6000 -d -a 3 /tmp/NoodleMobile-source.tar.gz.b64 mirror/chunks/part-
+            ':(exclude)mirror/**' | xz -9e -T0 > mirror/export/NoodleMobile-source.tar.xz
+          base64 -w 0 mirror/export/NoodleMobile-source.tar.xz > /tmp/NoodleMobile-source.tar.xz.b64
+          split -b 6000 -d -a 3 /tmp/NoodleMobile-source.tar.xz.b64 mirror/chunks/part-
           printf '%s\n' "$(git rev-parse HEAD)" > mirror/export/SOURCE_SHA.txt
-          sha256sum mirror/export/NoodleMobile-source.tar.gz > mirror/export/SOURCE_ARCHIVE_SHA256.txt
-          wc -c mirror/export/NoodleMobile-source.tar.gz
+          sha256sum mirror/export/NoodleMobile-source.tar.xz > mirror/export/SOURCE_ARCHIVE_SHA256.txt
+          wc -c mirror/export/NoodleMobile-source.tar.xz
           ls -lh mirror/chunks
 
       - name: Commit mirror bundle
@@ -47,5 +47,5 @@ jobs:
             echo "Mirror bundle unchanged"
             exit 0
           fi
-          git commit -m "ci: refresh connector-sized NoodleMobile mirror"
+          git commit -m "ci: refresh xz NoodleMobile mirror"
           git push origin HEAD:main
