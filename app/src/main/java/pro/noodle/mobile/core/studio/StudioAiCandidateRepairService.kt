@@ -1,0 +1,223 @@
+package pro.noodle.mobile.core.studio
+
+import android.content.Context
+import pro.noodle.mobile.core.adapter.AdapterValidator
+import pro.noodle.mobile.core.engine.EngineRegistry
+import pro.noodle.mobile.core.engine.runtime.RuntimeEngineRegistry
+import pro.noodle.mobile.core.source.AdapterProbeService
+import pro.noodle.mobile.core.source.SemanticStatus
+
+/**
+ * Final Studio compiler stage. Unlike AdapterStudioService.generate(provider != LOCAL), this class
+ * never restarts HTTP discovery. It receives the strongest candidate produced by deterministic,
+ * known-route and Browser Discovery and asks AI to repair that exact Schema v3 using the evidence
+ * already collected locally.
+ *
+ * An AI candidate is accepted only after the normal NoodleMobile semantic certification reaches
+ * HEALTHY. Otherwise the local/browser candidate is preserved unchanged.
+ */
+class StudioAiCandidateRepairService(context: Context) {
+    private val app = context.applicationContext
+    private val ai = StudioAiRouter(app)
+    private val probe = AdapterProbeService(app)
+
+    suspend fun repair(
+        targetUrl: String,
+        candidate: StudioAnalyzeResult,
+        instruction: String,
+        provider: StudioAiProvider,
+        model: String,
+    ): StudioAnalyzeResult {
+        if (candidate.json.isBlank()) {
+            return candidate.copy(
+                success = false,
+                errorCode = "STUDIO_AI_REPAIR_NO_CANDIDATE",
+                message = "AI repair не запущен: локальные уровни не сформировали candidate adapter.json.",
+            )
+        }
+        if (provider == StudioAiProvider.LOCAL) return candidate
+        if (!ai.status(provider).connected) {
+            return preserve(
+                candidate,
+                "AI repair не запущен: сначала войдите в ${provider.title}.",
+                model = model,
+            )
+        }
+        if (model.isBlank()) {
+            return preserve(
+                candidate,
+                "AI repair не запущен: выберите модель ${provider.title}.",
+                model = model,
+            )
+        }
+
+        val baseValidation = AdapterValidator.validate(candidate.json)
+        val evidence = compactEvidence(candidate.testDetails)
+        val task = instruction.trim().ifBlank {
+            "Repair the supplied best NoodleMobile SNP candidate. Preserve every route, engine, host and browser fact already confirmed by local Discovery. Change only fields required to make the existing candidate pass the NoodleMobile live test."
+        }
+        var selectedModel = model
+        var previousAiCandidate = ""
+        var feedback = buildString {
+            append("BEST LOCAL/BROWSER CANDIDATE LIVE TEST: status=${candidate.testStatus.ifBlank { "unknown" }}; ")
+            append(candidate.testDetails.ifBlank { candidate.message })
+            if (!baseValidation.isValid) {
+                append("\nBASE SCHEMA VALIDATION: ${baseValidation.errorCode}: ${baseValidation.errorMessage}")
+            }
+        }
+
+        for (attempt in 1..MAX_AI_ATTEMPTS) {
+            val prompt = buildRepairPrompt(
+                targetUrl = targetUrl,
+                instruction = task,
+                baseJson = candidate.json,
+                evidence = evidence,
+                feedback = feedback,
+                previousAiCandidate = previousAiCandidate,
+                attempt = attempt,
+            )
+            val reply = runCatching {
+                ai.complete(provider, selectedModel, buildSystemPrompt(), prompt)
+            }.getOrElse { error ->
+                return preserve(
+                    candidate,
+                    "AI repair не завершён; сохранён лучший локальный/Browser candidate: ${error.message ?: error.javaClass.simpleName}.",
+                    attempts = attempt,
+                    model = selectedModel,
+                    extraDetails = "AI request failed: ${error.javaClass.simpleName}: ${error.message}",
+                )
+            }
+            selectedModel = reply.model
+            previousAiCandidate = reply.json
+
+            val validation = AdapterValidator.validate(reply.json)
+            if (!validation.isValid || validation.definition == null) {
+                feedback = "AI attempt $attempt failed Schema v3 validation: ${validation.errorCode}: ${validation.errorMessage}. Repair the supplied base candidate; do not invent new routes or hosts."
+                continue
+            }
+
+            val semantic = runCatching { probe.validateDefinition(validation.definition) }.getOrElse { error ->
+                feedback = "AI attempt $attempt live test crashed: ${error.javaClass.simpleName}: ${error.message}. Keep the confirmed local/browser routes and repair only the failing adapter fields."
+                null
+            } ?: continue
+
+            val liveDetails = buildString {
+                append(semantic.message)
+                if (semantic.errorCode.isNotBlank()) append(" [${semantic.errorCode}]")
+                append(" • search=${semantic.searchResultCount}")
+                append(" • playback=${semantic.playbackSourceCount}")
+            }
+            if (semantic.status == SemanticStatus.HEALTHY) {
+                return StudioAnalyzeResult(
+                    success = true,
+                    draft = candidate.draft,
+                    json = reply.json,
+                    message = "AI repair исправил лучший локальный/Browser candidate; финальный Live Test healthy.",
+                    testStatus = semantic.status.wireName,
+                    testDetails = buildString {
+                        append(evidence)
+                        append("\nAI REPAIR: attempt=$attempt • model=$selectedModel\n")
+                        append(liveDetails)
+                    }.trim(),
+                    attempts = attempt,
+                    model = selectedModel,
+                )
+            }
+
+            feedback = buildString {
+                append("AI attempt $attempt did not certify: status=${semantic.status.wireName}; $liveDetails. ")
+                append("Do not restart discovery and do not replace confirmed endpoints. Repair the supplied best candidate using only the evidence above.")
+            }
+        }
+
+        return preserve(
+            candidate,
+            "AI repair не смог получить healthy-вариант за $MAX_AI_ATTEMPTS попытки; лучший локальный/Browser candidate оставлен без изменений.",
+            attempts = MAX_AI_ATTEMPTS,
+            model = selectedModel,
+            extraDetails = feedback,
+        )
+    }
+
+    private fun preserve(
+        candidate: StudioAnalyzeResult,
+        message: String,
+        attempts: Int = 0,
+        model: String = "",
+        extraDetails: String = "",
+    ): StudioAnalyzeResult = candidate.copy(
+        success = candidate.success || candidate.json.isNotBlank(),
+        message = message,
+        testDetails = buildString {
+            append(candidate.testDetails)
+            if (extraDetails.isNotBlank()) {
+                if (isNotEmpty()) append("\n")
+                append("AI REPAIR: ")
+                append(extraDetails)
+            }
+        }.trim(),
+        attempts = attempts,
+        model = model,
+    )
+
+    private fun buildRepairPrompt(
+        targetUrl: String,
+        instruction: String,
+        baseJson: String,
+        evidence: String,
+        feedback: String,
+        previousAiCandidate: String,
+        attempt: Int,
+    ): String = buildString {
+        appendLine("NOODLEMOBILE STUDIO FINAL REPAIR")
+        appendLine("TARGET URL: $targetUrl")
+        appendLine("IMPORTANT: local HTTP/known-route/Browser Discovery has already run. Do not restart discovery and do not invent a replacement endpoint.")
+        appendLine()
+        appendLine("USER TASK:")
+        appendLine(instruction)
+        appendLine()
+        appendLine("AUTHORITATIVE LOCAL/BROWSER EVIDENCE:")
+        appendLine(evidence)
+        appendLine()
+        appendLine("BEST LOCAL/BROWSER CANDIDATE (repair this exact adapter):")
+        appendLine(baseJson)
+        if (attempt > 1 && previousAiCandidate.isNotBlank()) {
+            appendLine()
+            appendLine("PREVIOUS AI CANDIDATE:")
+            appendLine(previousAiCandidate)
+        }
+        appendLine()
+        appendLine("VALIDATOR/LIVE-TEST FEEDBACK:")
+        appendLine(feedback)
+        appendLine()
+        appendLine("Return only one complete adapter.json object. No markdown and no explanation.")
+    }
+
+    private fun buildSystemPrompt(): String {
+        val engines = (EngineRegistry.knownEngineIds + RuntimeEngineRegistry.implementedIds)
+            .distinct()
+            .sorted()
+            .joinToString(", ")
+        return """
+            You are the final repair compiler for NoodleMobile Adapter Studio. Produce one strict Schema v3 adapter.json.
+            The supplied local/browser candidate and evidence are authoritative and were obtained by real HTTP/WebView probing.
+            Available runtime engines: $engines.
+            Never restart discovery conceptually, guess a new search endpoint, replace a confirmed engine without evidence, or add unrelated allowed hosts.
+            Preserve confirmed search templates, view/player routes, iframe/provider facts, JavaScript/cookie requirements and minimum host permissions.
+            Change only fields needed to pass NoodleMobile AdapterValidator and the real Media3-backed live test.
+            The adapter is declarative data. Return JSON only; never return Kotlin, JavaScript, shell commands, markdown or commentary.
+        """.trimIndent()
+    }
+
+    private fun compactEvidence(raw: String): String {
+        val clean = raw.replace("\u0000", "").trim()
+        if (clean.length <= MAX_EVIDENCE_CHARS) return clean
+        val head = (MAX_EVIDENCE_CHARS * 2) / 3
+        return clean.take(head) + "\n... [Studio evidence middle omitted] ...\n" + clean.takeLast(MAX_EVIDENCE_CHARS - head)
+    }
+
+    companion object {
+        private const val MAX_AI_ATTEMPTS = 3
+        private const val MAX_EVIDENCE_CHARS = 48_000
+    }
+}
