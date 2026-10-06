@@ -1,0 +1,332 @@
+diff --git a/app/src/main/java/pro/noodle/mobile/core/download/MediaDownloadRuntime.kt b/app/src/main/java/pro/noodle/mobile/core/download/MediaDownloadRuntime.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/download/MediaDownloadRuntime.kt
+@@ -0,0 +1,164 @@
++package pro.noodle.mobile.core.download
++
++import android.content.Context
++import android.os.Looper
++import androidx.media3.common.util.UnstableApi
++import androidx.media3.database.StandaloneDatabaseProvider
++import androidx.media3.datasource.DataSource
++import androidx.media3.datasource.cache.CacheDataSource
++import androidx.media3.datasource.cache.NoOpCacheEvictor
++import androidx.media3.datasource.cache.SimpleCache
++import androidx.media3.datasource.okhttp.OkHttpDataSource
++import androidx.media3.exoplayer.offline.*
++import kotlinx.coroutines.*
++import pro.noodle.mobile.core.network.NetworkPolicy
++import pro.noodle.mobile.core.network.SecureHttpClient
++import pro.noodle.mobile.core.storage.DownloadState
++import pro.noodle.mobile.core.storage.NoodleDatabase
++import pro.noodle.mobile.core.version.BuildIdentity
++import java.io.File
++import java.util.concurrent.Executors
++
++@UnstableApi
++object MediaDownloadRuntime {
++    @Volatile private var holder: Holder? = null
++
++    /** DownloadManager is thread-affine in Media3. First construction must happen on main. */
++    private fun holder(context: Context): Holder {
++        holder?.let { return it }
++        check(Looper.myLooper() == Looper.getMainLooper()) { "MEDIA_DOWNLOAD_RUNTIME_INIT_MAIN_THREAD_REQUIRED" }
++        val app = context.applicationContext
++        return synchronized(this) { holder ?: Holder(app).also { holder = it } }
++    }
++
++    /** Mutable DownloadManager operations are only legal from its application/main looper. */
++    fun manager(context: Context): DownloadManager {
++        check(Looper.myLooper() == Looper.getMainLooper()) { "DOWNLOAD_MANAGER_MAIN_THREAD_REQUIRED" }
++        return holder(context).manager
++    }
++
++    /** Streaming playback: cache hit first, otherwise network through the exact SNP policy. */
++    fun cacheDataSourceFactory(context: Context, policy: NetworkPolicy, sourceKey: String): DataSource.Factory =
++        holder(context).cacheFactory(policy, sourceKey, readOnly = true)
++
++    /** DownloadHelper preparation must resolve manifests through the exact same SNP sandbox. */
++    fun downloadHelperDataSourceFactory(context: Context, policy: NetworkPolicy, sourceKey: String): DataSource.Factory =
++        holder(context).upstreamFactory(policy, sourceKey)
++
++    /** Strict offline playback: a cache miss fails instead of silently reaching the network. */
++    fun offlineCacheDataSourceFactory(context: Context): DataSource.Factory = holder(context).offlineFactory()
++
++    suspend fun requestFor(context: Context, id: String): DownloadRequest? {
++        // Initialize the thread-affine manager/cache holder on main, then perform the blocking
++        // DownloadIndex read on IO without touching DownloadManager itself.
++        val runtime = withContext(Dispatchers.Main.immediate) { holder(context) }
++        return withContext(Dispatchers.IO) { runtime.downloadIndex.getDownload(id)?.request }
++    }
++
++    private class Holder(val context: Context) {
++        val database = StandaloneDatabaseProvider(context)
++        val cache = SimpleCache(File(context.filesDir, "media3-download-cache"), NoOpCacheEvictor(), database)
++        val downloadIndex = DefaultDownloadIndex(database)
++        private val executor = Executors.newFixedThreadPool(4)
++        private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
++        private val dao = NoodleDatabase.get(context).downloads()
++
++        private val downloaderFactory = DownloaderFactory { request ->
++            val env = DownloadPolicyCodec.decode(request.data)
++                ?: throw IllegalArgumentException("DOWNLOAD_POLICY_MISSING_OR_INVALID")
++            DefaultDownloaderFactory(cacheFactory(env.policy, env.sourceKey, readOnly = false), executor)
++                .createDownloader(request)
++        }
++
++        val manager = DownloadManager(context, downloadIndex, downloaderFactory).apply {
++            maxParallelDownloads = 3
++            addListener(object : DownloadManager.Listener {
++                override fun onDownloadChanged(downloadManager: DownloadManager, download: Download, finalException: Exception?) {
++                    sync(download, finalException)
++                }
++
++                override fun onDownloadRemoved(downloadManager: DownloadManager, download: Download) {
++                    scope.launch {
++                        dao.get(download.request.id)?.let {
++                            dao.updateState(it.id, DownloadState.CANCELED, System.currentTimeMillis())
++                        }
++                    }
++                }
++            })
++            resumeDownloads()
++        }
++
++        init {
++            scope.launch(Dispatchers.Main.immediate) {
++                while (isActive) {
++                    manager.currentDownloads.forEach { sync(it, null) }
++                    delay(1_000)
++                }
++            }
++        }
++
++        fun upstreamFactory(policy: NetworkPolicy, sourceKey: String): DataSource.Factory {
++            val client = SecureHttpClient().streamingClient(policy, sourceKey)
++            // Keep the exact same User-Agent that was used to obtain signed media URLs.
++            // Some CDNs bind short-lived signatures to the request fingerprint.
++            val headers = buildMap<String, String> {
++                put("Accept", "video/*,application/vnd.apple.mpegurl,application/dash+xml,*/*;q=0.8")
++                val sourceHost = sourceKey.trim().lowercase()
++                if (sourceHost.contains('.') && sourceHost.none { it.isWhitespace() || it == '/' || it == ':' }) {
++                    put("Referer", "https://$sourceHost/")
++                }
++            }
++            return OkHttpDataSource.Factory(client)
++                .setUserAgent(BuildIdentity.USER_AGENT)
++                .setDefaultRequestProperties(headers)
++        }
++
++        fun cacheFactory(policy: NetworkPolicy, sourceKey: String, readOnly: Boolean): CacheDataSource.Factory {
++            val factory = CacheDataSource.Factory()
++                .setCache(cache)
++                .setUpstreamDataSourceFactory(upstreamFactory(policy, sourceKey))
++            if (readOnly) factory.setCacheWriteDataSinkFactory(null)
++            return factory
++        }
++
++        fun offlineFactory(): CacheDataSource.Factory = CacheDataSource.Factory()
++            .setCache(cache)
++            .setUpstreamDataSourceFactory(null)
++            .setCacheWriteDataSinkFactory(null)
++
++        private fun sync(download: Download, error: Exception?) {
++            scope.launch {
++                val item = dao.get(download.request.id) ?: return@launch
++                val state = when (download.state) {
++                    Download.STATE_QUEUED -> DownloadState.QUEUED
++                    Download.STATE_DOWNLOADING -> DownloadState.RUNNING
++                    Download.STATE_STOPPED -> DownloadState.PAUSED
++                    Download.STATE_COMPLETED -> DownloadState.COMPLETED
++                    Download.STATE_FAILED -> DownloadState.FAILED
++                    Download.STATE_REMOVING -> DownloadState.CANCELED
++                    Download.STATE_RESTARTING -> DownloadState.QUEUED
++                    else -> DownloadState.QUEUED
++                }
++                if (state == DownloadState.COMPLETED) {
++                    dao.markCompleted(
++                        item.id,
++                        download.bytesDownloaded,
++                        download.contentLength,
++                        "media3-cache",
++                        System.currentTimeMillis(),
++                    )
++                } else {
++                    dao.updateProgress(
++                        item.id,
++                        state,
++                        download.bytesDownloaded,
++                        download.contentLength,
++                        if (state == DownloadState.FAILED) "MEDIA3_DOWNLOAD_FAILED" else "",
++                        if (state == DownloadState.FAILED) (error?.message ?: "Media3 download failed") else "",
++                        System.currentTimeMillis(),
++                    )
++                }
++            }
++        }
++    }
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/core/download/NoodleDownloadService.kt b/app/src/main/java/pro/noodle/mobile/core/download/NoodleDownloadService.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/download/NoodleDownloadService.kt
+@@ -0,0 +1,25 @@
++package pro.noodle.mobile.core.download
++
++import android.app.Notification
++import androidx.core.app.NotificationCompat
++import androidx.media3.common.util.UnstableApi
++import androidx.media3.exoplayer.offline.Download
++import androidx.media3.exoplayer.offline.DownloadManager
++import androidx.media3.exoplayer.offline.DownloadService
++import androidx.media3.exoplayer.scheduler.Scheduler
++import androidx.media3.exoplayer.workmanager.WorkManagerScheduler
++import pro.noodle.mobile.R
++
++@UnstableApi
++class NoodleDownloadService:DownloadService(NOTIFICATION_ID,1000L,CHANNEL_ID,R.string.download_channel_name,R.string.download_channel_description){
++    override fun getDownloadManager():DownloadManager=MediaDownloadRuntime.manager(applicationContext)
++    override fun getScheduler():Scheduler = WorkManagerScheduler(applicationContext, SCHEDULER_WORK_NAME)
++    override fun getForegroundNotification(downloads:List<Download>,notMetRequirements:Int):Notification{
++        val active=downloads.count{it.state==Download.STATE_DOWNLOADING};val queued=downloads.count{it.state==Download.STATE_QUEUED}
++        val total=downloads.sumOf{it.contentLength.coerceAtLeast(0)};val done=downloads.sumOf{it.bytesDownloaded.coerceAtLeast(0)}
++        val b=NotificationCompat.Builder(this,CHANNEL_ID).setSmallIcon(android.R.drawable.stat_sys_download).setContentTitle("Noodle Mobile • офлайн-загрузка").setContentText("Активно: $active • в очереди: $queued").setOngoing(active>0||queued>0).setOnlyAlertOnce(true)
++        if(total>0)b.setProgress(100,((done*100L/total).coerceIn(0,100)).toInt(),false) else b.setProgress(0,0,true)
++        return b.build()
++    }
++    companion object{const val CHANNEL_ID="noodle_media_downloads";const val NOTIFICATION_ID=24051;const val STOP_REASON_USER=1001;const val SCHEDULER_WORK_NAME="noodle_media_download_restart"}
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/core/download/OfflineMediaRepository.kt b/app/src/main/java/pro/noodle/mobile/core/download/OfflineMediaRepository.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/download/OfflineMediaRepository.kt
+@@ -0,0 +1,48 @@
++package pro.noodle.mobile.core.download
++
++import android.content.Context
++import android.net.Uri
++import androidx.media3.common.util.UnstableApi
++import androidx.media3.exoplayer.offline.DownloadRequest
++import pro.noodle.mobile.core.storage.DownloadEntity
++import pro.noodle.mobile.core.storage.DownloadState
++import pro.noodle.mobile.core.storage.NoodleDatabase
++
++sealed interface OfflinePlaybackSpec {
++    val id: String
++    val title: String
++    val mimeType: String
++
++    data class Adaptive(
++        override val id: String,
++        override val title: String,
++        override val mimeType: String,
++        val request: DownloadRequest,
++    ) : OfflinePlaybackSpec
++
++    data class Progressive(
++        override val id: String,
++        override val title: String,
++        override val mimeType: String,
++        val uri: Uri,
++    ) : OfflinePlaybackSpec
++}
++
++@UnstableApi
++class OfflineMediaRepository(context: Context) {
++    private val app = context.applicationContext
++    private val dao = NoodleDatabase.get(app).downloads()
++
++    suspend fun open(id: String): Result<OfflinePlaybackSpec> = runCatching {
++        val item = dao.get(id) ?: error("OFFLINE_ITEM_NOT_FOUND")
++        require(item.state == DownloadState.COMPLETED) { "OFFLINE_ITEM_NOT_COMPLETE" }
++        if (item.destinationUri == DownloadRepository.ADAPTIVE_DESTINATION) {
++            val request = MediaDownloadRuntime.requestFor(app, id) ?: error("OFFLINE_MEDIA3_REQUEST_MISSING")
++            OfflinePlaybackSpec.Adaptive(item.id, item.title, item.mimeType, request)
++        } else {
++            val location = item.localFilePath.ifBlank { item.destinationUri }
++            require(location.isNotBlank()) { "OFFLINE_FILE_LOCATION_MISSING" }
++            OfflinePlaybackSpec.Progressive(item.id, item.title, item.mimeType, Uri.parse(location))
++        }
++    }
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/core/engine/EngineDependencies.kt b/app/src/main/java/pro/noodle/mobile/core/engine/EngineDependencies.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/engine/EngineDependencies.kt
+@@ -0,0 +1,75 @@
++package pro.noodle.mobile.core.engine
++
++data class EngineDependencyValidation(
++    val success: Boolean,
++    val errorCode: String = "",
++    val errorMessage: String = "",
++    val resolvedDependencies: List<String> = emptyList(),
++)
++
++object EngineDependencies {
++    fun requiredOf(engineId: String): List<String> = when (EngineRegistry.normalizeId(engineId)) {
++        "iframe_chain" -> listOf("generic_html5")
++        else -> emptyList()
++    }
++
++    fun optionalOf(engineId: String): List<String> = when (EngineRegistry.normalizeId(engineId)) {
++        "generic_html5", "jwplayer_config", "videojs_config" -> listOf("hls_manifest", "dash_manifest")
++        "iframe_chain" -> listOf("jwplayer_config", "videojs_config", "oembed_provider", "hls_manifest", "dash_manifest")
++        "wordpress_rest" -> listOf("oembed_provider", "generic_html5", "hls_manifest", "dash_manifest")
++        "kvs_view", "kvs_videos", "noodle_watch_playlist", "novideo_embed", "sosalkino_catalog", "declarative_catalog", "json_api_catalog" ->
++            listOf("jwplayer_config", "videojs_config", "generic_html5", "oembed_provider", "iframe_chain", "hls_manifest", "dash_manifest")
++        else -> emptyList()
++    }
++
++    fun recommendedFor(engineId: String): List<String> = (requiredOf(engineId) + optionalOf(engineId)).normalize()
++
++    fun resolveClosure(engineId: String): List<String> {
++        val root = EngineRegistry.normalizeId(engineId)
++        if (root.isBlank()) return emptyList()
++        val seen = linkedSetOf(root)
++        val queue = ArrayDeque<String>().apply { add(root) }
++        val out = mutableListOf<String>()
++        while (queue.isNotEmpty()) {
++            val current = queue.removeFirst()
++            for (raw in requiredOf(current)) {
++                val dep = EngineRegistry.normalizeId(raw)
++                if (dep.isNotBlank() && seen.add(dep)) {
++                    queue.add(dep); out.add(dep)
++                }
++            }
++        }
++        return out
++    }
++
++    fun validate(engineId: String, declaredDependencies: List<String>): EngineDependencyValidation {
++        val primary = EngineRegistry.normalizeId(engineId)
++        if (!EngineRegistry.isKnown(primary)) return fail("ENGINE_DEP_PRIMARY_UNKNOWN", "Основной движок не зарегистрирован: $engineId")
++        val declared = declaredDependencies.normalize()
++        for (dep in declared) {
++            if (dep.equals(primary, true)) return fail("ENGINE_DEP_SELF_REFERENCE", "Движок не может зависеть от самого себя: $primary")
++            if (!EngineRegistry.isKnown(dep)) return fail("ENGINE_DEP_UNKNOWN", "Неизвестная зависимость движка: $dep")
++        }
++        for (required in resolveClosure(primary)) {
++            if (required !in declared) return fail("ENGINE_DEP_REQUIRED_MISSING", "Для $primary требуется зависимость $required.")
++        }
++        for (dep in declared) {
++            for (nested in resolveClosure(dep)) {
++                if (nested.equals(primary, true) || nested !in declared) {
++                    return fail("ENGINE_DEP_TRANSITIVE_REQUIRED_MISSING", "Для зависимости $dep требуется $nested.")
++                }
++            }
++        }
++        return EngineDependencyValidation(true, resolvedDependencies = declared)
++    }
++
++    fun validateRegistry(): EngineDependencyValidation {
++        for (id in EngineRegistry.knownEngineIds) {
++            for (dep in requiredOf(id)) if (!EngineRegistry.isKnown(dep)) return fail("ENGINE_REGISTRY_DEP_UNKNOWN", "$id requires unknown engine $dep")
++        }
++        return EngineDependencyValidation(true)
++    }
++
++    private fun List<String>.normalize(): List<String> = map { EngineRegistry.normalizeId(it) }.filter { it.isNotBlank() }.distinct()
++    private fun fail(code: String, message: String) = EngineDependencyValidation(false, code, message)
++}

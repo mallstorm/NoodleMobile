@@ -1,0 +1,273 @@
+diff --git a/app/src/main/res/drawable/ic_launcher_foreground.xml b/app/src/main/res/drawable/ic_launcher_foreground.xml
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/res/drawable/ic_launcher_foreground.xml
+@@ -0,0 +1,23 @@
++<?xml version="1.0" encoding="utf-8"?>
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="108dp"
++    android:height="108dp"
++    android:viewportWidth="108"
++    android:viewportHeight="108">
++    <path
++        android:pathData="M28,78 L28,30 L76,78 L76,30"
++        android:fillColor="@android:color/transparent"
++        android:strokeColor="#A044FF"
++        android:strokeWidth="10"
++        android:strokeLineCap="round"
++        android:strokeLineJoin="round" />
++    <path
++        android:pathData="M50,43 L50,65 L68,54 Z"
++        android:fillColor="#16D98C" />
++    <path
++        android:pathData="M78,30 L78,42"
++        android:fillColor="@android:color/transparent"
++        android:strokeColor="#E3B341"
++        android:strokeWidth="5"
++        android:strokeLineCap="round" />
++</vector>
+diff --git a/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml b/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+@@ -0,0 +1,5 @@
++<?xml version="1.0" encoding="utf-8"?>
++<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
++    <background android:drawable="@color/noodle_icon_background" />
++    <foreground android:drawable="@drawable/ic_launcher_foreground" />
++</adaptive-icon>
+diff --git a/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml b/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
+@@ -0,0 +1,5 @@
++<?xml version="1.0" encoding="utf-8"?>
++<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
++    <background android:drawable="@color/noodle_icon_background" />
++    <foreground android:drawable="@drawable/ic_launcher_foreground" />
++</adaptive-icon>
+diff --git a/app/src/main/res/values/noodle_icon.xml b/app/src/main/res/values/noodle_icon.xml
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/res/values/noodle_icon.xml
+@@ -0,0 +1,4 @@
++<?xml version="1.0" encoding="utf-8"?>
++<resources>
++    <color name="noodle_icon_background">#090B10</color>
++</resources>
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/res/values/strings.xml
+@@ -0,0 +1,5 @@
++<resources>
++    <string name="app_name">Noodle Mobile</string>
++    <string name="download_channel_name">Офлайн-загрузки</string>
++    <string name="download_channel_description">Загрузка HLS, DASH и медиаконтента для офлайн-воспроизведения</string>
++</resources>
+diff --git a/app/src/main/res/values/styles.xml b/app/src/main/res/values/styles.xml
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/res/values/styles.xml
+@@ -0,0 +1,8 @@
++<resources>
++    <style name="Theme.NoodleMobile" parent="android:style/Theme.Material.NoActionBar">
++        <item name="android:fontFamily">sans</item>
++        <item name="android:windowLightStatusBar">false</item>
++        <item name="android:navigationBarColor">#101218</item>
++        <item name="android:statusBarColor">#101218</item>
++    </style>
++</resources>
+diff --git a/app/src/main/res/xml/network_security_config.xml b/app/src/main/res/xml/network_security_config.xml
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/res/xml/network_security_config.xml
+@@ -0,0 +1,4 @@
++<?xml version="1.0" encoding="utf-8"?>
++<network-security-config>
++    <base-config cleartextTrafficPermitted="false" />
++</network-security-config>
+diff --git a/app/src/test/java/pro/noodle/mobile/CoreParityTest.kt b/app/src/test/java/pro/noodle/mobile/CoreParityTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/test/java/pro/noodle/mobile/CoreParityTest.kt
+@@ -0,0 +1,25 @@
++package pro.noodle.mobile
++
++import org.junit.Assert.*
++import org.junit.Test
++import pro.noodle.mobile.core.adapter.AdapterValidator
++import pro.noodle.mobile.core.engine.EngineDependencies
++import pro.noodle.mobile.core.engine.EngineRegistry
++import pro.noodle.mobile.core.security.HostResolver
++import pro.noodle.mobile.core.security.UrlPolicy
++import pro.noodle.mobile.core.version.SemanticVersion
++import java.net.InetAddress
++
++class CoreParityTest {
++    @Test fun registryHasDesktopParity(){ assertEquals(16,EngineRegistry.knownEngineIds.size); assertEquals("kvs_view",EngineRegistry.normalizeId("fapaxi")); assertEquals("novideo_embed",EngineRegistry.normalizeId("iframe_flashvars")) }
++    @Test fun iframeRequiresGeneric(){ assertTrue(EngineDependencies.validate("iframe_chain", listOf("generic_html5")).success); assertEquals("ENGINE_DEP_REQUIRED_MISSING",EngineDependencies.validate("iframe_chain", emptyList()).errorCode) }
++    @Test fun rejectsTransitiveMissing(){ assertEquals("ENGINE_DEP_TRANSITIVE_REQUIRED_MISSING",EngineDependencies.validate("kvs_videos", listOf("iframe_chain")).errorCode) }
++    @Test fun semverParity(){ assertTrue(SemanticVersion.parseOrNull("1.2.3-alpha.1")!! < SemanticVersion.parseOrNull("1.2.3")!!); assertNull(SemanticVersion.parseOrNull("01.2.3")) }
++    @Test fun urlDesktopParity(){ assertTrue(UrlPolicy.evaluateNavigation("https://example.com/video").allowed); assertFalse(UrlPolicy.evaluateNavigation("javascript:alert(1)").allowed); assertFalse(UrlPolicy.evaluateNavigation("http://example.com/video").allowed); assertTrue(UrlPolicy.evaluateNavigation("http://example.com/video",allowHttp=true).allowed); assertFalse(UrlPolicy.evaluateNavigation("https://127.0.0.1/video").allowed); assertTrue(UrlPolicy.isHttpsDowngrade("https://example.com/a","http://example.com/a")) }
++    @Test fun dnsSsrfDefense(){ val fake=HostResolver{ listOf(InetAddress.getByName("192.168.1.10")) }; val d=UrlPolicy.evaluateNavigation("https://public.example/a",resolveDns=true,resolver=fake); assertFalse(d.allowed); assertEquals("URL_DNS_PRIVATE_BLOCKED",d.errorCode) }
++    @Test fun wildcardDoesNotMatchEvilSuffix(){ assertTrue(UrlPolicy.isHostAllowed("cdn.example.com", listOf("*.example.com"))); assertFalse(UrlPolicy.isHostAllowed("evil-example.com", listOf("*.example.com"))) }
++    @Test fun schemaV3RepairFixture(){ val json="""{"version":3,"id":"sample","name":"Sample","adapter_version":"1.0.0","base_url":"https://example.com","engine":"iframe_chain","engine_dependencies":["generic_html5","hls_manifest"],"permissions":{"allowed_hosts":["example.com"]},"repair":{"enabled":true,"mode":"conservative","failure_threshold":3,"cooldown_minutes":60,"auto_quarantine":true,"strategies":["resolver_refresh"]}}"""; val r=AdapterValidator.validate(json); assertTrue("${r.errorCode} ${r.errorMessage}",r.isValid) }
++    @Test fun schemaV3RejectsUndeclaredViewEngine(){ val json="""{"version":3,"id":"sample","name":"Sample","adapter_version":"1.0.0","base_url":"https://example.com","engine":"generic_html5","engine_dependencies":[],"permissions":{"allowed_hosts":["example.com"]},"view":{"strategies":["generic_html5","jwplayer_config"]},"repair":{"enabled":false,"mode":"conservative","failure_threshold":3,"cooldown_minutes":60,"strategies":["resolver_refresh"]}}"""; assertEquals("ADAPTER_VIEW_ENGINE_UNDECLARED",AdapterValidator.validate(json).errorCode) }
++    @Test fun schemaV3RejectsUnsafeRepair(){ val json="""{"version":3,"id":"sample","name":"Sample","adapter_version":"1.0.0","base_url":"https://example.com","engine":"generic_html5","engine_dependencies":[],"permissions":{"allowed_hosts":["example.com"]},"repair":{"enabled":true,"mode":"execute_script","failure_threshold":3,"cooldown_minutes":60,"strategies":["resolver_refresh"]}}"""; assertEquals("ADAPTER_REPAIR_MODE_UNSUPPORTED",AdapterValidator.validate(json).errorCode) }
++    @Test fun kvsFlashvarsRemainsLegacyMetaStrategy(){ val json="""{"version":3,"id":"sample","name":"Sample","adapter_version":"1.0.0","base_url":"https://example.com","engine":"kvs_videos","engine_dependencies":["generic_html5","iframe_chain","jwplayer_config","videojs_config","oembed_provider","hls_manifest","dash_manifest"],"permissions":{"allowed_hosts":["example.com"]},"view":{"strategies":["kvs_videos","kvs_flashvars","generic_html5"]},"repair":{"enabled":false,"mode":"conservative","failure_threshold":3,"cooldown_minutes":60,"strategies":["resolver_refresh"]}}"""; val r=AdapterValidator.validate(json); assertTrue("${r.errorCode} ${r.errorMessage}",r.isValid) }
++}
+diff --git a/app/src/test/java/pro/noodle/mobile/MultiSourceHotfix2Test.kt b/app/src/test/java/pro/noodle/mobile/MultiSourceHotfix2Test.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/test/java/pro/noodle/mobile/MultiSourceHotfix2Test.kt
+@@ -0,0 +1,24 @@
++package pro.noodle.mobile
++
++import org.junit.Assert.*
++import org.junit.Test
++import pro.noodle.mobile.core.engine.impl.KvsSourceEngine
++import pro.noodle.mobile.core.engine.impl.NovideoEmbedEngine
++import pro.noodle.mobile.core.engine.runtime.EngineSearchRequest
++
++class MultiSourceHotfix2Test {
++    @Test fun kvsMixedLayoutDoesNotLetCatalogLinksHideRealVideos(){
++        val html="""<a href='/videos/feed' class='item'>feed</a><a href='/video/real-video-123'><img src='/thumb.jpg' alt='Real'></a>"""
++        val items=KvsSourceEngine("kvs_videos", emptySet(), KvsSourceEngine.Mode.VIDEOS).parseSearch(html,EngineSearchRequest("https://example.com","q"))
++        assertEquals(1,items.size);assertEquals("/video/real-video-123",items[0].watchPath)
++    }
++    @Test fun kvsViewStillParsesClassicView(){
++        val html="""<ul id='list_videos_common_items'><a href='/view/42/'><img src='/42.jpg' alt='Classic'></a></ul>"""
++        val items=KvsSourceEngine("kvs_view", emptySet(), KvsSourceEngine.Mode.VIEW).parseSearch(html,EngineSearchRequest("https://example.com","q"))
++        assertEquals(1,items.size);assertEquals("/view/42/",items[0].watchPath)
++    }
++    @Test fun novideoUsesCurrentSearchEndpoint(){
++        val url=NovideoEmbedEngine().buildSearchUrl(EngineSearchRequest("https://video.example","demo"))
++        assertEquals("https://video.example/search/?q=demo",url)
++    }
++}
+diff --git a/app/src/test/java/pro/noodle/mobile/NoodleWindowPlaylistTest.kt b/app/src/test/java/pro/noodle/mobile/NoodleWindowPlaylistTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/test/java/pro/noodle/mobile/NoodleWindowPlaylistTest.kt
+@@ -0,0 +1,35 @@
++package pro.noodle.mobile
++
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertTrue
++import org.junit.Test
++import pro.noodle.mobile.core.engine.impl.JwPlayerEngine
++
++class NoodleWindowPlaylistTest {
++    @Test
++    fun resolvesWindowPlaylistIntoDirectCdnSources() {
++        val html = """
++            <html><head><script>
++            window.playlist = {
++              "image":"https://cdn2.pvvstream.pro/videos/a/b/preview_800.jpg",
++              "sources":[
++                {"file":"https://cdn.pvvstream.pro/videos/a/b/vid_720p.mp4?secure=abc%3D%3D%2C9999999999","label":"720","type":"mp4"},
++                {"file":"https://cdn.pvvstream.pro/videos/a/b/vid_480p.mp4?secure=def%3D%3D%2C9999999999","label":"480","type":"mp4","default":true}
++              ],
++              "trusted":true
++            };
++            </script></head></html>
++        """.trimIndent()
++
++        val result = JwPlayerEngine().resolvePlayback(
++            html,
++            "https://noodlemagazine.com/watch/test",
++        )
++
++        assertTrue(result.success)
++        assertEquals(2, result.sources.size)
++        assertTrue(result.sources.all { it.url.startsWith("https://cdn.pvvstream.pro/") })
++        assertEquals("480", result.sources.first { it.isDefault }.label)
++        assertEquals("https://noodlemagazine.com/watch/test", result.playerPageUrl)
++    }
++}
+diff --git a/app/src/test/java/pro/noodle/mobile/Stage2EngineParityTest.kt b/app/src/test/java/pro/noodle/mobile/Stage2EngineParityTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/test/java/pro/noodle/mobile/Stage2EngineParityTest.kt
+@@ -0,0 +1,80 @@
++package pro.noodle.mobile
++
++import org.junit.Assert.*
++import org.junit.Test
++import pro.noodle.mobile.core.engine.EngineRegistry
++import pro.noodle.mobile.core.engine.impl.*
++import pro.noodle.mobile.core.engine.runtime.EngineSearchRequest
++import pro.noodle.mobile.core.engine.runtime.RuntimeEngineRegistry
++import pro.noodle.mobile.core.resolver.ResolverFetcher
++import pro.noodle.mobile.core.resolver.ResolverPipeline
++
++class Stage2EngineParityTest {
++    @Test fun runtimeRegistryImplementsAllCanonicalEngines() {
++        assertEquals(EngineRegistry.knownEngineIds.toSet(), RuntimeEngineRegistry.implementedIds)
++    }
++
++    @Test fun genericHtml5FindsSourcesAndSubtitles() {
++        val html = """<html><head><title>Sample</title></head><body><video><source src="/720.mp4" type="video/mp4" label="720p"><track src="/ru.vtt" kind="subtitles" srclang="ru" default></video></body></html>"""
++        val r = GenericHtml5Engine().resolvePlayback(html, "https://example.com/watch/1")
++        assertTrue(r.success)
++        assertEquals("https://example.com/720.mp4", r.sources.single().url)
++        assertEquals("ru", r.tracks.single().language)
++    }
++
++    @Test fun hlsExpandsVariantsAndRejectsSampleAes() {
++        val master = """#EXTM3U
++#EXT-X-STREAM-INF:BANDWIDTH=1000000,RESOLUTION=1280x720
++720.m3u8
++#EXT-X-STREAM-INF:BANDWIDTH=4000000,RESOLUTION=1920x1080
++1080.m3u8
++"""
++        val ok = HlsManifestEngine().resolvePlayback(master, "https://example.com/master.m3u8")
++        assertTrue(ok.success)
++        assertEquals(2, ok.variants.size)
++        val drm = HlsManifestEngine().resolvePlayback("#EXTM3U\n#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"skd://license\"", "https://example.com/p.m3u8")
++        assertEquals("HLS_DRM_UNSUPPORTED", drm.errorCode)
++    }
++
++    @Test fun dashExtractsTracksAndRejectsWidevine() {
++        val mpd = """<MPD><Period><AdaptationSet contentType="video" mimeType="video/mp4"><Representation id="v1" width="1280" height="720" bandwidth="2000000"/></AdaptationSet><AdaptationSet contentType="audio" lang="ru" mimeType="audio/mp4"><Representation id="a1"/></AdaptationSet></Period></MPD>"""
++        val ok = DashManifestEngine().resolvePlayback(mpd, "https://example.com/master.mpd")
++        assertTrue(ok.success)
++        assertEquals(1, ok.variants.size)
++        assertEquals(1, ok.audioTracks.size)
++        val protectedMpd = """<MPD><Period><AdaptationSet><ContentProtection schemeIdUri="urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed"/></AdaptationSet></Period></MPD>"""
++        assertEquals("DASH_DRM_UNSUPPORTED", DashManifestEngine().resolvePlayback(protectedMpd, "https://example.com/p.mpd").errorCode)
++    }
++
++    @Test fun jwVideoJsIframeAndOembedAreRecognized() {
++        assertTrue(JwPlayerEngine().resolvePlayback("<script>jwplayer('p').setup({file:'/a.m3u8'});</script>", "https://example.com/v").success)
++        assertTrue(VideoJsEngine().resolvePlayback("<video data-setup='{\"sources\":[{\"src\":\"/a.mpd\",\"type\":\"application/dash+xml\"}]}'></video>", "https://example.com/v").success)
++        assertEquals("https://example.com/embed/1", IFrameChainEngine().resolvePlayback("<iframe src='/embed/1'></iframe>", "https://example.com/v").followUpPages.single())
++        assertTrue(OEmbedEngine().resolvePlayback("<link rel='alternate' type='application/json+oembed' href='/oembed'>", "https://example.com/v").handled)
++    }
++
++    @Test fun resolverKeepsFallbackAndExpandsManifestWhenAvailable() {
++        val html = """<video><source src="https://example.com/master.m3u8" type="application/vnd.apple.mpegurl"></video>"""
++        val fallback = ResolverPipeline.resolve(html, "https://example.com/v", "generic_html5", listOf("hls_manifest"), ResolverFetcher { null })
++        assertEquals(1, fallback.sources.size)
++        val master = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000000,RESOLUTION=1280x720\n720.m3u8\n"
++        val expanded = ResolverPipeline.resolve(html, "https://example.com/v", "generic_html5", listOf("hls_manifest"), ResolverFetcher { master })
++        assertEquals(2, expanded.sources.size)
++    }
++
++    @Test fun declarativeJsonWordpressAndSosalkinoParsersWork() {
++        val declarative = DeclarativeHtmlEngine().parseSearch(
++            "<article class='video'><a href='/watch/42'><span class='title'>Demo</span></a></article>",
++            EngineSearchRequest("https://example.com", "demo", itemSelector="article.video", titleSelector="span.title", urlSelector="a"),
++        )
++        assertEquals("Demo", declarative.single().title)
++        val json = JsonApiEngine().parseSearch(
++            "{\"data\":{\"items\":[{\"id\":\"42\",\"title\":\"API\",\"url\":\"/v/42\"}]}}",
++            EngineSearchRequest("https://example.com", "api", itemsPath="$.data.items", idPath="$.id", titlePath="$.title", urlPath="$.url"),
++        )
++        assertEquals("42", json.single().remoteId)
++        assertTrue(WordPressRestEngine().buildSearchUrl(EngineSearchRequest("https://example.com", "demo", 0, 25)).contains("wp-json"))
++        val sos = SosalkinoCatalogEngine().parseSearch("<a href='/video/demo'><div class='video'><span class='videotitle'>Demo</span></div></a>", EngineSearchRequest("https://example.com", "demo"))
++        assertEquals("demo", sos.single().remoteId)
++    }
++}

@@ -1,0 +1,465 @@
+diff --git a/app/src/main/assets/adapters/bundled/noodlemagazine.com/adapter.json b/app/src/main/assets/adapters/bundled/noodlemagazine.com/adapter.json
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/assets/adapters/bundled/noodlemagazine.com/adapter.json
+@@ -0,0 +1,70 @@
++{
++  "version": 3,
++  "id": "noodlemagazine.com",
++  "name": "Noodlemagazine",
++  "base_url": "https://noodlemagazine.com",
++  "engine": "noodle_watch_playlist",
++  "enabled": true,
++  "capabilities": {
++    "search": true,
++    "pagination": true,
++    "direct_url": true,
++    "embedded_playback": true
++  },
++  "permissions": {
++    "allowed_hosts": [
++      "noodlemagazine.com",
++      "*.noodlemagazine.com",
++      "pvvstream.pro",
++      "*.pvvstream.pro",
++      "nmcorp.video",
++      "*.nmcorp.video",
++      "i.vimeocdn.com"
++    ],
++    "allow_javascript": true,
++    "allow_cookies": true
++  },
++  "view": {
++    "strategies": [
++      "noodle_watch_playlist",
++      "jwplayer_config",
++      "videojs_config",
++      "generic_html5",
++      "oembed_provider",
++      "iframe_chain",
++      "hls_manifest",
++      "dash_manifest",
++      "playlist_json",
++      "open_graph"
++    ]
++  },
++  "adapter_version": "1.0.0",
++  "publisher": "Noodle Desktop bundled",
++  "homepage": "https://noodlemagazine.com",
++  "health": {
++    "query": "video",
++    "min_results": 1,
++    "require_playback": true,
++    "auto_repair": false
++  },
++  "min_app_version": "1.9.0",
++  "engine_dependencies": [
++    "jwplayer_config",
++    "videojs_config",
++    "generic_html5",
++    "oembed_provider",
++    "iframe_chain",
++    "hls_manifest",
++    "dash_manifest"
++  ],
++  "repair": {
++    "enabled": false,
++    "mode": "conservative",
++    "failure_threshold": 3,
++    "cooldown_minutes": 60,
++    "auto_quarantine": false,
++    "strategies": [
++      "resolver_refresh"
++    ]
++  }
++}
+diff --git a/app/src/main/assets/adapters/bundled/noodlemagazine.com/snp-package.json b/app/src/main/assets/adapters/bundled/noodlemagazine.com/snp-package.json
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/assets/adapters/bundled/noodlemagazine.com/snp-package.json
+@@ -0,0 +1,39 @@
++{
++  "format_version": 1,
++  "adapter_id": "noodlemagazine.com",
++  "version": "1.0.0",
++  "publisher": "Noodle Desktop bundled",
++  "integrity_algorithm": "sha256",
++  "files": [
++    {
++      "path": "_search.html",
++      "sha256": "1c34164f3fe9cd07505846c5b0d2993fa664b744efe7135784716700e134b3a7",
++      "size": 81305
++    },
++    {
++      "path": "_view.html",
++      "sha256": "bde0e4dd53ad53622187898b92c4d8a0f912c9332e9b207e057d38ab099b9409",
++      "size": 102958
++    },
++    {
++      "path": "adapter.json",
++      "sha256": "e8a03d478692f7e3d4e98405229410ccd51779838c1b7e337de566fed619db1b",
++      "size": 1515
++    },
++    {
++      "path": "analysis.txt",
++      "sha256": "cd053eb94b27d11a7bef9116e60041013e47bb199c2069a68791c0fa6f977d2f",
++      "size": 2378
++    },
++    {
++      "path": "snippets.pas",
++      "sha256": "70e973f3a1a251952a7012466a662244e426bc3568b087e96414c6fb9e70ee6d",
++      "size": 1160
++    }
++  ],
++  "signature": {
++    "algorithm": "none",
++    "key_id": "",
++    "value": ""
++  }
++}
+diff --git a/app/src/main/assets/adapters/bundled/pornobomba.in/adapter.json b/app/src/main/assets/adapters/bundled/pornobomba.in/adapter.json
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/assets/adapters/bundled/pornobomba.in/adapter.json
+@@ -0,0 +1,69 @@
++{
++  "version": 3,
++  "id": "pornobomba.in",
++  "name": "Pornobomba",
++  "base_url": "https://pornobomba.in",
++  "engine": "kvs_videos",
++  "enabled": true,
++  "capabilities": {
++    "search": true,
++    "pagination": true,
++    "direct_url": true,
++    "embedded_playback": true
++  },
++  "permissions": {
++    "allowed_hosts": [
++      "pornobomba.in",
++      "*.pornobomba.in",
++      "pbembed.me",
++      "*.pbembed.me",
++      "porno-bomba.net",
++      "*.porno-bomba.net"
++    ],
++    "allow_javascript": false,
++    "allow_cookies": true
++  },
++  "view": {
++    "strategies": [
++      "kvs_videos",
++      "jwplayer_config",
++      "videojs_config",
++      "generic_html5",
++      "oembed_provider",
++      "iframe_chain",
++      "hls_manifest",
++      "dash_manifest",
++      "kvs_flashvars",
++      "open_graph"
++    ]
++  },
++  "adapter_version": "1.0.0",
++  "publisher": "Noodle Desktop bundled",
++  "homepage": "https://pornobomba.in",
++  "health": {
++    "query": "video",
++    "min_results": 1,
++    "require_playback": true,
++    "auto_repair": false
++  },
++  "min_app_version": "1.9.0",
++  "engine_dependencies": [
++    "jwplayer_config",
++    "videojs_config",
++    "generic_html5",
++    "oembed_provider",
++    "iframe_chain",
++    "hls_manifest",
++    "dash_manifest"
++  ],
++  "repair": {
++    "enabled": false,
++    "mode": "conservative",
++    "failure_threshold": 3,
++    "cooldown_minutes": 60,
++    "auto_quarantine": false,
++    "strategies": [
++      "resolver_refresh"
++    ]
++  }
++}
+diff --git a/app/src/main/assets/adapters/bundled/pornobomba.in/snp-package.json b/app/src/main/assets/adapters/bundled/pornobomba.in/snp-package.json
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/assets/adapters/bundled/pornobomba.in/snp-package.json
+@@ -0,0 +1,39 @@
++{
++  "format_version": 1,
++  "adapter_id": "pornobomba.in",
++  "version": "1.0.0",
++  "publisher": "Noodle Desktop bundled",
++  "integrity_algorithm": "sha256",
++  "files": [
++    {
++      "path": "_search.html",
++      "sha256": "0486991e79c27d6f77606822d530b800f45cff5805a18656a4bb19de19d9b110",
++      "size": 246881
++    },
++    {
++      "path": "_view.html",
++      "sha256": "9f9742dde2d896d186f83d1cb6a04b1515bd64975a93cd51281315e91424a37c",
++      "size": 288832
++    },
++    {
++      "path": "adapter.json",
++      "sha256": "e3636458b3eb7a8dbd35b2fed6103b07b901fd4fd98e07aa018f0d672a145b44",
++      "size": 1441
++    },
++    {
++      "path": "analysis.txt",
++      "sha256": "c995596dd60bf4e16b4a801b1058858a544a28e9acc1d237ebb37f1791336d66",
++      "size": 2693
++    },
++    {
++      "path": "snippets.pas",
++      "sha256": "458958872da5c6299e737724d401214dd900e8f456ae02c1bd996a7bf1e8f6e9",
++      "size": 1204
++    }
++  ],
++  "signature": {
++    "algorithm": "none",
++    "key_id": "",
++    "value": ""
++  }
++}
+diff --git a/app/src/main/assets/adapters/bundled/video-laba.click/adapter.json b/app/src/main/assets/adapters/bundled/video-laba.click/adapter.json
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/assets/adapters/bundled/video-laba.click/adapter.json
+@@ -0,0 +1,74 @@
++{
++  "version": 3,
++  "id": "video-laba.click",
++  "name": "Video-labaClick",
++  "base_url": "https://video-laba.click",
++  "engine": "novideo_embed",
++  "enabled": true,
++  "capabilities": {
++    "search": true,
++    "pagination": true,
++    "direct_url": true,
++    "embedded_playback": true
++  },
++  "permissions": {
++    "allowed_hosts": [
++      "video-laba.click",
++      "*.video-laba.click",
++      "vwfastdelivery.com",
++      "*.vwfastdelivery.com",
++      "players-services.win",
++      "*.players-services.win",
++      "video-laba.link",
++      "*.video-laba.link",
++      "24fastload.net",
++      "*.24fastload.net"
++    ],
++    "allow_javascript": true,
++    "allow_cookies": true
++  },
++  "view": {
++    "strategies": [
++      "novideo_embed",
++      "jwplayer_config",
++      "videojs_config",
++      "generic_html5",
++      "oembed_provider",
++      "iframe_chain",
++      "hls_manifest",
++      "dash_manifest",
++      "iframe",
++      "kvs_flashvars",
++      "open_graph"
++    ]
++  },
++  "adapter_version": "1.0.0",
++  "publisher": "Noodle Desktop bundled",
++  "homepage": "https://video-laba.click",
++  "health": {
++    "query": "video",
++    "min_results": 1,
++    "require_playback": true,
++    "auto_repair": false
++  },
++  "min_app_version": "1.9.0",
++  "engine_dependencies": [
++    "jwplayer_config",
++    "videojs_config",
++    "generic_html5",
++    "oembed_provider",
++    "iframe_chain",
++    "hls_manifest",
++    "dash_manifest"
++  ],
++  "repair": {
++    "enabled": false,
++    "mode": "conservative",
++    "failure_threshold": 3,
++    "cooldown_minutes": 60,
++    "auto_quarantine": false,
++    "strategies": [
++      "resolver_refresh"
++    ]
++  }
++}
+diff --git a/app/src/main/assets/adapters/bundled/video-laba.click/snp-package.json b/app/src/main/assets/adapters/bundled/video-laba.click/snp-package.json
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/assets/adapters/bundled/video-laba.click/snp-package.json
+@@ -0,0 +1,39 @@
++{
++  "format_version": 1,
++  "adapter_id": "video-laba.click",
++  "version": "1.0.0",
++  "publisher": "Noodle Desktop bundled",
++  "integrity_algorithm": "sha256",
++  "files": [
++    {
++      "path": "_search.html",
++      "sha256": "ec44e44fbdd1cd4483467b3ef5b4dee397a8fde5c466d4e810869ea14451e1c3",
++      "size": 148376
++    },
++    {
++      "path": "_view.html",
++      "sha256": "d5d248055e48f0290e9fe336f76d25788da125ed9753538b2bf5fe7bc5ff396c",
++      "size": 8154
++    },
++    {
++      "path": "adapter.json",
++      "sha256": "cbe20d4c6ac3791c9748e79621c9ec091027793d1ef78b6a2a6679b09eaefb3c",
++      "size": 1610
++    },
++    {
++      "path": "analysis.txt",
++      "sha256": "f037dce6be618f7bb147c1c74b23fb276c94f23c794e0ecc707cddb77aa83dce",
++      "size": 2694
++    },
++    {
++      "path": "snippets.pas",
++      "sha256": "b2f39e57d77286aa5c24a1b404b1eadb72ede7d157a4d3a6988c7b1bf7466544",
++      "size": 3725
++    }
++  ],
++  "signature": {
++    "algorithm": "none",
++    "key_id": "",
++    "value": ""
++  }
++}
+diff --git a/app/src/main/assets/adapters/bundled/x.fap-guru.pro/adapter.json b/app/src/main/assets/adapters/bundled/x.fap-guru.pro/adapter.json
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/assets/adapters/bundled/x.fap-guru.pro/adapter.json
+@@ -0,0 +1,67 @@
++{
++  "version": 3,
++  "id": "x.fap-guru.pro",
++  "name": "XFap-guru",
++  "base_url": "https://x.fap-guru.pro",
++  "engine": "kvs_videos",
++  "enabled": true,
++  "capabilities": {
++    "search": true,
++    "pagination": true,
++    "direct_url": true,
++    "embedded_playback": true
++  },
++  "permissions": {
++    "allowed_hosts": [
++      "x.fap-guru.pro",
++      "*.x.fap-guru.pro",
++      "fap-guru.name",
++      "*.fap-guru.name"
++    ],
++    "allow_javascript": false,
++    "allow_cookies": true
++  },
++  "view": {
++    "strategies": [
++      "kvs_videos",
++      "jwplayer_config",
++      "videojs_config",
++      "generic_html5",
++      "oembed_provider",
++      "iframe_chain",
++      "hls_manifest",
++      "dash_manifest",
++      "kvs_flashvars",
++      "open_graph"
++    ]
++  },
++  "adapter_version": "1.0.0",
++  "publisher": "Noodle Desktop bundled",
++  "homepage": "https://x.fap-guru.pro",
++  "health": {
++    "query": "video",
++    "min_results": 1,
++    "require_playback": true,
++    "auto_repair": false
++  },
++  "min_app_version": "1.9.0",
++  "engine_dependencies": [
++    "jwplayer_config",
++    "videojs_config",
++    "generic_html5",
++    "oembed_provider",
++    "iframe_chain",
++    "hls_manifest",
++    "dash_manifest"
++  ],
++  "repair": {
++    "enabled": false,
++    "mode": "conservative",
++    "failure_threshold": 3,
++    "cooldown_minutes": 60,
++    "auto_quarantine": false,
++    "strategies": [
++      "resolver_refresh"
++    ]
++  }
++}
+diff --git a/app/src/main/assets/adapters/bundled/x.fap-guru.pro/snp-package.json b/app/src/main/assets/adapters/bundled/x.fap-guru.pro/snp-package.json
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/assets/adapters/bundled/x.fap-guru.pro/snp-package.json
+@@ -0,0 +1,19 @@
++{
++  "format_version": 1,
++  "adapter_id": "x.fap-guru.pro",
++  "version": "1.0.0",
++  "publisher": "Noodle Desktop bundled",
++  "integrity_algorithm": "sha256",
++  "files": [
++    {
++      "path": "adapter.json",
++      "sha256": "a1b039166f89785b3da135d5f494a635b69d7efbe9b6de2fbd0f749e2eb3ffc3",
++      "size": 1399
++    }
++  ],
++  "signature": {
++    "algorithm": "none",
++    "key_id": "",
++    "value": ""
++  }
++}
+diff --git a/app/src/main/assets/catalog/trusted_keys.json b/app/src/main/assets/catalog/trusted_keys.json
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/assets/catalog/trusted_keys.json
+@@ -0,0 +1,4 @@
++{
++  "format_version": 1,
++  "keys": []
++}

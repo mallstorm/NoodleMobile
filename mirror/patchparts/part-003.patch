@@ -1,0 +1,210 @@
+diff --git a/app/src/main/java/pro/noodle/mobile/core/adapter/AdapterModels.kt b/app/src/main/java/pro/noodle/mobile/core/adapter/AdapterModels.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/adapter/AdapterModels.kt
+@@ -0,0 +1,32 @@
++package pro.noodle.mobile.core.adapter
++
++data class AdapterDefinition(
++    val schemaVersion: Int = 1,
++    val id: String,
++    val name: String,
++    val adapterVersion: String = "0.0.0",
++    val publisher: String = "",
++    val homepage: String = "",
++    val minAppVersion: String = "",
++    val maxAppVersion: String = "",
++    val baseUrl: String,
++    val engine: String,
++    val engineDependencies: List<String> = emptyList(),
++    val enabled: Boolean = true,
++    val capabilities: List<String> = emptyList(),
++    val allowedHosts: List<String> = emptyList(),
++    val allowJavaScript: Boolean = false,
++    val allowCookies: Boolean = false,
++    val viewStrategies: List<String> = emptyList(),
++    val searchUrlTemplate: String = "",
++    val itemSelector: String = "", val titleSelector: String = "", val urlSelector: String = "",
++    val thumbnailSelector: String = "", val thumbnailAttribute: String = "", val durationSelector: String = "", val viewsSelector: String = "",
++    val itemsPath: String = "", val idPath: String = "", val titlePath: String = "", val urlPath: String = "", val thumbnailPath: String = "", val durationPath: String = "", val viewsPath: String = "",
++    val updateFeedUrl: String = "", val autoUpdate: Boolean = false,
++    val healthQuery: String = "video", val healthMinResults: Int = 1, val healthRequirePlayback: Boolean = true, val healthAutoRepair: Boolean = false,
++    val repairEnabled: Boolean = false, val repairMode: String = "conservative", val repairStrategies: List<String> = emptyList(),
++    val repairFailureThreshold: Int = 3, val repairCooldownMinutes: Int = 60, val repairAutoQuarantine: Boolean = false,
++)
++
++data class AdapterLoadResult(val success: Boolean, val errorCode: String = "", val errorMessage: String = "", val definition: AdapterDefinition? = null)
++data class AdapterValidationResult(val isValid: Boolean, val errorCode: String = "", val errorMessage: String = "", val definition: AdapterDefinition? = null)
+diff --git a/app/src/main/java/pro/noodle/mobile/core/adapter/AdapterSchemaParser.kt b/app/src/main/java/pro/noodle/mobile/core/adapter/AdapterSchemaParser.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/adapter/AdapterSchemaParser.kt
+@@ -0,0 +1,71 @@
++package pro.noodle.mobile.core.adapter
++
++import pro.noodle.mobile.core.engine.EngineRegistry
++import pro.noodle.mobile.core.json.*
++import pro.noodle.mobile.core.version.SemanticVersion
++import java.net.URI
++
++object AdapterSchemaParser {
++    private val idRegex = Regex("^[a-z0-9][a-z0-9._-]{0,127}$", RegexOption.IGNORE_CASE)
++    private val hostRegex = Regex("^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$", RegexOption.IGNORE_CASE)
++
++    fun parse(text: String): AdapterLoadResult {
++        val root = try { MiniJson.parse(text) as? JsonValue.Obj ?: return fail("ADAPTER_JSON_INVALID", "Корневой элемент должен быть JSON-объектом.") } catch (e: Exception) { return fail("ADAPTER_JSON_READ_FAILED", e.message ?: "Ошибка JSON") }
++        val version = root.int("version") ?: 1
++        if (version !in 1..3) return fail("ADAPTER_SCHEMA_UNSUPPORTED", "Поддерживаются схемы adapter.json версии 1, 2 и 3.")
++        val name = root.string("name")?.trim().orEmpty()
++        val baseUrl = root.string("base_url")?.trim().orEmpty()
++        var id = root.string("id")?.trim().orEmpty()
++        if (id.isBlank()) id = makeId(name, baseUrl)
++        if (id.isBlank()) return fail("ADAPTER_ID_MISSING", "Не удалось определить стабильный id адаптера.")
++        if (!idRegex.matches(id)) return fail("ADAPTER_ID_INVALID", "Поле id содержит недопустимые символы.")
++        if (name.isBlank()) return fail("ADAPTER_NAME_MISSING", "Поле name отсутствует или пусто.")
++        if (baseUrl.isBlank()) return fail("ADAPTER_BASE_URL_MISSING", "Поле base_url отсутствует или пусто.")
++        val engine = EngineRegistry.normalizeId(root.string("engine").orEmpty())
++        if (engine.isBlank()) return fail("ADAPTER_ENGINE_MISSING", "Поле engine отсутствует или пусто.")
++        if (!EngineRegistry.isKnown(engine)) return fail("ADAPTER_ENGINE_UNKNOWN", "Неизвестный движок: $engine")
++        val adapterVersion = root.string("adapter_version")?.trim().takeUnless { it.isNullOrEmpty() } ?: "0.0.0"
++        val minApp = root.string("min_app_version")?.trim().orEmpty(); val maxApp = root.string("max_app_version")?.trim().orEmpty()
++        val min = if (minApp.isNotEmpty()) SemanticVersion.parseOrNull(minApp) ?: return fail("ADAPTER_MIN_APP_VERSION_INVALID", "min_app_version должен быть SemVer.") else null
++        val max = if (maxApp.isNotEmpty()) SemanticVersion.parseOrNull(maxApp) ?: return fail("ADAPTER_MAX_APP_VERSION_INVALID", "max_app_version должен быть SemVer.") else null
++        if (min != null && max != null && min > max) return fail("ADAPTER_APP_VERSION_RANGE_INVALID", "min_app_version не может быть выше max_app_version.")
++
++        val permissions = root.obj("permissions")
++        var hosts = permissions?.arr("allowed_hosts")?.strings()?.map { it.trim().lowercase() }.orEmpty()
++        if (hosts.isEmpty()) hosts = listOfNotNull(runCatching { URI(baseUrl).host?.lowercase() }.getOrNull())
++        for (pattern in hosts) {
++            val host = pattern.removePrefix("*.")
++            if (host.isBlank() || !hostRegex.matches(host)) return fail("ADAPTER_ALLOWED_HOST_INVALID", "Некорректный элемент permissions.allowed_hosts: $pattern")
++        }
++        val capabilities = root.obj("capabilities")?.values?.filterValues { it == JsonValue.Bool(true) }?.keys?.toList().orEmpty()
++        val view = root.obj("view")
++        val search = root.obj("search")
++        val update = root.obj("update")
++        val health = root.obj("health")
++        val repair = root.obj("repair")
++        val healthAutoRepair = health?.bool("auto_repair") ?: false
++
++        val d = AdapterDefinition(
++            schemaVersion = version, id = id.lowercase(), name = name, adapterVersion = adapterVersion,
++            publisher = root.string("publisher")?.trim().orEmpty(), homepage = root.string("homepage")?.trim().orEmpty(), minAppVersion = minApp, maxAppVersion = maxApp,
++            baseUrl = baseUrl, engine = engine,
++            engineDependencies = root.arr("engine_dependencies")?.strings()?.map(EngineRegistry::normalizeId).orEmpty(), enabled = root.bool("enabled") ?: true,
++            capabilities = capabilities, allowedHosts = hosts, allowJavaScript = permissions?.bool("allow_javascript") ?: false, allowCookies = permissions?.bool("allow_cookies") ?: false,
++            viewStrategies = view?.arr("strategies")?.strings().orEmpty(),
++            searchUrlTemplate = search?.string("url_template")?.trim().orEmpty(), itemSelector = search?.string("item_selector")?.trim().orEmpty(), titleSelector = search?.string("title_selector")?.trim().orEmpty(), urlSelector = search?.string("url_selector")?.trim().orEmpty(),
++            thumbnailSelector = search?.string("thumbnail_selector")?.trim().orEmpty(), thumbnailAttribute = search?.string("thumbnail_attribute")?.trim().orEmpty(), durationSelector = search?.string("duration_selector")?.trim().orEmpty(), viewsSelector = search?.string("views_selector")?.trim().orEmpty(),
++            itemsPath = search?.string("items_path")?.trim().orEmpty(), idPath = search?.string("id_path")?.trim().orEmpty(), titlePath = search?.string("title_path")?.trim().orEmpty(), urlPath = search?.string("url_path")?.trim().orEmpty(), thumbnailPath = search?.string("thumbnail_path")?.trim().orEmpty(), durationPath = search?.string("duration_path")?.trim().orEmpty(), viewsPath = search?.string("views_path")?.trim().orEmpty(),
++            updateFeedUrl = update?.string("feed_url")?.trim().orEmpty(), autoUpdate = update?.bool("auto_update") ?: false,
++            healthQuery = health?.string("query")?.trim() ?: "video", healthMinResults = health?.int("min_results") ?: 1, healthRequirePlayback = health?.bool("require_playback") ?: true, healthAutoRepair = healthAutoRepair,
++            repairEnabled = repair?.bool("enabled") ?: healthAutoRepair, repairMode = repair?.string("mode")?.trim()?.lowercase() ?: "conservative", repairStrategies = repair?.arr("strategies")?.strings().orEmpty(),
++            repairFailureThreshold = repair?.int("failure_threshold") ?: 3, repairCooldownMinutes = repair?.int("cooldown_minutes") ?: 60, repairAutoQuarantine = repair?.bool("auto_quarantine") ?: false,
++        )
++        return AdapterLoadResult(true, definition = d)
++    }
++
++    private fun makeId(name: String, baseUrl: String): String {
++        val seed = runCatching { URI(baseUrl).host?.removePrefix("www.") }.getOrNull().orEmpty().ifBlank { name }
++        return seed.lowercase().replace(Regex("[^a-z0-9._-]+"), "-").trim('-', '.', '_')
++    }
++    private fun fail(c:String,m:String)=AdapterLoadResult(false,c,m)
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/core/adapter/AdapterValidator.kt b/app/src/main/java/pro/noodle/mobile/core/adapter/AdapterValidator.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/adapter/AdapterValidator.kt
+@@ -0,0 +1,69 @@
++package pro.noodle.mobile.core.adapter
++
++import pro.noodle.mobile.core.engine.EngineDependencies
++import pro.noodle.mobile.core.engine.EngineRegistry
++import pro.noodle.mobile.core.security.UrlPolicy
++import pro.noodle.mobile.core.version.SemanticVersion
++import java.net.URI
++
++object AdapterValidator {
++    private val cssLite = Regex("^(?:[a-z][a-z0-9:_-]*)?(?:\\.[a-z0-9_-]+)?(?:#[a-z0-9_-]+)?$", RegexOption.IGNORE_CASE)
++    private val attr = Regex("^[a-zA-Z_:][a-zA-Z0-9:._-]*$")
++    private val jsonPath = Regex("^\\$?(?:\\.[a-zA-Z0-9_-]+|[a-zA-Z0-9_-]+)(?:\\.[a-zA-Z0-9_-]+|\\[\\d+\\])*$")
++
++    fun validate(text: String): AdapterValidationResult {
++        val load = AdapterSchemaParser.parse(text)
++        if (!load.success) return fail(load.errorCode, load.errorMessage)
++        val d = load.definition!!
++        if (SemanticVersion.parseOrNull(d.adapterVersion) == null) return fail("ADAPTER_VERSION_INVALID", "adapter_version должен соответствовать SemVer, например 1.2.3.")
++        if (d.healthMinResults !in 0..100) return fail("ADAPTER_HEALTH_MIN_RESULTS_INVALID", "health.min_results должен быть в диапазоне 0..100.")
++        if (d.healthQuery.length > 256) return fail("ADAPTER_HEALTH_QUERY_TOO_LONG", "health.query превышает 256 символов.")
++        if (d.updateFeedUrl.isNotBlank()) UrlPolicy.evaluateNavigation(d.updateFeedUrl).let { if (!it.allowed) return fail("ADAPTER_UPDATE_FEED_UNSAFE", "${it.errorCode}: ${it.reason}") }
++        UrlPolicy.evaluateNavigation(d.baseUrl).let { if (!it.allowed) return fail("ADAPTER_BASE_URL_UNSAFE", "${it.errorCode}: ${it.reason}") }
++        if (!EngineRegistry.isKnown(d.engine)) return fail("ADAPTER_ENGINE_UNKNOWN", "Неизвестный движок: ${d.engine}")
++
++        if (d.schemaVersion >= 3) {
++            val deps = EngineDependencies.validate(d.engine, d.engineDependencies)
++            if (!deps.success) return fail(deps.errorCode, deps.errorMessage)
++            for (strategy in d.viewStrategies) {
++                // Desktop Stage 9 intends kvs_flashvars to remain a legacy/meta strategy.
++                // It is also registered as a kvs_view alias, so checking the raw token first
++                // avoids falsely requiring kvs_view as a declared dependency for kvs_videos.
++                if (strategy.trim().equals("kvs_flashvars", ignoreCase = true)) continue
++                if (!EngineRegistry.isKnown(strategy)) continue
++                val normalized = EngineRegistry.normalizeId(strategy)
++                if (normalized == d.engine) continue
++                if (d.engineDependencies.none { EngineRegistry.normalizeId(it) == normalized }) return fail("ADAPTER_VIEW_ENGINE_UNDECLARED", "view.strategies использует незаявленную engine dependency: $normalized")
++            }
++            if (d.repairMode != "conservative") return fail("ADAPTER_REPAIR_MODE_UNSUPPORTED", "Schema v3 поддерживает repair.mode=conservative.")
++            if (d.repairFailureThreshold !in 1..20) return fail("ADAPTER_REPAIR_THRESHOLD_INVALID", "repair.failure_threshold должен быть в диапазоне 1..20.")
++            if (d.repairCooldownMinutes !in 0..10080) return fail("ADAPTER_REPAIR_COOLDOWN_INVALID", "repair.cooldown_minutes должен быть в диапазоне 0..10080.")
++            for (strategy in d.repairStrategies) if (strategy.lowercase() !in setOf("selector_relearn", "resolver_refresh")) return fail("ADAPTER_REPAIR_STRATEGY_UNKNOWN", "Неизвестная repair strategy: $strategy")
++        }
++
++        val baseHost = runCatching { URI(d.baseUrl).host.orEmpty().lowercase() }.getOrDefault("")
++        if (!UrlPolicy.isHostAllowed(baseHost, d.allowedHosts)) return fail("ADAPTER_BASE_HOST_NOT_ALLOWED", "Домен base_url должен присутствовать в permissions.allowed_hosts.")
++
++        if (d.searchUrlTemplate.startsWith("https://", true) || d.searchUrlTemplate.startsWith("http://", true)) {
++            val u = d.searchUrlTemplate.replace("{base_url}", d.baseUrl, true).replace("{query}", "test", true).replace("{page}", "1", true)
++            val decision = UrlPolicy.evaluateNavigation(u)
++            if (!decision.allowed) return fail("ADAPTER_SEARCH_URL_UNSAFE", "${decision.errorCode}: ${decision.reason}")
++            val searchHost = runCatching { URI(decision.normalizedUrl).host.orEmpty().lowercase() }.getOrDefault("")
++            if (!UrlPolicy.isHostAllowed(searchHost, d.allowedHosts)) return fail("ADAPTER_SEARCH_HOST_NOT_ALLOWED", "Домен search.url_template должен присутствовать в permissions.allowed_hosts.")
++        }
++
++        if (d.engine == "declarative_catalog") {
++            if (d.searchUrlTemplate.isBlank()) return fail("ADAPTER_DECLARATIVE_URL_MISSING", "Для declarative_catalog требуется search.url_template.")
++            if (d.itemSelector.isBlank() || d.titleSelector.isBlank() || d.urlSelector.isBlank()) return fail("ADAPTER_DECLARATIVE_SELECTORS_MISSING", "Для declarative_catalog требуются item_selector, title_selector и url_selector.")
++            if (listOf(d.itemSelector,d.titleSelector,d.urlSelector,d.thumbnailSelector,d.durationSelector,d.viewsSelector).filter { it.isNotBlank() }.any { !cssLite.matches(it) }) return fail("ADAPTER_DECLARATIVE_SELECTOR_UNSAFE", "Один из search CSS-lite селекторов использует неподдерживаемый синтаксис.")
++            if (d.thumbnailAttribute.isNotBlank() && !attr.matches(d.thumbnailAttribute)) return fail("ADAPTER_DECLARATIVE_ATTRIBUTE_UNSAFE", "thumbnail_attribute содержит недопустимое имя атрибута.")
++        }
++        if (d.engine == "json_api_catalog") {
++            if (d.searchUrlTemplate.isBlank()) return fail("ADAPTER_JSON_API_URL_MISSING", "Для json_api_catalog требуется search.url_template.")
++            if (d.itemsPath.isBlank() || d.titlePath.isBlank() || d.urlPath.isBlank()) return fail("ADAPTER_JSON_API_PATHS_MISSING", "Для json_api_catalog требуются items_path, title_path и url_path.")
++            if (listOf(d.itemsPath,d.titlePath,d.urlPath,d.idPath,d.thumbnailPath,d.durationPath,d.viewsPath).filter { it.isNotBlank() }.any { !jsonPath.matches(it) }) return fail("ADAPTER_JSON_API_PATH_UNSAFE", "Один из search JSON-path использует неподдерживаемый синтаксис.")
++        }
++        return AdapterValidationResult(true, definition=d)
++    }
++    private fun fail(c:String,m:String)=AdapterValidationResult(false,c,m)
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/core/adapter/BundledAdapterRepository.kt b/app/src/main/java/pro/noodle/mobile/core/adapter/BundledAdapterRepository.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/adapter/BundledAdapterRepository.kt
+@@ -0,0 +1,18 @@
++package pro.noodle.mobile.core.adapter
++
++import android.content.Context
++
++data class BundledAdapterState(
++    val fileName: String,
++    val validation: AdapterValidationResult,
++)
++
++class BundledAdapterRepository(private val context: Context) {
++    fun loadAll(): List<BundledAdapterState> {
++        val names = context.assets.list("adapters").orEmpty().filter { it.endsWith(".json", true) }.sorted()
++        return names.map { name ->
++            val text = context.assets.open("adapters/$name").bufferedReader(Charsets.UTF_8).use { it.readText() }
++            BundledAdapterState(name, AdapterValidator.validate(text))
++        }
++    }
++}

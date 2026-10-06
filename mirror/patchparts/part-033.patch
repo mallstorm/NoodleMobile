@@ -1,0 +1,333 @@
+diff --git a/app/src/main/java/pro/noodle/mobile/core/studio/StudioBackupService.kt b/app/src/main/java/pro/noodle/mobile/core/studio/StudioBackupService.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/studio/StudioBackupService.kt
+@@ -0,0 +1,37 @@
++package pro.noodle.mobile.core.studio
++
++import android.content.Context
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.withContext
++import pro.noodle.mobile.core.source.RuntimeAdapterRepository
++import java.io.File
++
++/** Keeps a small rolling set of complete .snp.zip backups after successful Studio saves. */
++class StudioBackupService(context: Context) {
++    private val app = context.applicationContext
++    private val repo = RuntimeAdapterRepository(app)
++    private val root = File(app.filesDir, "snp-backups")
++
++    suspend fun backup(adapterId: String): File? = withContext(Dispatchers.IO) {
++        val runtime = repo.find(adapterId) ?: return@withContext null
++        if (runtime.bundled) return@withContext null
++        val dir = File(root, adapterId.lowercase()).apply { mkdirs() }
++        val version = runtime.definition.adapterVersion.ifBlank { "unknown" }.replace(Regex("[^A-Za-z0-9._-]"), "-")
++        val target = File(dir, "${System.currentTimeMillis()}-$version.snp.zip")
++        if (!repo.exportAdapter(adapterId, target)) return@withContext null
++        dir.listFiles()
++            .orEmpty()
++            .filter { it.isFile && it.name.endsWith(".snp.zip", true) }
++            .sortedByDescending { it.lastModified() }
++            .drop(MAX_BACKUPS_PER_SOURCE)
++            .forEach { it.delete() }
++        target
++    }
++
++    fun list(adapterId: String): List<File> = File(root, adapterId.lowercase())
++        .listFiles().orEmpty()
++        .filter { it.isFile && it.name.endsWith(".snp.zip", true) }
++        .sortedByDescending { it.lastModified() }
++
++    companion object { private const val MAX_BACKUPS_PER_SOURCE = 5 }
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/core/studio/StudioBrowserDiscovery.kt b/app/src/main/java/pro/noodle/mobile/core/studio/StudioBrowserDiscovery.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/studio/StudioBrowserDiscovery.kt
+@@ -0,0 +1,186 @@
++package pro.noodle.mobile.core.studio
++
++import android.content.Context
++import pro.noodle.mobile.core.adapter.AdapterDefinition
++import pro.noodle.mobile.core.engine.runtime.EngineParsing
++import pro.noodle.mobile.core.web.SandboxedWebExtractor
++import java.net.URI
++
++/**
++ * Browser-assisted second stage for Studio. Deterministic HTTP discovery remains first because it
++ * is faster and easier to audit. When it found a plausible search route but could not see dynamic
++ * cards/player data, this stage renders that exact confirmed route in the same sandboxed WebView
++ * used by playback, then re-runs the Noodle heuristics over the post-JS DOM.
++ */
++internal class StudioBrowserDiscovery(context: Context) {
++    private val web = SandboxedWebExtractor(context.applicationContext)
++
++    suspend fun recover(
++        requestedUrl: String,
++        deterministic: StudioDiscoveryResult,
++        queryOverride: String = "",
++    ): StudioDiscoveryResult {
++        val searchUrl = deterministic.searchUrl.trim()
++        val searchTemplate = deterministic.searchTemplate.trim()
++        if (searchUrl.isBlank() || searchTemplate.isBlank()) return deterministic
++        val mainHost = hostOf(requestedUrl) ?: return deterministic
++        val base = originOf(requestedUrl)
++        val query = queryOverride.trim().ifBlank { deterministic.query.ifBlank { "video" } }
++        val allowed = linkedSetOf(mainHost, "*.$mainHost")
++        hostOf(searchUrl)?.let { allowed += it }
++
++        var adapter = temporaryAdapter(base, allowed)
++        val renderedSearch = web.extract(
++            searchUrl,
++            adapter,
++            timeoutMs = SEARCH_TIMEOUT_MS,
++            additionalAllowedHosts = allowed,
++        )
++        if (!renderedSearch.success || renderedSearch.html.isBlank()) {
++            return deterministic.copy(
++                evidence = deterministic.evidence + "\nBROWSER_DISCOVERY: search render failed: ${renderedSearch.errorCode}: ${renderedSearch.errorMessage}",
++            )
++        }
++
++        val searchSignals = StudioDiscoveryHeuristics.inspectSearch(renderedSearch.html)
++        if (searchSignals.watchPath.isBlank()) {
++            return deterministic.copy(
++                searchHtml = renderedSearch.html,
++                evidence = deterministic.evidence + "\nBROWSER_DISCOVERY: rendered search DOM, but no video link was confirmed.",
++            )
++        }
++
++        val viewUrl = EngineParsing.absolute(searchSignals.watchPath, renderedSearch.finalUrl.ifBlank { base })
++        hostOf(viewUrl)?.let { allowed += it }
++        adapter = temporaryAdapter(base, allowed)
++        val renderedView = web.extract(
++            viewUrl,
++            adapter,
++            timeoutMs = VIEW_TIMEOUT_MS,
++            additionalAllowedHosts = allowed,
++        )
++        val viewHtml = renderedView.html
++        val finalViewUrl = renderedView.finalUrl.ifBlank { viewUrl }
++        var iframeUrl = ""
++        var iframeHtml = ""
++        var effectiveHtml = viewHtml
++
++        if (renderedView.success && !StudioDiscoveryHeuristics.inspectView(viewHtml).strong) {
++            val iframeRaw = StudioDiscoveryHeuristics.firstIframe(viewHtml)
++            val candidate = EngineParsing.absolute(iframeRaw, finalViewUrl)
++            val iframeHost = hostOf(candidate)
++            if (candidate.startsWith("https://", true) && !iframeHost.isNullOrBlank()) {
++                allowed += iframeHost
++                adapter = temporaryAdapter(base, allowed)
++                val iframe = web.extract(
++                    candidate,
++                    adapter,
++                    timeoutMs = VIEW_TIMEOUT_MS,
++                    additionalAllowedHosts = allowed,
++                )
++                if (iframe.success) {
++                    iframeUrl = iframe.finalUrl.ifBlank { candidate }
++                    iframeHtml = iframe.html
++                    effectiveHtml = iframeHtml
++                }
++            }
++        }
++
++        val browserMatches = StudioEngineKnowledge.detect(
++            renderedSearch.html + "\n" + viewHtml + "\n" + effectiveHtml,
++            finalViewUrl,
++        )
++        val preferredStrategies = StudioEngineKnowledge.playbackStrategies(browserMatches)
++        val mediaHosts = StudioDiscoveryHeuristics.extractMediaHosts(effectiveHtml)
++        allowed += mediaHosts
++        val engine = when (searchSignals.kind) {
++            SiteKind.KVS_VIEW -> "kvs_view"
++            SiteKind.KVS_VIDEOS -> "kvs_videos"
++            SiteKind.NOODLE -> "noodle_watch_playlist"
++            SiteKind.NOVIDEO -> "novideo_embed"
++            SiteKind.UNKNOWN -> deterministic.engine.ifBlank { "declarative_catalog" }
++        }
++        val baseDraft = AdapterStudioCore.analyze(requestedUrl, renderedSearch.html).getOrNull() ?: return deterministic
++        val draft = baseDraft.copy(
++            engine = engine,
++            searchUrl = searchTemplate,
++            healthQuery = query,
++            allowedHosts = allowed.filter { it.isNotBlank() },
++            allowJavaScript = true,
++            allowCookies = baseDraft.allowCookies || browserMatches.any { it.profile.allowCookies },
++            notes = baseDraft.notes + buildList {
++                add("Browser Discovery: post-JS search DOM confirmed")
++                add("Search: ${renderedSearch.finalUrl.ifBlank { searchUrl }}")
++                add("View: $finalViewUrl")
++                add("Iframe: ${iframeUrl.ifBlank { "—" }}")
++                if (browserMatches.isNotEmpty()) add("Browser fingerprints: ${StudioEngineKnowledge.summary(browserMatches)}")
++                if (preferredStrategies.isNotEmpty()) add("Browser playback strategies: ${preferredStrategies.joinToString()}")
++            },
++        )
++        val viewSignals = StudioDiscoveryHeuristics.inspectView(effectiveHtml)
++        val viewScore = StudioDiscoveryHeuristics.scoreView(viewSignals, effectiveHtml)
++        val summary = buildString {
++            append("${deterministic.summary} • WebView DOM confirmed • engine=$engine • viewScore=$viewScore")
++            if (browserMatches.isNotEmpty()) append(" • ${StudioEngineKnowledge.summary(browserMatches)}")
++        }
++        val evidence = buildString {
++            append(deterministic.evidence)
++            appendLine()
++            appendLine("BROWSER_DISCOVERY FACTS:")
++            appendLine("catalogue=${StudioEngineKnowledge.catalogueSummary()}")
++            appendLine("search_url=${renderedSearch.finalUrl.ifBlank { searchUrl }}")
++            appendLine("search_matches=${searchSignals.totalRecognized}")
++            appendLine("detected_kind=${searchSignals.kind.wire}")
++            appendLine("view_url=$finalViewUrl")
++            appendLine("iframe_url=$iframeUrl")
++            appendLine("view_score=$viewScore")
++            appendLine("dynamic_js=true")
++            appendLine("profiles=${StudioEngineKnowledge.summary(browserMatches)}")
++            appendLine("playback_strategies=${preferredStrategies.joinToString(",")}")
++            appendLine("media_hosts=${mediaHosts.joinToString(",")}")
++        }
++        return StudioDiscoveryResult(
++            success = true,
++            finalUrl = requestedUrl,
++            query = query,
++            draft = draft,
++            localJson = AdapterStudioCore.toAdapterJson(draft),
++            searchHtml = renderedSearch.html,
++            searchUrl = renderedSearch.finalUrl.ifBlank { searchUrl },
++            searchTemplate = searchTemplate,
++            viewHtml = viewHtml,
++            viewUrl = finalViewUrl,
++            iframeHtml = iframeHtml,
++            iframeUrl = iframeUrl,
++            engine = engine,
++            score = deterministic.score + viewScore,
++            summary = summary,
++            evidence = evidence,
++            message = "Browser Discovery подтвердил динамические маршруты после выполнения JavaScript.",
++        )
++    }
++
++    private fun temporaryAdapter(baseUrl: String, allowed: Set<String>) = AdapterDefinition(
++        schemaVersion = 3,
++        id = "@studio-browser-discovery",
++        name = "Studio Browser Discovery",
++        baseUrl = baseUrl,
++        engine = "declarative_catalog",
++        enabled = false,
++        allowedHosts = allowed.toList(),
++        allowJavaScript = true,
++        allowCookies = true,
++        viewStrategies = listOf("primary", "jwplayer", "videojs", "player_config", "generic_html5", "iframe", "hls", "dash"),
++    )
++
++    private fun hostOf(raw: String): String? = runCatching { URI(raw).host?.lowercase()?.trimEnd('.') }.getOrNull()
++    private fun originOf(raw: String): String = runCatching {
++        val u = URI(raw)
++        "https://${u.host}${if (u.port >= 0) ":${u.port}" else ""}"
++    }.getOrDefault(raw.trimEnd('/'))
++
++    companion object {
++        private const val SEARCH_TIMEOUT_MS = 15_000L
++        private const val VIEW_TIMEOUT_MS = 15_000L
++    }
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/core/studio/StudioBrowserRecoveryService.kt b/app/src/main/java/pro/noodle/mobile/core/studio/StudioBrowserRecoveryService.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/studio/StudioBrowserRecoveryService.kt
+@@ -0,0 +1,95 @@
++package pro.noodle.mobile.core.studio
++
++import android.content.Context
++import pro.noodle.mobile.core.adapter.AdapterValidator
++import pro.noodle.mobile.core.network.SecureHttpClient
++import pro.noodle.mobile.core.source.AdapterProbeService
++import pro.noodle.mobile.core.source.SemanticStatus
++
++/**
++ * Optional post-HTTP recovery used by Studio when deterministic creation is not healthy.
++ * Recovery is still fully local before AI: original Delphi-style routes -> expanded CMS route
++ * catalogue -> sandboxed browser execution. The browser receives the strongest deterministic
++ * candidate, so dynamic skins benefit from the broader engine knowledge as well.
++ *
++ * The returned testDetails intentionally keep the browser/known-route evidence. The next AI repair
++ * stage consumes this exact candidate and evidence instead of restarting discovery from scratch.
++ */
++class StudioBrowserRecoveryService(context: Context) {
++    private val app = context.applicationContext
++    private val http = SecureHttpClient()
++    private val discovery = StudioDiscovery(http)
++    private val knownRoutes = StudioKnownRouteDiscovery(http)
++    private val browser = StudioBrowserDiscovery(app)
++    private val probe = AdapterProbeService(app)
++
++    suspend fun recover(url: String, probeQuery: String = ""): StudioAnalyzeResult {
++        val deterministic = discovery.discover(url, probeQuery)
++        val expanded = knownRoutes.discover(url, probeQuery, deterministic)
++        val seed = when {
++            expanded.success && !deterministic.success -> expanded
++            expanded.success && expanded.searchTemplate.isNotBlank() &&
++                !expanded.searchTemplate.equals(deterministic.searchTemplate, true) -> expanded
++            expanded.success && expanded.score > deterministic.score -> expanded
++            else -> deterministic
++        }
++        val rendered = browser.recover(url, seed, probeQuery)
++        if (!rendered.success || rendered.draft == null || rendered.localJson.isBlank()) {
++            return StudioAnalyzeResult(
++                success = false,
++                json = rendered.localJson,
++                errorCode = rendered.errorCode.ifBlank { "STUDIO_BROWSER_DISCOVERY_FAILED" },
++                message = rendered.message.ifBlank { "Расширенный локальный Discovery/Browser Discovery не смог подтвердить динамические маршруты." },
++                testStatus = "browser_discovery_failed",
++                testDetails = rendered.evidence.ifBlank { rendered.summary },
++            )
++        }
++        val validation = AdapterValidator.validate(rendered.localJson)
++        if (!validation.isValid || validation.definition == null) {
++            return StudioAnalyzeResult(
++                success = false,
++                draft = rendered.draft,
++                json = rendered.localJson,
++                errorCode = validation.errorCode,
++                message = validation.errorMessage,
++                testStatus = "invalid_adapter",
++                testDetails = rendered.evidence.ifBlank { rendered.summary },
++            )
++        }
++        val semantic = runCatching { probe.validateDefinition(validation.definition) }.getOrElse { error ->
++            return StudioAnalyzeResult(
++                success = true,
++                draft = rendered.draft,
++                json = rendered.localJson,
++                message = "Расширенный Browser Discovery создал Schema v3, но Live Test завершился исключением.",
++                testStatus = "error",
++                testDetails = buildString {
++                    append(rendered.evidence.ifBlank { rendered.summary })
++                    append("\nBROWSER LIVE TEST: ")
++                    append(error.javaClass.simpleName)
++                    append(": ")
++                    append(error.message)
++                }.trim(),
++            )
++        }
++        return StudioAnalyzeResult(
++            success = true,
++            draft = rendered.draft,
++            json = rendered.localJson,
++            message = if (semantic.status == SemanticStatus.HEALTHY) {
++                "Расширенный локальный Discovery подтвердил движок/маршрут; Live Test healthy."
++            } else {
++                "Расширенный Discovery подтвердил маршруты; Live Test ещё требует repair."
++            },
++            testStatus = semantic.status.wireName,
++            testDetails = buildString {
++                append(rendered.evidence.ifBlank { rendered.summary })
++                append("\nBROWSER LIVE TEST: ")
++                append(semantic.message)
++                if (semantic.errorCode.isNotBlank()) append(" [${semantic.errorCode}]")
++                append(" • search=${semantic.searchResultCount}")
++                append(" • playback=${semantic.playbackSourceCount}")
++            }.trim(),
++        )
++    }
++}

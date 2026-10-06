@@ -1,0 +1,112 @@
+diff --git a/app/src/main/java/pro/noodle/mobile/core/engine/impl/HlsManifestEngine.kt b/app/src/main/java/pro/noodle/mobile/core/engine/impl/HlsManifestEngine.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/engine/impl/HlsManifestEngine.kt
+@@ -0,0 +1,43 @@
++package pro.noodle.mobile.core.engine.impl
++
++import pro.noodle.mobile.core.engine.runtime.*
++import pro.noodle.mobile.core.model.*
++
++class HlsManifestEngine:SourceEngine{
++    override val id="hls_manifest"; override val aliases=setOf("hls","m3u8","hls_master","hls_playlist")
++    override fun resolvePlayback(text:String,pageUrl:String):EngineResolveResult{
++        if(!text.trimStart().startsWith("#EXTM3U",true)) return EngineResolveResult(handled=true,errorCode="HLS_MANIFEST_INVALID",errorMessage="Ответ не является HLS-плейлистом.")
++        val lines=text.replace("\r\n","\n").replace('\r','\n').lines().map{it.trim()}
++        val sources=mutableListOf<MediaSource>(); val variants=mutableListOf<MediaVariant>(); val audio=mutableListOf<AudioTrack>(); val tracks=mutableListOf<TextTrack>()
++        val seenS=linkedSetOf<String>(); val seenA=linkedSetOf<String>(); val seenT=linkedSetOf<String>()
++        var highest=-1L; var defaultIndex=-1; var hasStream=false; var hasSegments=false; var drm=false
++        fun addSource(raw:String,label:String,mime:String,codecs:String,width:Int,height:Int,bandwidth:Long){
++            val u=EngineParsing.absolute(raw.trim().trim('"'),pageUrl); if(u.isBlank()||!seenS.add(u.lowercase()))return
++            sources += MediaSource(label=label.ifBlank{"HLS"},url=u,mimeType=mime,protocol="hls",width=width,height=height,bandwidth=bandwidth,codecs=codecs)
++            variants += MediaVariant(id=u,label=label.ifBlank{"HLS"},mimeType=mime,codecs=codecs,width=width,height=height,bandwidth=bandwidth)
++            if(bandwidth>highest){highest=bandwidth;defaultIndex=sources.lastIndex}
++        }
++        fun addAudio(attrs:Map<String,String>){ val group=attrs["GROUP-ID"].orEmpty();val name=attrs["NAME"].orEmpty();val lang=attrs["LANGUAGE"].orEmpty();val key="$group|$name|$lang".lowercase();if(!seenA.add(key))return;audio += AudioTrack(id=if(name.isBlank())group else "$group|$name",label=name.ifBlank{if(lang.isBlank())"Audio" else lang.uppercase()},language=lang.lowercase(),mimeType="application/vnd.apple.mpegurl",codecs=attrs["CODECS"].orEmpty(),isDefault=attrs["DEFAULT"].equals("YES",true)) }
++        fun addTrack(attrs:Map<String,String>){ val u=EngineParsing.absolute(attrs["URI"].orEmpty(),pageUrl); if(u.isBlank()||!seenT.add(u.lowercase()))return;tracks += TextTrack(label=attrs["NAME"].orEmpty(),language=attrs["LANGUAGE"].orEmpty().lowercase(),kind="subtitles",url=u,isDefault=attrs["DEFAULT"].equals("YES",true)) }
++        var i=0
++        while(i<lines.size){
++            val line=lines[i]
++            when{
++                line.startsWith("#EXT-X-KEY:",true)||line.startsWith("#EXT-X-SESSION-KEY:",true)->{ val up=line.uppercase(); if("METHOD=SAMPLE-AES" in up || ("KEYFORMAT=" in up && "KEYFORMAT=\"IDENTITY\"" !in up))drm=true }
++                line.startsWith("#EXT-X-MEDIA:",true)->{ val a=parseAttrs(line.substringAfter(':')); when(a["TYPE"]?.uppercase()){ "SUBTITLES"->addTrack(a);"AUDIO"->addAudio(a) } }
++                line.startsWith("#EXT-X-I-FRAME-STREAM-INF:",true)->{ val a=parseAttrs(line.substringAfter(':')); val (w,h)=resolution(a["RESOLUTION"].orEmpty()); val bw=(a["AVERAGE-BANDWIDTH"]?:a["BANDWIDTH"]).orEmpty().toLongOrNull()?:0; addSource(a["URI"].orEmpty(),buildLabel(a)+" I-frame","application/vnd.apple.mpegurl",a["CODECS"].orEmpty(),w,h,bw) }
++                line.startsWith("#EXT-X-STREAM-INF:",true)->{ hasStream=true; val a=parseAttrs(line.substringAfter(':')); val next=lines.drop(i+1).firstOrNull{it.isNotBlank()}?.takeUnless{it.startsWith('#')}.orEmpty(); if(next.isNotBlank()){ val (w,h)=resolution(a["RESOLUTION"].orEmpty()); val bw=(a["AVERAGE-BANDWIDTH"]?:a["BANDWIDTH"]).orEmpty().toLongOrNull()?:0; addSource(next,buildLabel(a),"application/vnd.apple.mpegurl",a["CODECS"].orEmpty(),w,h,bw) } }
++                line.startsWith("#EXTINF:",true)->hasSegments=true
++            };i++
++        }
++        if(hasSegments&&!hasStream)addSource(pageUrl,"HLS","application/vnd.apple.mpegurl","",0,0,0)
++        if(defaultIndex<0&&variants.isNotEmpty())defaultIndex=0
++        if(defaultIndex in variants.indices)variants[defaultIndex]=variants[defaultIndex].copy(isDefault=true)
++        if(hasStream)sources.add(0,MediaSource(label="HLS auto",url=pageUrl,mimeType="application/vnd.apple.mpegurl",protocol="hls",isDefault=true)) else if(sources.isNotEmpty())sources[0]=sources[0].copy(isDefault=true)
++        if(drm)return EngineResolveResult(handled=true,success=false,sources=sources,variants=variants,audioTracks=audio,tracks=tracks,errorCode="HLS_DRM_UNSUPPORTED",errorMessage="Плейлист содержит DRM/SAMPLE-AES и требует официального проигрывателя.")
++        return if(sources.isNotEmpty())EngineResolveResult(handled=true,success=true,sources=sources,variants=variants,audioTracks=audio,tracks=tracks) else EngineResolveResult(handled=true,errorCode="HLS_VARIANTS_NOT_FOUND",errorMessage="В HLS-плейлисте не найдены варианты или медиасегменты.")
++    }
++    private fun parseAttrs(s:String):Map<String,String>{ val out=linkedMapOf<String,String>(); Regex("([A-Z0-9-]+)=(\"(?:[^\"]|\"\")*\"|[^,]*)",RegexOption.IGNORE_CASE).findAll(s).forEach{m->out[m.groupValues[1].uppercase()]=m.groupValues[2].trim().removeSurrounding("\"")};return out }
++    private fun resolution(s:String):Pair<Int,Int>{val m=Regex("^(\\d+)x(\\d+)$",RegexOption.IGNORE_CASE).matchEntire(s.trim())?:return 0 to 0;return (m.groupValues[1].toIntOrNull()?:0) to (m.groupValues[2].toIntOrNull()?:0)}
++    private fun buildLabel(a:Map<String,String>):String{a["NAME"]?.takeIf{it.isNotBlank()}?.let{return it}; val (_,h)=resolution(a["RESOLUTION"].orEmpty());var r=if(h>0)"${h}p" else "HLS";val bw=(a["AVERAGE-BANDWIDTH"]?:a["BANDWIDTH"]).orEmpty().toLongOrNull()?:0;if(bw>0)r += " • %.1f Mbps".format(java.util.Locale.US,bw/1_000_000.0);return r}
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/core/engine/impl/IFrameChainEngine.kt b/app/src/main/java/pro/noodle/mobile/core/engine/impl/IFrameChainEngine.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/engine/impl/IFrameChainEngine.kt
+@@ -0,0 +1,11 @@
++package pro.noodle.mobile.core.engine.impl
++import pro.noodle.mobile.core.engine.runtime.*
++class IFrameChainEngine:SourceEngine{
++    override val id="iframe_chain"; override val aliases=setOf("iframe","iframes")
++    override fun resolvePlayback(text:String,pageUrl:String):EngineResolveResult{
++        if(text.isBlank()) return EngineResolveResult(handled=true,errorCode="IFRAME_EMPTY",errorMessage="Страница пуста.")
++        val seen=linkedSetOf<String>()
++        Regex("<iframe\\b[^>]*>",setOf(RegexOption.IGNORE_CASE,RegexOption.DOT_MATCHES_ALL)).findAll(text).forEach{m-> val u=EngineParsing.absolute(EngineParsing.attr(m.value,"src"),pageUrl); if(u.startsWith("http://",true)||u.startsWith("https://",true))seen+=u }
++        return if(seen.isNotEmpty()) EngineResolveResult(handled=true,success=true,playerPageUrl=seen.first(),followUpPages=seen.toList()) else EngineResolveResult(handled=true,errorCode="IFRAME_NOT_FOUND",errorMessage="iframe не найден.")
++    }
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/core/engine/impl/JsonApiEngine.kt b/app/src/main/java/pro/noodle/mobile/core/engine/impl/JsonApiEngine.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/engine/impl/JsonApiEngine.kt
+@@ -0,0 +1,12 @@
++package pro.noodle.mobile.core.engine.impl
++
++import pro.noodle.mobile.core.engine.runtime.*
++import pro.noodle.mobile.core.json.*
++
++class JsonApiEngine:SourceEngine{
++    override val id="json_api_catalog";override val aliases=setOf("json_api","api_json")
++    override fun buildSearchUrl(request:EngineSearchRequest):String{if(request.searchUrlTemplate.isBlank())return "";val p=(request.page+1).coerceAtLeast(1);return EngineParsing.absolute(request.searchUrlTemplate.replace("{base_url}",request.baseUrl,true).replace("{query}",EngineParsing.encodedQuery(request.query),true).replace("{page}",p.toString(),true),request.baseUrl)}
++    override fun parseSearch(text:String,request:EngineSearchRequest):List<EngineSearchItem>{val root=try{MiniJson.parse(text)}catch(_:Exception){return emptyList()};val node=resolve(root,request.itemsPath);val arr=(node as? JsonValue.Arr)?.values?:return emptyList();return arr.mapNotNull{item->val id=value(item,request.idPath);val title=value(item,request.titlePath);val url=EngineParsing.absolute(value(item,request.urlPath),request.baseUrl);if(url.isBlank())return@mapNotNull null;EngineSearchItem(id.ifBlank{url.substringBefore('?').trimEnd('/').substringAfterLast('/')},url,title.ifBlank{id},EngineParsing.absolute(value(item,request.thumbnailPath),request.baseUrl),value(item,request.durationPath),value(item,request.viewsPath))}.take(request.maxItems.coerceAtLeast(1))}
++    private fun value(root:JsonValue,path:String):String=when(val v=resolve(root,path)){is JsonValue.Str->v.value;is JsonValue.Num->if(v.value%1.0==0.0)v.value.toLong().toString() else v.value.toString();is JsonValue.Bool->v.value.toString();else->""}
++    private fun resolve(root:JsonValue,path:String):JsonValue?{if(path.isBlank()||path=="$")return root;var cur:JsonValue=root;val tokens=path.trim().removePrefix("$").trimStart('.').split('.').filter{it.isNotBlank()};for(token0 in tokens){var token=token0;val idxs=mutableListOf<Int>();val key=token.substringBefore('[');if(key.isNotBlank()){cur=(cur as? JsonValue.Obj)?.values?.get(key)?:return null};Regex("\\[(\\d+)]").findAll(token).forEach{idxs+=it.groupValues[1].toInt()};for(idx in idxs){cur=(cur as? JsonValue.Arr)?.values?.getOrNull(idx)?:return null}};return cur}
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/core/engine/impl/JwPlayerEngine.kt b/app/src/main/java/pro/noodle/mobile/core/engine/impl/JwPlayerEngine.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/engine/impl/JwPlayerEngine.kt
+@@ -0,0 +1,26 @@
++package pro.noodle.mobile.core.engine.impl
++
++import pro.noodle.mobile.core.engine.runtime.*
++import pro.noodle.mobile.core.model.MediaSource
++import pro.noodle.mobile.core.model.TextTrack
++
++class JwPlayerEngine:SourceEngine{
++    override val id="jwplayer_config"; override val aliases=setOf("jwplayer","jw_player","jw_setup","jw")
++    override fun resolvePlayback(text:String,pageUrl:String):EngineResolveResult{
++        if(!Regex("jwplayer\\s*\\(|\\.setup\\s*\\(|\\bplaylist\\s*:\\s*\\[|window\\.playlist\\s*=|\\bplaylist\\s*=\\s*\\{",RegexOption.IGNORE_CASE).containsMatchIn(text))return EngineResolveResult()
++        var config=EngineParsing.first(text,"jwplayer\\s*\\([^)]*\\)\\s*\\.setup\\s*\\(\\s*(\\{[\\s\\S]*?\\})\\s*\\)").ifBlank{text}
++        config=Regex("[\"'](file|src|label|res|quality|type|default|title|image|poster|kind|srclang|language|playlist)[\"']\\s*:",RegexOption.IGNORE_CASE).replace(config,"$1:")
++        val title=EngineParsing.htmlDecode(EngineParsing.first(config,"\\btitle\\s*:\\s*[\"']([^\"']+)[\"']"))
++        val thumb=EngineParsing.absolute(EngineParsing.first(config,"\\b(?:image|poster)\\s*:\\s*[\"']([^\"']+)[\"']"),pageUrl)
++        val seen=linkedSetOf<String>();val seenT=linkedSetOf<String>();val sources=mutableListOf<MediaSource>();val tracks=mutableListOf<TextTrack>()
++        fun addSource(raw:String,declared:String,type:String,default:Boolean){val u=EngineParsing.absolute(raw.replace("\\u0026","&"),pageUrl);if(u.isBlank()||!seen.add(u.lowercase()))return;val mime=EngineParsing.htmlDecode(type).ifBlank{when(EngineParsing.protocol(u)){"hls"->"application/vnd.apple.mpegurl";"dash"->"application/dash+xml";else->"video/mp4"}};sources += MediaSource(label=EngineParsing.inferLabel(u,mime,declared),url=u,mimeType=mime,protocol=EngineParsing.protocol(u,mime),isDefault=default)}
++        fun addTrack(block:String){val raw=EngineParsing.first(block,"\\b(?:file|src)\\s*:\\s*[\"']([^\"']+)[\"']");val u=EngineParsing.absolute(raw,pageUrl);if(u.isBlank()||!seenT.add(u.lowercase()))return;tracks += TextTrack(label=EngineParsing.htmlDecode(EngineParsing.first(block,"\\blabel\\s*:\\s*[\"']([^\"']+)[\"']")),language=EngineParsing.htmlDecode(EngineParsing.first(block,"\\b(?:srclang|language)\\s*:\\s*[\"']([^\"']+)[\"']")).lowercase(),kind=EngineParsing.htmlDecode(EngineParsing.first(block,"\\bkind\\s*:\\s*[\"']([^\"']+)[\"']")).ifBlank{"subtitles"}.lowercase(),url=u,isDefault=Regex("\\bdefault\\s*:\\s*(?:true|1)",RegexOption.IGNORE_CASE).containsMatchIn(block))}
++        Regex("\\{([^{}]*(?:\\bfile|\\bsrc)\\s*:\\s*[\"'][^\"']+[\"'][^{}]*)\\}",setOf(RegexOption.IGNORE_CASE,RegexOption.DOT_MATCHES_ALL)).findAll(config).forEach{m->val b=m.groupValues[1];val raw=EngineParsing.first(b,"\\b(?:file|src)\\s*:\\s*[\"']([^\"']+)[\"']");val label=EngineParsing.first(b,"\\b(?:label|res|quality)\\s*:\\s*[\"']?([^,\"'}\\s]+)");val type=EngineParsing.first(b,"\\btype\\s*:\\s*[\"']([^\"']+)[\"']");if(Regex("\\bkind\\s*:\\s*[\"'](?:captions|subtitles)[\"']",RegexOption.IGNORE_CASE).containsMatchIn(b))addTrack(b) else addSource(raw,label,type,Regex("\\bdefault\\s*:\\s*(?:true|1)",RegexOption.IGNORE_CASE).containsMatchIn(b))}
++        if(sources.isEmpty())Regex("\\b(?:file|src)\\s*:\\s*[\"']([^\"']+)[\"']",RegexOption.IGNORE_CASE).findAll(config).forEach{m->addSource(m.groupValues[1],"","",false)}
++        // Dedicated second track pass catches tracks even if the object regex above was skipped by nested config.
++        Regex("\\{([^{}]*\\bkind\\s*:\\s*[\"'](?:captions|subtitles)[\"'][^{}]*)\\}",setOf(RegexOption.IGNORE_CASE,RegexOption.DOT_MATCHES_ALL)).findAll(config).forEach{addTrack(it.groupValues[1])}
++        val playlist=EngineParsing.absolute(EngineParsing.first(config,"\\bplaylist\\s*:\\s*[\"']([^\"']+)[\"']"),pageUrl)
++        val playbackSources = if(sources.isNotEmpty() && sources.none{it.isDefault}) listOf(sources.first().copy(isDefault=true)) + sources.drop(1) else sources.toList()
++        return if(playbackSources.isNotEmpty())EngineResolveResult(handled=true,success=true,title=title,thumbnailUrl=thumb,playerPageUrl=pageUrl,sources=playbackSources,tracks=tracks,followUpPages=listOfNotNull(playlist.takeIf{it.isNotBlank()})) else EngineResolveResult(handled=true,title=title,thumbnailUrl=thumb,playerPageUrl=pageUrl,tracks=tracks,followUpPages=listOfNotNull(playlist.takeIf{it.isNotBlank()}),errorCode="JWPLAYER_MEDIA_NOT_FOUND",errorMessage="Конфигурация JW Player найдена, но источники отсутствуют.")
++    }
++}

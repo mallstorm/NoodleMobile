@@ -1,0 +1,319 @@
+diff --git a/app/src/main/java/pro/noodle/mobile/core/search/BundledSearchRepository.kt b/app/src/main/java/pro/noodle/mobile/core/search/BundledSearchRepository.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/search/BundledSearchRepository.kt
+@@ -0,0 +1,279 @@
++package pro.noodle.mobile.core.search
++
++import android.content.Context
++import kotlinx.coroutines.async
++import kotlinx.coroutines.awaitAll
++import kotlinx.coroutines.coroutineScope
++import kotlinx.coroutines.flow.first
++import kotlinx.coroutines.sync.Semaphore
++import kotlinx.coroutines.sync.withPermit
++import kotlinx.coroutines.withTimeoutOrNull
++import pro.noodle.mobile.core.adapter.AdapterDefinition
++import pro.noodle.mobile.core.engine.runtime.EngineSearchRequest
++import pro.noodle.mobile.core.engine.runtime.RuntimeEngineRegistry
++import pro.noodle.mobile.core.model.VideoItem
++import pro.noodle.mobile.core.network.NetworkPolicy
++import pro.noodle.mobile.core.network.SecureHttpClient
++import pro.noodle.mobile.core.security.UrlPolicy
++import pro.noodle.mobile.core.settings.SourceOverridesRepository
++import pro.noodle.mobile.core.source.RuntimeAdapterRepository
++import pro.noodle.mobile.core.source.SourceRuntimeDiagnosticsStore
++import java.net.URI
++
++data class SourceSearchError(val sourceId: String, val sourceName: String, val errorCode: String, val message: String)
++data class SearchBatch(val items: List<VideoItem>, val errors: List<SourceSearchError>)
++
++class BundledSearchRepository(
++    context: Context,
++    private val http: SecureHttpClient = SecureHttpClient(),
++    private val parallelism: Int = 6,
++) {
++    private val runtimeRepo = RuntimeAdapterRepository(context.applicationContext)
++    private val overrides = SourceOverridesRepository(context.applicationContext)
++    private val diagnostics = SourceRuntimeDiagnosticsStore(context.applicationContext)
++    // Shared by every search call, including concurrent pagination bursts. This prevents
++    // 4 paged searches x N sources from multiplying into an unbounded number of sockets.
++    private val networkSemaphore = Semaphore(parallelism.coerceIn(1, 6))
++
++    private fun allAdapters(): List<AdapterDefinition> = runtimeRepo.listAll().map { it.definition }
++
++    private suspend fun activeAdapters(): List<AdapterDefinition> {
++        val disabled = overrides.disabledSourceIds.first()
++        val forced = overrides.forceEnabledSourceIds.first()
++        val solo = overrides.soloSourceId.first()
++        return runtimeRepo.listAll()
++            .filter { it.compatibility.compatible && it.packageInfo.valid }
++            .map { it.definition }
++            .filter { d ->
++                val id = d.id.lowercase()
++                val enabled = (d.enabled || id in forced) && id !in disabled
++                enabled && (solo.isBlank() || id == solo)
++            }
++    }
++
++    suspend fun search(query: String, page: Int = -1, maxPerSource: Int = 30): SearchBatch = coroutineScope {
++        if (query.isBlank()) return@coroutineScope SearchBatch(emptyList(), emptyList())
++        val adapters = activeAdapters()
++        directUrlResult(query, adapters)?.let { return@coroutineScope it }
++        val parts = adapters.map { adapter ->
++            async {
++                networkSemaphore.withPermit {
++                    withTimeoutOrNull(SOURCE_SEARCH_TIMEOUT_MS) {
++                        searchOne(adapter, query, page, maxPerSource)
++                    } ?: (emptyList<VideoItem>() to SourceSearchError(
++                        adapter.id,
++                        adapter.name,
++                        "SEARCH_TIMEOUT",
++                        "Источник не ответил за ${SOURCE_SEARCH_TIMEOUT_MS / 1000} с.",
++                    ))
++                }
++            }
++        }.awaitAll()
++        SearchBatch(
++            parts.flatMap { it.first }
++                .distinctBy { "${it.sourceBaseUrl}|${it.remoteId}|${it.watchUrl}".lowercase() },
++            parts.mapNotNull { it.second },
++        )
++    }
++
++    /** Fast watch-page path: load related cards only from the current SNP first. */
++    suspend fun searchSameSource(
++        video: VideoItem,
++        query: String,
++        page: Int = -1,
++        maxPerSource: Int = 8,
++    ): SearchBatch {
++        if (query.isBlank()) return SearchBatch(emptyList(), emptyList())
++        val adapter = adapterFor(video)
++            ?: return SearchBatch(emptyList(), listOf(SourceSearchError(
++                "related",
++                video.sourceName,
++                "RELATED_SOURCE_NOT_FOUND",
++                "SNP текущего источника не найден.",
++            )))
++        val result = networkSemaphore.withPermit {
++            withTimeoutOrNull(RELATED_SEARCH_TIMEOUT_MS) {
++                searchOne(adapter, query, page, maxPerSource.coerceIn(4, 12))
++            }
++        } ?: (emptyList<VideoItem>() to SourceSearchError(
++            adapter.id,
++            adapter.name,
++            "RELATED_TIMEOUT",
++            "Похожие видео загружались слишком долго.",
++        ))
++        return SearchBatch(result.first, listOfNotNull(result.second))
++    }
++
++    private fun directUrlResult(query: String, adapters: List<AdapterDefinition>): SearchBatch? {
++        val raw = query.trim()
++        if (!raw.startsWith("https://", true) && !raw.startsWith("http://", true)) return null
++        val decision = UrlPolicy.evaluateNavigation(raw, allowHttp = false, resolveDns = false)
++        if (!decision.allowed) return SearchBatch(
++            emptyList(),
++            listOf(SourceSearchError("direct-url", "Прямая ссылка", decision.errorCode, decision.reason)),
++        )
++        val host = runCatching { URI(decision.normalizedUrl).host.orEmpty() }.getOrDefault("")
++        val adapter = adapters.firstOrNull { a -> a.allowedHosts.isEmpty() || UrlPolicy.isHostAllowed(host, a.allowedHosts) }
++            ?: return SearchBatch(
++                emptyList(),
++                listOf(SourceSearchError("direct-url", "Прямая ссылка", "DIRECT_URL_SOURCE_NOT_FOUND", "Для этого домена нет включённого SNP.")),
++            )
++        val id = decision.normalizedUrl.substringBefore('?').trimEnd('/').substringAfterLast('/')
++            .ifBlank { decision.normalizedUrl.hashCode().toUInt().toString(16) }
++        return SearchBatch(
++            listOf(
++                VideoItem(
++                    id = "${adapter.id}|$id",
++                    remoteId = id,
++                    watchUrl = decision.normalizedUrl,
++                    title = id.replace('-', ' ').replace('_', ' '),
++                    sourceName = adapter.name,
++                    sourceBaseUrl = adapter.baseUrl,
++                    sourceEngine = adapter.engine,
++                    playerPageUrl = decision.normalizedUrl,
++                    favoriteKey = "${adapter.id}|$id",
++                ),
++            ),
++            emptyList(),
++        )
++    }
++
++    /** Existing favorite/history items may still resolve after the source is disabled for search. */
++    fun adapterFor(video: VideoItem): AdapterDefinition? = allAdapters().firstOrNull {
++        it.baseUrl.equals(video.sourceBaseUrl, true) || it.name.equals(video.sourceName, true)
++    }
++
++    private suspend fun searchOne(
++        a: AdapterDefinition,
++        q: String,
++        page: Int,
++        max: Int,
++    ): Pair<List<VideoItem>, SourceSearchError?> {
++        val engine = RuntimeEngineRegistry.find(a.engine)
++            ?: return emptyList<VideoItem>() to SourceSearchError(a.id, a.name, "ENGINE_NOT_IMPLEMENTED", "Runtime engine ${a.engine} отсутствует.")
++        val req = EngineSearchRequest(
++            baseUrl = a.baseUrl,
++            query = q,
++            page = page,
++            maxItems = max,
++            searchUrlTemplate = a.searchUrlTemplate,
++            itemSelector = a.itemSelector,
++            titleSelector = a.titleSelector,
++            urlSelector = a.urlSelector,
++            thumbnailSelector = a.thumbnailSelector,
++            thumbnailAttribute = a.thumbnailAttribute,
++            durationSelector = a.durationSelector,
++            viewsSelector = a.viewsSelector,
++            itemsPath = a.itemsPath,
++            idPath = a.idPath,
++            titlePath = a.titlePath,
++            urlPath = a.urlPath,
++            thumbnailPath = a.thumbnailPath,
++            durationPath = a.durationPath,
++            viewsPath = a.viewsPath,
++        )
++        val candidates = searchCandidates(engine.buildSearchUrl(req), templateSearchUrl(req), a.baseUrl, q, page)
++        if (candidates.isEmpty()) return emptyList<VideoItem>() to SourceSearchError(a.id, a.name, "SEARCH_URL_EMPTY", "Engine не сформировал search URL.")
++        var lastError: SourceSearchError? = null
++        var hadSuccessfulResponse = false
++        for (url in candidates) {
++            val started = System.currentTimeMillis()
++            val net = http.fetchText(url, NetworkPolicy(a.allowedHosts, allowCookies = a.allowCookies), a.id)
++            val elapsed = System.currentTimeMillis() - started
++            if (!net.success) {
++                diagnostics.recordSearch(a.id, a.engine, net.finalUrl.ifBlank { url }, net.statusCode, elapsed, 0, net.errorCode)
++                lastError = SourceSearchError(a.id, a.name, net.errorCode, net.errorMessage)
++                continue
++            }
++            hadSuccessfulResponse = true
++            val finalBase = originOf(net.finalUrl, a.baseUrl)
++            val parseReq = req.copy(baseUrl = finalBase)
++            val parsed = engine.parseSearch(net.text, parseReq)
++            val items = parsed.mapNotNull { p ->
++                val watch = normalizeAllowed(p.watchPath, a, baseUrl = finalBase) ?: return@mapNotNull null
++                val thumb = normalizeAllowed(p.thumbnailUrl, a, allowBlank = true, baseUrl = finalBase).orEmpty()
++                VideoItem(
++                    id = "${a.id}|${p.remoteId.ifBlank { watch }}",
++                    remoteId = p.remoteId,
++                    watchUrl = watch,
++                    title = p.title.ifBlank { p.remoteId.ifBlank { "Без названия" } },
++                    thumbnailUrl = thumb,
++                    duration = p.durationText,
++                    views = p.viewsText,
++                    sourceName = a.name,
++                    sourceBaseUrl = a.baseUrl,
++                    sourceEngine = a.engine,
++                    playerPageUrl = watch,
++                    favoriteKey = "${a.id}|${p.remoteId.ifBlank { watch }}",
++                )
++            }.distinctBy { it.watchUrl.lowercase() }.take(max.coerceAtLeast(1))
++            diagnostics.recordSearch(a.id, a.engine, net.finalUrl.ifBlank { url }, net.statusCode, elapsed, items.size)
++            if (items.isNotEmpty()) return items to null
++        }
++        if (hadSuccessfulResponse) return emptyList<VideoItem>() to SourceSearchError(a.id, a.name, "SEARCH_PARSED_ZERO", "Источник ответил, но текущий SNP не распознал ни одной видеокарточки.")
++        return emptyList<VideoItem>() to (lastError ?: SourceSearchError(a.id, a.name, "SEARCH_FAILED", "Не удалось получить результаты поиска."))
++    }
++
++    /**
++     * Adapter/engine template always wins. For legacy SNPs we additionally probe the common page
++     * conventions used by KVS, WordPress, DLE and simple catalogs. This lets infinite scroll move
++     * beyond page one even when the old SNP did not encode an explicit {page} placeholder.
++     */
++    private fun searchCandidates(primary: String, template: String, baseUrl: String, query: String, page: Int): List<String> {
++        val b = baseUrl.trimEnd('/')
++        val q = pro.noodle.mobile.core.engine.runtime.EngineParsing.encodedQuery(query)
++        val out = linkedSetOf<String>()
++        listOf(primary, template).filter { it.isNotBlank() }.forEach { out += it }
++        if (b.isNotBlank() && q.isNotBlank()) {
++            if (page < 0) {
++                out += "$b/search/?q=$q"
++                out += "$b/search/$q/"
++                out += "$b/?s=$q"
++            } else {
++                val p = (page + 1).coerceAtLeast(2)
++                out += "$b/search/$p/?q=$q"
++                out += "$b/search/?q=$q&page=$p"
++                out += "$b/search/?q=$q&p=$p"
++                out += "$b/search/$q/page/$p/"
++                out += "$b/search/$q/$p/"
++                out += "$b/page/$p/?s=$q"
++                out += "$b/?s=$q&paged=$p"
++                out += "$b/?q=$q&page=$p"
++            }
++        }
++        return out.take(MAX_SEARCH_CANDIDATES)
++    }
++
++    private fun originOf(url: String, fallback: String): String = runCatching {
++        val u = URI(url)
++        if (u.scheme.isNullOrBlank() || u.host.isNullOrBlank()) fallback
++        else "${u.scheme}://${u.host}${if (u.port >= 0) ":${u.port}" else ""}"
++    }.getOrDefault(fallback)
++
++    private fun templateSearchUrl(r: EngineSearchRequest): String {
++        if (r.searchUrlTemplate.isBlank()) return ""
++        return pro.noodle.mobile.core.engine.runtime.EngineParsing.absolute(
++            r.searchUrlTemplate
++                .replace("{base_url}", r.baseUrl, true)
++                .replace("{query}", pro.noodle.mobile.core.engine.runtime.EngineParsing.encodedQuery(r.query), true)
++                .replace("{page}", (r.page + 1).coerceAtLeast(1).toString(), true),
++            r.baseUrl,
++        )
++    }
++
++    private fun normalizeAllowed(raw: String, a: AdapterDefinition, allowBlank: Boolean = false, baseUrl: String = a.baseUrl): String? {
++        if (raw.isBlank()) return if (allowBlank) "" else null
++        val url = pro.noodle.mobile.core.engine.runtime.EngineParsing.absolute(raw, baseUrl)
++        val d = UrlPolicy.evaluateNavigation(url, allowHttp = false, resolveDns = false)
++        if (!d.allowed) return null
++        val host = runCatching { URI(d.normalizedUrl).host.orEmpty() }.getOrDefault("")
++        if (a.allowedHosts.isNotEmpty() && !UrlPolicy.isHostAllowed(host, a.allowedHosts)) return null
++        return d.normalizedUrl
++    }
++
++    companion object {
++        private const val SOURCE_SEARCH_TIMEOUT_MS = 10_000L
++        private const val RELATED_SEARCH_TIMEOUT_MS = 6_000L
++        private const val MAX_SEARCH_CANDIDATES = 10
++    }
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/core/security/AppLockCrypto.kt b/app/src/main/java/pro/noodle/mobile/core/security/AppLockCrypto.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/security/AppLockCrypto.kt
+@@ -0,0 +1,30 @@
++package pro.noodle.mobile.core.security
++
++import java.security.MessageDigest
++import java.security.SecureRandom
++import java.util.Base64
++
++object AppLockCrypto {
++    private val random = SecureRandom()
++
++    fun newSalt(): String {
++        val bytes = ByteArray(16)
++        random.nextBytes(bytes)
++        return Base64.getEncoder().withoutPadding().encodeToString(bytes)
++    }
++
++    fun hash(secret: String, salt: String): String {
++        val digest = MessageDigest.getInstance("SHA-256")
++        digest.update(salt.toByteArray(Charsets.UTF_8))
++        val bytes = digest.digest(secret.toByteArray(Charsets.UTF_8))
++        return Base64.getEncoder().withoutPadding().encodeToString(bytes)
++    }
++
++    fun verify(secret: String, salt: String, expectedHash: String): Boolean {
++        if (salt.isBlank() || expectedHash.isBlank()) return false
++        return MessageDigest.isEqual(
++            hash(secret, salt).toByteArray(Charsets.UTF_8),
++            expectedHash.toByteArray(Charsets.UTF_8),
++        )
++    }
++}

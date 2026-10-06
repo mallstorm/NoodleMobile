@@ -1,0 +1,145 @@
+diff --git a/app/src/main/java/pro/noodle/mobile/core/engine/EngineRegistry.kt b/app/src/main/java/pro/noodle/mobile/core/engine/EngineRegistry.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/engine/EngineRegistry.kt
+@@ -0,0 +1,49 @@
++package pro.noodle.mobile.core.engine
++
++object EngineRegistry {
++    private val descriptors: List<EngineDescriptor> = listOf(
++        EngineDescriptor("kvs_view", setOf("kvs", "kvs_flashvars", "fapaxi"), legacyCapabilities()),
++        EngineDescriptor("kvs_videos", setOf("pornobomba", "kvs_videos_flashvars"), legacyCapabilities()),
++        EngineDescriptor("noodle_watch_playlist", setOf("noodle", "playlist"), setOf(EngineCapability.SEARCH, EngineCapability.PAGINATION, EngineCapability.DIRECT_URL, EngineCapability.PLAYBACK, EngineCapability.CATEGORIES)),
++        EngineDescriptor("sosalkino_catalog", setOf("sosalkino"), setOf(EngineCapability.SEARCH, EngineCapability.PAGINATION, EngineCapability.DIRECT_URL, EngineCapability.PLAYBACK, EngineCapability.CATEGORIES)),
++        EngineDescriptor("novideo_embed", setOf("novideo", "novideo-embed", "iframe_flashvars"), setOf(EngineCapability.SEARCH, EngineCapability.PAGINATION, EngineCapability.DIRECT_URL, EngineCapability.PLAYBACK, EngineCapability.IFRAME, EngineCapability.CATEGORIES)),
++        EngineDescriptor("generic_html5", setOf("html5", "generic", "generic_video", "video_object"), setOf(EngineCapability.PLAYBACK, EngineCapability.HTML5, EngineCapability.HLS, EngineCapability.DASH, EngineCapability.IFRAME, EngineCapability.SUBTITLES, EngineCapability.AUDIO_TRACKS, EngineCapability.ADAPTIVE_QUALITY)),
++        EngineDescriptor("generic_player_config", setOf(
++            "player_config", "js_player", "plyr", "flowplayer", "clappr", "shaka", "shaka_player",
++            "hlsjs", "hls.js", "dashjs", "dash.js", "mediaelement", "mediaelementjs", "vidstack",
++            "fluidplayer", "dplayer", "artplayer", "openplayerjs", "projekktor", "jplayer", "ableplayer",
++            "bitmovin", "theoplayer", "azure_media_player", "cloudinary_player", "mux_player",
++            "cloudflare_stream", "bunny_stream", "wistia_player", "brightcove_player", "kaltura_player",
++        ), playbackCapabilities()),
++        EngineDescriptor("jwplayer_config", setOf("jwplayer", "jw"), playbackCapabilities()),
++        EngineDescriptor("videojs_config", setOf("videojs", "video.js"), playbackCapabilities()),
++        EngineDescriptor("iframe_chain", setOf("iframe", "iframes"), setOf(EngineCapability.PLAYBACK, EngineCapability.IFRAME, EngineCapability.HTML5)),
++        EngineDescriptor("hls_manifest", setOf("hls", "m3u8"), setOf(EngineCapability.PLAYBACK, EngineCapability.HLS, EngineCapability.SUBTITLES, EngineCapability.AUDIO_TRACKS, EngineCapability.ADAPTIVE_QUALITY)),
++        EngineDescriptor("dash_manifest", setOf("dash", "mpd"), setOf(EngineCapability.PLAYBACK, EngineCapability.DASH, EngineCapability.SUBTITLES, EngineCapability.AUDIO_TRACKS, EngineCapability.ADAPTIVE_QUALITY)),
++        EngineDescriptor("declarative_catalog", setOf("declarative", "declarative_html"), setOf(EngineCapability.SEARCH, EngineCapability.PAGINATION, EngineCapability.DIRECT_URL, EngineCapability.PLAYBACK)),
++        EngineDescriptor("json_api_catalog", setOf("json_api", "api_json"), setOf(EngineCapability.SEARCH, EngineCapability.PAGINATION, EngineCapability.DIRECT_URL, EngineCapability.PLAYBACK)),
++        EngineDescriptor("oembed_provider", setOf("oembed"), setOf(EngineCapability.PLAYBACK, EngineCapability.HTML5, EngineCapability.IFRAME)),
++        EngineDescriptor("wordpress_rest", setOf("wordpress", "wp_rest"), setOf(EngineCapability.SEARCH, EngineCapability.PAGINATION, EngineCapability.DIRECT_URL, EngineCapability.PLAYBACK, EngineCapability.CATEGORIES)),
++    )
++
++    private val byAnyId: Map<String, EngineDescriptor> = buildMap {
++        descriptors.forEach { d ->
++            put(d.id, d)
++            d.aliases.forEach { alias -> require(put(alias.lowercase(), d) == null) { "Duplicate engine alias: $alias" } }
++        }
++    }
++
++    val knownEngineIds: List<String> get() = descriptors.map { it.id }
++
++    fun normalizeId(value: String): String {
++        val key = value.trim().lowercase()
++        return byAnyId[key]?.id ?: key
++    }
++
++    fun descriptor(value: String): EngineDescriptor? = byAnyId[value.trim().lowercase()]
++    fun isKnown(value: String): Boolean = descriptor(value) != null
++    fun capabilitiesOf(value: String): Set<EngineCapability> = descriptor(value)?.capabilities.orEmpty()
++
++    private fun legacyCapabilities() = setOf(EngineCapability.SEARCH, EngineCapability.PAGINATION, EngineCapability.DIRECT_URL, EngineCapability.PLAYBACK, EngineCapability.CATEGORIES)
++    private fun playbackCapabilities() = setOf(EngineCapability.PLAYBACK, EngineCapability.HTML5, EngineCapability.HLS, EngineCapability.DASH, EngineCapability.IFRAME, EngineCapability.SUBTITLES, EngineCapability.AUDIO_TRACKS, EngineCapability.ADAPTIVE_QUALITY)
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/core/engine/EngineTypes.kt b/app/src/main/java/pro/noodle/mobile/core/engine/EngineTypes.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/engine/EngineTypes.kt
+@@ -0,0 +1,14 @@
++package pro.noodle.mobile.core.engine
++
++enum class EngineCapability(val wireName: String) {
++    SEARCH("search"), PAGINATION("pagination"), DIRECT_URL("direct_url"), PLAYBACK("playback"),
++    HTML5("html5"), HLS("hls"), DASH("dash"), IFRAME("iframe"), JAVASCRIPT("javascript"),
++    CATEGORIES("categories"), SUBTITLES("subtitles"), AUDIO_TRACKS("audio_tracks"),
++    ADAPTIVE_QUALITY("adaptive_quality")
++}
++
++data class EngineDescriptor(
++    val id: String,
++    val aliases: Set<String> = emptySet(),
++    val capabilities: Set<EngineCapability> = emptySet(),
++)
+diff --git a/app/src/main/java/pro/noodle/mobile/core/engine/impl/DashManifestEngine.kt b/app/src/main/java/pro/noodle/mobile/core/engine/impl/DashManifestEngine.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/engine/impl/DashManifestEngine.kt
+@@ -0,0 +1,31 @@
++package pro.noodle.mobile.core.engine.impl
++
++import org.w3c.dom.Element
++import pro.noodle.mobile.core.engine.runtime.*
++import pro.noodle.mobile.core.model.*
++import java.io.ByteArrayInputStream
++import javax.xml.parsers.DocumentBuilderFactory
++
++class DashManifestEngine:SourceEngine{
++    override val id="dash_manifest"; override val aliases=setOf("dash","mpd")
++    override fun resolvePlayback(text:String,pageUrl:String):EngineResolveResult{
++        if(text.isBlank()||!text.contains("<MPD",true))return EngineResolveResult(handled=true,errorCode="DASH_MANIFEST_INVALID",errorMessage="Ответ не является DASH MPD.")
++        val doc=try{ val f=DocumentBuilderFactory.newInstance();f.isNamespaceAware=true;runCatching{f.setFeature("http://apache.org/xml/features/disallow-doctype-decl",true)};runCatching{f.setFeature("http://xml.org/sax/features/external-general-entities",false)};runCatching{f.setFeature("http://xml.org/sax/features/external-parameter-entities",false)};f.newDocumentBuilder().parse(ByteArrayInputStream(text.toByteArray(Charsets.UTF_8))) }catch(e:Exception){return EngineResolveResult(handled=true,errorCode="DASH_XML_INVALID",errorMessage=e.message.orEmpty())}
++        val protections=doc.getElementsByTagNameNS("*","ContentProtection")
++        for(i in 0 until protections.length){val e=protections.item(i) as? Element?:continue; val scheme=e.getAttribute("schemeIdUri").lowercase(); if("edef8ba9-79d6-4ace-a3c8-27dcd51d21ed" in scheme||"9a04f079-9840-4286-ab92-e65be0885f95" in scheme||"widevine" in scheme||"playready" in scheme)return EngineResolveResult(handled=true,errorCode="DASH_DRM_UNSUPPORTED",errorMessage="MPD содержит DRM ContentProtection.")}
++        val variants=mutableListOf<MediaVariant>();val audio=mutableListOf<AudioTrack>();val tracks=mutableListOf<TextTrack>()
++        val sets=doc.getElementsByTagNameNS("*","AdaptationSet")
++        for(i in 0 until sets.length){val set=sets.item(i) as? Element?:continue;val content=set.getAttribute("contentType").lowercase();val mime=set.getAttribute("mimeType").lowercase();val lang=set.getAttribute("lang");val label=set.getAttribute("label");val kind=when{content.isNotBlank()->content;mime.startsWith("video/")->"video";mime.startsWith("audio/")->"audio";mime.startsWith("text/")||mime.contains("ttml")||mime.contains("vtt")->"text";else->""}
++            val reps=set.getElementsByTagNameNS("*","Representation")
++            when(kind){
++                "video"-> for(j in 0 until reps.length){val r=reps.item(j) as? Element?:continue;val id=r.getAttribute("id").ifBlank{"v${variants.size+1}"};val width=(r.getAttribute("width").ifBlank{set.getAttribute("width")}).toIntOrNull()?:0;val height=(r.getAttribute("height").ifBlank{set.getAttribute("height")}).toIntOrNull()?:0;val bw=r.getAttribute("bandwidth").toLongOrNull()?:0;val codecs=r.getAttribute("codecs").ifBlank{set.getAttribute("codecs")};val rmime=r.getAttribute("mimeType").ifBlank{set.getAttribute("mimeType")};variants += MediaVariant(id=id,label=if(height>0)"${height}p" else id,mimeType=rmime,codecs=codecs,width=width,height=height,bandwidth=bw)}
++                "audio"->{ if(reps.length==0)audio += AudioTrack(id=set.getAttribute("id").ifBlank{"a${audio.size+1}"},label=label.ifBlank{lang.ifBlank{"Audio"}},language=lang.lowercase(),mimeType=set.getAttribute("mimeType"),codecs=set.getAttribute("codecs"),isDefault=audio.isEmpty()) else for(j in 0 until reps.length){val r=reps.item(j) as? Element?:continue;audio += AudioTrack(id=r.getAttribute("id").ifBlank{"a${audio.size+1}"},label=label.ifBlank{lang.ifBlank{"Audio"}},language=lang.lowercase(),mimeType=r.getAttribute("mimeType").ifBlank{set.getAttribute("mimeType")},codecs=r.getAttribute("codecs").ifBlank{set.getAttribute("codecs")},isDefault=audio.isEmpty())} }
++                "text","subtitle","subtitles"->{ val base=findBaseUrl(set);if(base.isNotBlank()){val u=EngineParsing.absolute(base,pageUrl);if(u.isNotBlank())tracks += TextTrack(label=label.ifBlank{lang.ifBlank{"Subtitles"}},language=lang.lowercase(),kind="subtitles",url=u,isDefault=tracks.isEmpty())} }
++            }
++        }
++        if(variants.isNotEmpty()){val idx=variants.indices.maxByOrNull{variants[it].bandwidth}?:0;variants[idx]=variants[idx].copy(isDefault=true)}
++        val source=MediaSource(label="DASH auto",url=pageUrl,mimeType="application/dash+xml",protocol="dash",isDefault=true)
++        return EngineResolveResult(handled=true,success=true,sources=listOf(source),variants=variants,audioTracks=audio,tracks=tracks)
++    }
++    private fun findBaseUrl(e:Element):String{val nodes=e.getElementsByTagNameNS("*","BaseURL");return if(nodes.length>0)nodes.item(0).textContent.trim() else ""}
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/core/engine/impl/DeclarativeHtmlEngine.kt b/app/src/main/java/pro/noodle/mobile/core/engine/impl/DeclarativeHtmlEngine.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/engine/impl/DeclarativeHtmlEngine.kt
+@@ -0,0 +1,31 @@
++package pro.noodle.mobile.core.engine.impl
++
++import pro.noodle.mobile.core.engine.runtime.*
++
++class DeclarativeHtmlEngine:SourceEngine{
++    override val id="declarative_catalog";override val aliases=setOf("declarative","declarative_html","css_catalog")
++    override fun buildSearchUrl(request:EngineSearchRequest):String = templateUrl(request)
++    override fun parseSearch(text:String,request:EngineSearchRequest):List<EngineSearchItem>{
++        if(text.isBlank()||request.itemSelector.isBlank())return emptyList()
++        return selectBlocks(text,request.itemSelector).mapNotNull{block->
++            val urlNode=selectFirstTag(block,request.urlSelector.ifBlank{"a"})
++            val watchRaw=EngineParsing.attr(urlNode,"href").ifBlank{EngineParsing.stripTags(urlNode)}
++            val watch=EngineParsing.absolute(watchRaw,request.baseUrl)
++            if(watch.isBlank())return@mapNotNull null
++            val title=extractText(block,request.titleSelector).ifBlank{EngineParsing.attr(urlNode,"title")}.ifBlank{watch.substringBefore('?').trimEnd('/').substringAfterLast('/').ifBlank{"item"}}
++            val imgNode=selectFirstTag(block,request.thumbnailSelector.ifBlank{"img"})
++            val attr=request.thumbnailAttribute.ifBlank{"src"}
++            val thumb=EngineParsing.absolute(EngineParsing.attr(imgNode,attr).ifBlank{EngineParsing.attr(imgNode,"src")},request.baseUrl)
++            val remote=watch.substringBefore('?').trimEnd('/').substringAfterLast('/').ifBlank{watch}
++            EngineSearchItem(remote,watch,title,thumb,extractText(block,request.durationSelector),extractText(block,request.viewsSelector))
++        }.take(request.maxItems.coerceAtLeast(1))
++    }
++
++    private fun templateUrl(r:EngineSearchRequest):String{if(r.searchUrlTemplate.isBlank())return "";val page=(r.page+1).coerceAtLeast(1).toString();val u=r.searchUrlTemplate.replace("{base_url}",r.baseUrl,true).replace("{query}",EngineParsing.encodedQuery(r.query),true).replace("{page}",page,true);return EngineParsing.absolute(u,r.baseUrl)}
++    private data class Selector(val tag:String,val clazz:String)
++    private fun parseSelector(s:String):Selector?{val t=s.trim();if(t.isBlank())return null;val parts=t.split('.',limit=2);val tag=parts[0];if(!tag.matches(Regex("[A-Za-z][A-Za-z0-9_-]*")))return null;return Selector(tag,parts.getOrElse(1){""})}
++    private fun classMatches(attrs:String, clazz:String):Boolean{if(clazz.isBlank())return true;val c=EngineParsing.attr("<$attrs>","class");return c.split(Regex("\\s+")).any{it.equals(clazz,true)}}
++    private fun selectBlocks(html:String,selector:String):List<String>{val s=parseSelector(selector)?:return emptyList();val paired=Regex("<${Regex.escape(s.tag)}\\b([^>]*)>([\\s\\S]*?)</${Regex.escape(s.tag)}>",setOf(RegexOption.IGNORE_CASE,RegexOption.DOT_MATCHES_ALL));return paired.findAll(html).filter{classMatches(it.groupValues[1],s.clazz)}.map{it.value}.toList()}
++    private fun selectFirstTag(html:String,selector:String):String{val s=parseSelector(selector)?:return "";val re=Regex("<${Regex.escape(s.tag)}\\b([^>]*)>(?:[\\s\\S]*?</${Regex.escape(s.tag)}>)?|<${Regex.escape(s.tag)}\\b([^>]*)/?>",setOf(RegexOption.IGNORE_CASE,RegexOption.DOT_MATCHES_ALL));return re.findAll(html).firstOrNull{classMatches(it.groupValues.getOrElse(1){""}.ifBlank{it.groupValues.getOrElse(2){""}},s.clazz)}?.value.orEmpty()}
++    private fun extractText(html:String,selector:String):String{if(selector.isBlank())return "";val s=parseSelector(selector)?:return "";val re=Regex("<${Regex.escape(s.tag)}\\b([^>]*)>([\\s\\S]*?)</${Regex.escape(s.tag)}>",setOf(RegexOption.IGNORE_CASE,RegexOption.DOT_MATCHES_ALL));val m=re.findAll(html).firstOrNull{classMatches(it.groupValues[1],s.clazz)}?:return "";return EngineParsing.stripTags(m.groupValues[2])}
++}

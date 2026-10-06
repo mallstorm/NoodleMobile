@@ -1,0 +1,271 @@
+diff --git a/app/src/main/java/pro/noodle/mobile/core/engine/impl/OEmbedEngine.kt b/app/src/main/java/pro/noodle/mobile/core/engine/impl/OEmbedEngine.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/engine/impl/OEmbedEngine.kt
+@@ -0,0 +1,20 @@
++package pro.noodle.mobile.core.engine.impl
++import pro.noodle.mobile.core.engine.runtime.*
++import pro.noodle.mobile.core.json.*
++class OEmbedEngine:SourceEngine{
++    override val id="oembed_provider"; override val aliases=setOf("oembed")
++    override fun resolvePlayback(text:String,pageUrl:String):EngineResolveResult{
++        val t=text.trim(); if(t.isBlank())return EngineResolveResult(handled=true,errorCode="OEMBED_EMPTY",errorMessage="Пустой ответ.")
++        if(t.startsWith("{")){
++            return try{
++                val o=MiniJson.parse(t) as? JsonValue.Obj ?: return EngineResolveResult(handled=true,errorCode="OEMBED_JSON_INVALID")
++                val html=o.string("html").orEmpty(); val iframe=EngineParsing.first(html,"<iframe[^>]+src=[\"']([^\"']+)[\"']")
++                val player=EngineParsing.absolute(iframe,pageUrl)
++                val url=o.string("url").orEmpty(); val source=EngineParsing.absolute(url,pageUrl)
++                EngineResolveResult(handled=true,success=player.isNotBlank()||source.isNotBlank(),title=o.string("title").orEmpty(),thumbnailUrl=o.string("thumbnail_url").orEmpty(),playerPageUrl=player,sources=if(source.isNotBlank()) listOf(pro.noodle.mobile.core.model.MediaSource(label="oEmbed",url=source,protocol=EngineParsing.protocol(source),isDefault=true)) else emptyList(),followUpPages=listOfNotNull(player.takeIf{it.isNotBlank()}),errorCode=if(player.isBlank()&&source.isBlank())"OEMBED_MEDIA_NOT_FOUND" else "")
++            }catch(e:Exception){EngineResolveResult(handled=true,errorCode="OEMBED_JSON_INVALID",errorMessage=e.message.orEmpty())}
++        }
++        val endpoint=Regex("<link\\b[^>]*>",setOf(RegexOption.IGNORE_CASE,RegexOption.DOT_MATCHES_ALL)).findAll(t).mapNotNull{m-> val tag=m.value; val rel=EngineParsing.attr(tag,"rel");val type=EngineParsing.attr(tag,"type");if(rel.equals("alternate",true)&&type.contains("oembed",true))EngineParsing.absolute(EngineParsing.attr(tag,"href"),pageUrl) else null}.firstOrNull().orEmpty()
++        return if(endpoint.isNotBlank())EngineResolveResult(handled=true,success=true,followUpPages=listOf(endpoint)) else EngineResolveResult(handled=true,errorCode="OEMBED_ENDPOINT_NOT_FOUND",errorMessage="oEmbed endpoint не найден.")
++    }
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/core/engine/impl/VideoJsEngine.kt b/app/src/main/java/pro/noodle/mobile/core/engine/impl/VideoJsEngine.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/engine/impl/VideoJsEngine.kt
+@@ -0,0 +1,25 @@
++package pro.noodle.mobile.core.engine.impl
++
++import pro.noodle.mobile.core.engine.runtime.*
++import pro.noodle.mobile.core.json.*
++import pro.noodle.mobile.core.model.MediaSource
++import pro.noodle.mobile.core.model.TextTrack
++
++class VideoJsEngine:SourceEngine{
++    override val id="videojs_config"; override val aliases=setOf("videojs","video.js","video_js")
++    override fun resolvePlayback(text:String,pageUrl:String):EngineResolveResult{
++        if(!Regex("video-js|videojs\\s*\\(|data-setup",RegexOption.IGNORE_CASE).containsMatchIn(text))return EngineResolveResult()
++        val sources=mutableListOf<MediaSource>();val tracks=mutableListOf<TextTrack>();val seen=linkedSetOf<String>();val seenT=linkedSetOf<String>()
++        fun addSource(raw:String,type:String="",label:String=""){val u=EngineParsing.absolute(raw,pageUrl);if(u.isBlank()||!seen.add(u.lowercase()))return;val mime=type.ifBlank{when(EngineParsing.protocol(u)){"hls"->"application/vnd.apple.mpegurl";"dash"->"application/dash+xml";else->"video/mp4"}};sources += MediaSource(label=EngineParsing.inferLabel(u,mime,label),url=u,mimeType=mime,protocol=EngineParsing.protocol(u,mime),isDefault=sources.isEmpty())}
++        fun addTrack(raw:String,kind:String="subtitles",lang:String="",label:String=""){val u=EngineParsing.absolute(raw,pageUrl);if(u.isBlank()||!seenT.add(u.lowercase()))return;tracks += TextTrack(label=label,language=lang.lowercase(),kind=kind.ifBlank{"subtitles"}.lowercase(),url=u,isDefault=tracks.isEmpty())}
++        Regex("<source\\b[^>]*>",setOf(RegexOption.IGNORE_CASE,RegexOption.DOT_MATCHES_ALL)).findAll(text).forEach{val tag=it.value;addSource(EngineParsing.attr(tag,"src"),EngineParsing.attr(tag,"type"),EngineParsing.attr(tag,"label"))}
++        Regex("<track\\b[^>]*>",setOf(RegexOption.IGNORE_CASE,RegexOption.DOT_MATCHES_ALL)).findAll(text).forEach{val tag=it.value;addTrack(EngineParsing.attr(tag,"src"),EngineParsing.attr(tag,"kind"),EngineParsing.attr(tag,"srclang"),EngineParsing.attr(tag,"label"))}
++        val videoTag=Regex("<video\\b[^>]*>",setOf(RegexOption.IGNORE_CASE,RegexOption.DOT_MATCHES_ALL)).findAll(text).map{it.value}.firstOrNull{tag->EngineParsing.attr(tag,"data-setup").isNotBlank()||EngineParsing.attr(tag,"class").contains("video-js",true)}.orEmpty()
++        val dataSetup=EngineParsing.attr(videoTag,"data-setup")
++        if(dataSetup.isNotBlank()){
++            try{val o=MiniJson.parse(EngineParsing.htmlDecode(dataSetup)) as? JsonValue.Obj;o?.arr("sources")?.values?.mapNotNull{it as? JsonValue.Obj}?.forEach{addSource(it.string("src").orEmpty().ifBlank{it.string("file").orEmpty()},it.string("type").orEmpty(),it.string("label").orEmpty())};o?.arr("tracks")?.values?.mapNotNull{it as? JsonValue.Obj}?.forEach{addTrack(it.string("src").orEmpty().ifBlank{it.string("file").orEmpty()},it.string("kind").orEmpty(),it.string("srclang").orEmpty().ifBlank{it.string("language").orEmpty()},it.string("label").orEmpty())}}catch(_:Exception){}
++        }
++        val poster=EngineParsing.absolute(EngineParsing.attr(videoTag,"poster"),pageUrl)
++        return if(sources.isNotEmpty())EngineResolveResult(handled=true,success=true,title=EngineParsing.titleFromHtml(text),thumbnailUrl=poster,sources=sources,tracks=tracks) else EngineResolveResult(handled=true,title=EngineParsing.titleFromHtml(text),thumbnailUrl=poster,errorCode="VIDEOJS_MEDIA_NOT_FOUND",errorMessage="Video.js найден, но источники отсутствуют.")
++    }
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/core/engine/impl/WordPressRestEngine.kt b/app/src/main/java/pro/noodle/mobile/core/engine/impl/WordPressRestEngine.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/engine/impl/WordPressRestEngine.kt
+@@ -0,0 +1,10 @@
++package pro.noodle.mobile.core.engine.impl
++
++import pro.noodle.mobile.core.engine.runtime.*
++import pro.noodle.mobile.core.json.*
++
++class WordPressRestEngine:SourceEngine{
++    override val id="wordpress_rest";override val aliases=setOf("wordpress","wp_rest")
++    override fun buildSearchUrl(request:EngineSearchRequest):String{if(request.baseUrl.isBlank()||request.query.isBlank())return "";val page=(request.page+1).coerceAtLeast(1);val per=request.maxItems.takeIf{it>0}?:25;return "${request.baseUrl.trimEnd('/')}/wp-json/wp/v2/search?search=${EngineParsing.encodedQuery(request.query)}&page=$page&per_page=$per"}
++    override fun parseSearch(text:String,request:EngineSearchRequest):List<EngineSearchItem>{val arr=try{MiniJson.parse(text) as? JsonValue.Arr}catch(_:Exception){null}?:return emptyList();return arr.values.mapNotNull{it as? JsonValue.Obj}.mapNotNull{o->val id=when(val v=o.values["id"]){is JsonValue.Str->v.value;is JsonValue.Num->v.value.toLong().toString();else->""};val url=EngineParsing.absolute(o.string("url").orEmpty(),request.baseUrl);if(url.isBlank())return@mapNotNull null;EngineSearchItem(id.ifBlank{url.substringAfterLast('/')},url,o.string("title").orEmpty().ifBlank{id})}.take(request.maxItems.coerceAtLeast(1))}
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/core/engine/runtime/EngineContract.kt b/app/src/main/java/pro/noodle/mobile/core/engine/runtime/EngineContract.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/engine/runtime/EngineContract.kt
+@@ -0,0 +1,60 @@
++package pro.noodle.mobile.core.engine.runtime
++
++import pro.noodle.mobile.core.model.AudioTrack
++import pro.noodle.mobile.core.model.MediaSource
++import pro.noodle.mobile.core.model.MediaVariant
++import pro.noodle.mobile.core.model.TextTrack
++
++data class EngineSearchRequest(
++    val baseUrl: String,
++    val query: String,
++    val page: Int = -1,
++    val maxItems: Int = 40,
++    val searchUrlTemplate: String = "",
++    val itemSelector: String = "",
++    val titleSelector: String = "",
++    val urlSelector: String = "",
++    val thumbnailSelector: String = "",
++    val thumbnailAttribute: String = "",
++    val durationSelector: String = "",
++    val viewsSelector: String = "",
++    val itemsPath: String = "",
++    val idPath: String = "",
++    val titlePath: String = "",
++    val urlPath: String = "",
++    val thumbnailPath: String = "",
++    val durationPath: String = "",
++    val viewsPath: String = "",
++)
++
++data class EngineSearchItem(
++    val remoteId: String = "",
++    val watchPath: String = "",
++    val title: String = "",
++    val thumbnailUrl: String = "",
++    val durationText: String = "",
++    val viewsText: String = "",
++)
++
++data class EngineResolveResult(
++    val handled: Boolean = false,
++    val success: Boolean = false,
++    val title: String = "",
++    val thumbnailUrl: String = "",
++    val playerPageUrl: String = "",
++    val sources: List<MediaSource> = emptyList(),
++    val variants: List<MediaVariant> = emptyList(),
++    val audioTracks: List<AudioTrack> = emptyList(),
++    val tracks: List<TextTrack> = emptyList(),
++    val followUpPages: List<String> = emptyList(),
++    val errorCode: String = "",
++    val errorMessage: String = "",
++)
++
++interface SourceEngine {
++    val id: String
++    val aliases: Set<String> get() = emptySet()
++    fun buildSearchUrl(request: EngineSearchRequest): String = ""
++    fun parseSearch(text: String, request: EngineSearchRequest): List<EngineSearchItem> = emptyList()
++    fun resolvePlayback(text: String, pageUrl: String): EngineResolveResult = EngineResolveResult()
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/core/engine/runtime/EngineParsing.kt b/app/src/main/java/pro/noodle/mobile/core/engine/runtime/EngineParsing.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/engine/runtime/EngineParsing.kt
+@@ -0,0 +1,88 @@
++package pro.noodle.mobile.core.engine.runtime
++
++import java.net.URI
++import java.net.URLDecoder
++import java.net.URLEncoder
++import java.nio.charset.StandardCharsets
++
++object EngineParsing {
++    fun htmlDecode(value: String): String {
++        var s = value.replace("\\/", "/")
++        val named = mapOf("amp" to "&", "quot" to "\"", "apos" to "'", "lt" to "<", "gt" to ">", "nbsp" to " ")
++        s = Regex("&(#x[0-9a-fA-F]+|#[0-9]+|[A-Za-z]+);").replace(s) { m ->
++            val token = m.groupValues[1]
++            when {
++                token.startsWith("#x", true) -> token.substring(2).toIntOrNull(16)?.let { String(Character.toChars(it)) }
++                token.startsWith("#") -> token.substring(1).toIntOrNull()?.let { String(Character.toChars(it)) }
++                else -> named[token.lowercase()]
++            } ?: m.value
++        }
++        return s.trim()
++    }
++
++    fun stripTags(value: String): String = htmlDecode(
++        Regex("<[^>]+>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).replace(value, " ")
++    ).replace(Regex("\\s+"), " ").trim()
++
++    fun first(input: String, pattern: String, group: Int = 1): String =
++        Regex(pattern, setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(input)?.groupValues?.getOrNull(group)?.trim().orEmpty()
++
++    fun absolute(raw: String, baseUrl: String): String {
++        val value = htmlDecode(raw)
++        if (value.isBlank()) return ""
++        return try {
++            val base = URI(baseUrl)
++            when {
++                value.startsWith("//") -> "${base.scheme ?: "https"}:$value"
++                else -> base.resolve(value).toString()
++            }
++        } catch (_: Exception) {
++            value.takeIf { it.startsWith("http://", true) || it.startsWith("https://", true) }.orEmpty()
++        }
++    }
++
++    fun encodedQuery(value: String): String = URLEncoder.encode(value.trim(), StandardCharsets.UTF_8.name()).replace("+", "%20")
++    fun urlDecode(value: String): String = try { URLDecoder.decode(value, StandardCharsets.UTF_8.name()) } catch (_: Exception) { value }
++
++    fun attr(tag: String, name: String): String {
++        val q = Regex("\\b${Regex.escape(name)}\\s*=\\s*([\"'])(.*?)\\1", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(tag)
++        if (q != null) return htmlDecode(q.groupValues[2])
++        return Regex("\\b${Regex.escape(name)}\\s*=\\s*([^\\s>]+)", RegexOption.IGNORE_CASE).find(tag)?.groupValues?.getOrNull(1)?.let(::htmlDecode).orEmpty()
++    }
++
++    fun hasBooleanAttr(tag: String, name: String): Boolean = Regex("(?:^|\\s)${Regex.escape(name)}(?:\\s|=|/?>)", RegexOption.IGNORE_CASE).containsMatchIn(tag)
++
++    fun protocol(url: String, mime: String = ""): String {
++        val u = url.lowercase()
++        val m = mime.lowercase()
++        return when {
++            u.contains(".m3u8") || m.contains("mpegurl") -> "hls"
++            u.contains(".mpd") || m.contains("dash") -> "dash"
++            else -> "http"
++        }
++    }
++
++    fun inferLabel(url: String, mime: String = "", declared: String = ""): String {
++        if (declared.isNotBlank()) return htmlDecode(declared)
++        val quality = Regex("(?:^|[^0-9])(2160|1440|1080|720|480|360|240)p?(?:[^0-9]|$)", RegexOption.IGNORE_CASE).find(url)?.groupValues?.getOrNull(1)
++        if (!quality.isNullOrBlank()) return "${quality}p"
++        return when (protocol(url, mime)) {
++            "hls" -> "HLS"
++            "dash" -> "DASH"
++            else -> mime.trim().ifBlank { "Auto" }
++        }
++    }
++
++    fun titleFromHtml(html: String): String {
++        val og = Regex("<meta[^>]+(?:property|name)=[\"']og:title[\"'][^>]+content=[\"']([^\"']+)[\"'][^>]*>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(html)?.groupValues?.getOrNull(1)
++            ?: Regex("<meta[^>]+content=[\"']([^\"']+)[\"'][^>]+(?:property|name)=[\"']og:title[\"'][^>]*>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(html)?.groupValues?.getOrNull(1)
++        if (!og.isNullOrBlank()) return htmlDecode(og)
++        return stripTags(first(html, "<title[^>]*>([\\s\\S]*?)</title>"))
++    }
++
++    fun imageFromHtml(html: String, baseUrl: String): String {
++        val raw = first(html, "<meta[^>]+(?:property|name)=[\"']og:image[\"'][^>]+content=[\"']([^\"']+)[\"']")
++            .ifBlank { first(html, "<meta[^>]+content=[\"']([^\"']+)[\"'][^>]+(?:property|name)=[\"']og:image[\"']") }
++        return absolute(raw, baseUrl)
++    }
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/core/engine/runtime/RuntimeEngineRegistry.kt b/app/src/main/java/pro/noodle/mobile/core/engine/runtime/RuntimeEngineRegistry.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/engine/runtime/RuntimeEngineRegistry.kt
+@@ -0,0 +1,38 @@
++package pro.noodle.mobile.core.engine.runtime
++
++import pro.noodle.mobile.core.engine.EngineRegistry
++import pro.noodle.mobile.core.engine.impl.*
++
++object RuntimeEngineRegistry {
++    private val engines: List<SourceEngine> = listOf(
++        KvsSourceEngine("kvs_view", setOf("kvs","kvs_flashvars","fapaxi"), KvsSourceEngine.Mode.VIEW),
++        KvsSourceEngine("kvs_videos", setOf("pornobomba","kvs_videos_flashvars"), KvsSourceEngine.Mode.VIDEOS),
++        NoodleWatchEngine(),
++        SosalkinoCatalogEngine(),
++        NovideoEmbedEngine(),
++        GenericHtml5Engine(),
++        GenericPlayerConfigEngine(),
++        JwPlayerEngine(),
++        VideoJsEngine(),
++        IFrameChainEngine(),
++        HlsManifestEngine(),
++        DashManifestEngine(),
++        OEmbedEngine(),
++        DeclarativeHtmlEngine(),
++        JsonApiEngine(),
++        WordPressRestEngine(),
++    )
++    private val byId: Map<String, SourceEngine> = buildMap {
++        engines.forEach { engine ->
++            put(engine.id.lowercase(), engine)
++            engine.aliases.forEach { put(it.lowercase(), engine) }
++        }
++    }
++
++    val implementedIds: Set<String> get() = engines.mapTo(linkedSetOf()) { it.id }
++
++    fun find(idOrAlias: String): SourceEngine? {
++        val raw = idOrAlias.trim().lowercase()
++        return byId[raw] ?: byId[EngineRegistry.normalizeId(raw)]
++    }
++}

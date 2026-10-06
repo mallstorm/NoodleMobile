@@ -1,0 +1,241 @@
+diff --git a/app/src/main/java/pro/noodle/mobile/core/security/UrlPolicy.kt b/app/src/main/java/pro/noodle/mobile/core/security/UrlPolicy.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/security/UrlPolicy.kt
+@@ -0,0 +1,83 @@
++package pro.noodle.mobile.core.security
++
++import java.net.IDN
++import java.net.Inet4Address
++import java.net.Inet6Address
++import java.net.InetAddress
++import java.net.URI
++
++fun interface HostResolver { fun resolve(host: String): List<InetAddress> }
++
++object SystemHostResolver : HostResolver {
++    override fun resolve(host: String): List<InetAddress> = InetAddress.getAllByName(host).toList()
++}
++
++data class UrlDecision(val allowed: Boolean, val errorCode: String = "", val reason: String = "", val normalizedUrl: String = "")
++
++object UrlPolicy {
++    private val blockedSchemes = setOf("javascript", "data", "vbscript", "file", "ftp")
++
++    fun evaluateNavigation(url: String, allowHttp: Boolean = false, allowPrivateHosts: Boolean = false, resolveDns: Boolean = false, resolver: HostResolver = SystemHostResolver): UrlDecision {
++        val raw = url.trim()
++        if (raw.isEmpty()) return deny("URL_EMPTY", "URL пуст.", raw)
++        val uri = try { URI(raw) } catch (_: Exception) { return deny("URL_INVALID", "Некорректный URL.", raw) }
++        val scheme = uri.scheme?.lowercase().orEmpty()
++        if (scheme in blockedSchemes) return deny("URL_SCHEME_BLOCKED", "Схема $scheme запрещена.", raw)
++        if (scheme != "https" && !(scheme == "http" && allowHttp)) return deny("URL_SCHEME_UNSAFE", "Разрешён HTTPS; HTTP допускается только явной legacy-политикой.", raw)
++        val hostRaw = uri.host?.trim()?.lowercase().orEmpty()
++        if (hostRaw.isEmpty()) return deny("URL_HOST_MISSING", "Домен отсутствует.", raw)
++        if (hostRaw.contains("..") || hostRaw.startsWith('.') || hostRaw.endsWith('.')) return deny("URL_HOST_INVALID", "Некорректный домен.", raw)
++        val host = try { IDN.toASCII(hostRaw).lowercase() } catch (_: Exception) { return deny("URL_HOST_INVALID", "Некорректный IDN-домен.", raw) }
++        if (!allowPrivateHosts && isPrivateHostLiteral(host)) return deny("URL_PRIVATE_HOST_BLOCKED", "Локальные/private адреса запрещены.", raw)
++        if (!allowPrivateHosts && resolveDns) {
++            val addresses = try { resolver.resolve(host) } catch (_: Exception) { return deny("URL_DNS_FAILED", "Не удалось безопасно разрешить DNS.", raw) }
++            if (addresses.isEmpty()) return deny("URL_DNS_EMPTY", "DNS не вернул адресов.", raw)
++            if (addresses.any(::isUnsafeAddress)) return deny("URL_DNS_PRIVATE_BLOCKED", "Домен разрешается в локальный/private адрес.", raw)
++        }
++        val normalized = try { URI(scheme, uri.userInfo, host, uri.port, uri.path, uri.query, uri.fragment).toASCIIString() } catch (_: Exception) { raw }
++        return UrlDecision(true, normalizedUrl = normalized)
++    }
++
++    fun evaluateMedia(url: String, allowHttp: Boolean = false, resolveDns: Boolean = false, resolver: HostResolver = SystemHostResolver) =
++        evaluateNavigation(url, allowHttp, allowPrivateHosts = false, resolveDns = resolveDns, resolver = resolver)
++
++    fun isHttpsDowngrade(fromUrl: String, toUrl: String): Boolean = scheme(fromUrl) == "https" && scheme(toUrl) == "http"
++
++    fun isHostAllowed(host: String, allowedHosts: List<String>): Boolean {
++        val candidate = host.trim().lowercase().trimEnd('.')
++        if (candidate.isBlank()) return false
++        return allowedHosts.any { patternRaw ->
++            val pattern = patternRaw.trim().lowercase().trimEnd('.')
++            if (pattern.startsWith("*.")) {
++                val root = pattern.removePrefix("*.")
++                candidate == root || candidate.endsWith(".$root")
++            } else candidate == pattern
++        }
++    }
++
++    private fun scheme(url: String): String = try { URI(url.trim()).scheme?.lowercase().orEmpty() } catch (_: Exception) { "" }
++    private fun deny(code: String, reason: String, url: String) = UrlDecision(false, code, reason, url)
++
++    private fun isPrivateHostLiteral(host: String): Boolean {
++        if (host.isBlank() || host == "localhost" || host.endsWith(".localhost") || host == "0.0.0.0" || host == "::" || host == "::1") return true
++        return try {
++            if (host.matches(Regex("^[0-9.]+$")) || host.contains(':')) isUnsafeAddress(InetAddress.getByName(host)) else false
++        } catch (_: Exception) { false }
++    }
++
++    fun isUnsafeAddress(address: InetAddress): Boolean {
++        if (address.isAnyLocalAddress || address.isLoopbackAddress || address.isLinkLocalAddress || address.isSiteLocalAddress || address.isMulticastAddress) return true
++        return when (address) {
++            is Inet4Address -> {
++                val b = address.address.map { it.toInt() and 0xff }
++                b[0] == 10 || b[0] == 127 || (b[0] == 169 && b[1] == 254) || (b[0] == 172 && b[1] in 16..31) || (b[0] == 192 && b[1] == 168) || b[0] == 0 || b[0] >= 224
++            }
++            is Inet6Address -> {
++                val b0 = address.address[0].toInt() and 0xff
++                val b1 = address.address[1].toInt() and 0xff
++                (b0 and 0xfe) == 0xfc || (b0 == 0xfe && (b1 and 0xc0) == 0x80)
++            }
++            else -> true
++        }
++    }
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/core/selftest/CoreSelfTest.kt b/app/src/main/java/pro/noodle/mobile/core/selftest/CoreSelfTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/selftest/CoreSelfTest.kt
+@@ -0,0 +1,56 @@
++package pro.noodle.mobile.core.selftest
++
++import pro.noodle.mobile.core.adapter.AdapterValidator
++import pro.noodle.mobile.core.engine.EngineDependencies
++import pro.noodle.mobile.core.engine.EngineRegistry
++import pro.noodle.mobile.core.engine.runtime.RuntimeEngineRegistry
++import pro.noodle.mobile.core.engine.impl.GenericHtml5Engine
++import pro.noodle.mobile.core.engine.impl.HlsManifestEngine
++import pro.noodle.mobile.core.resolver.ResolverFetcher
++import pro.noodle.mobile.core.resolver.ResolverPipeline
++import pro.noodle.mobile.core.security.HostResolver
++import pro.noodle.mobile.core.security.UrlPolicy
++import pro.noodle.mobile.core.version.SemanticVersion
++import java.net.InetAddress
++
++data class Check(val name:String,val passed:Boolean,val detail:String="")
++data class SelfTestReport(val checks:List<Check>){ val passed get()=checks.all{it.passed} }
++
++object CoreSelfTest {
++    fun run(): SelfTestReport {
++        val checks=mutableListOf<Check>()
++        checks += Check("15 canonical engines", EngineRegistry.knownEngineIds.size==15, EngineRegistry.knownEngineIds.joinToString())
++        checks += Check("15 runtime engines", RuntimeEngineRegistry.implementedIds.size==15, RuntimeEngineRegistry.implementedIds.sorted().joinToString())
++        val dep=EngineDependencies.validateRegistry(); checks += Check("Engine dependency graph",dep.success,dep.errorMessage)
++        checks += Check("Legacy alias normalization",EngineRegistry.normalizeId("kvs")=="kvs_view")
++        checks += Check("iframe requires generic_html5",EngineDependencies.validate("iframe_chain",listOf("generic_html5")).success)
++        checks += Check("Unknown dependency rejected",EngineDependencies.validate("generic_html5",listOf("does_not_exist")).errorCode=="ENGINE_DEP_UNKNOWN")
++        checks += Check("Transitive dependency rejected",EngineDependencies.validate("kvs_videos",listOf("iframe_chain")).errorCode=="ENGINE_DEP_TRANSITIVE_REQUIRED_MISSING")
++        checks += Check("HTTPS allowed",UrlPolicy.evaluateNavigation("https://example.com/video").allowed)
++        checks += Check("JavaScript blocked",!UrlPolicy.evaluateNavigation("javascript:alert(1)").allowed)
++        checks += Check("HTTP blocked by default",!UrlPolicy.evaluateNavigation("http://example.com/video").allowed)
++        checks += Check("Explicit legacy HTTP allowed",UrlPolicy.evaluateNavigation("http://example.com/video",allowHttp=true).allowed)
++        checks += Check("Loopback blocked",!UrlPolicy.evaluateNavigation("https://127.0.0.1/video").allowed)
++        checks += Check("HTTPS downgrade detected",UrlPolicy.isHttpsDowngrade("https://example.com/a","http://example.com/a"))
++        checks += Check("Wildcard host safe",UrlPolicy.isHostAllowed("cdn.example.com",listOf("*.example.com"))&&!UrlPolicy.isHostAllowed("evil-example.com",listOf("*.example.com")))
++        val fakePrivate=HostResolver{listOf(InetAddress.getByName("192.168.1.10"))}
++        checks += Check("DNS private target blocked",UrlPolicy.evaluateNavigation("https://public.example/a",resolveDns=true,resolver=fakePrivate).errorCode=="URL_DNS_PRIVATE_BLOCKED")
++        checks += Check("SemVer prerelease",SemanticVersion.parseOrNull("1.2.3-alpha.1")!! < SemanticVersion.parseOrNull("1.2.3")!!)
++        val schema = """{"version":3,"id":"sample","name":"Sample","adapter_version":"1.0.0","base_url":"https://example.com","engine":"iframe_chain","engine_dependencies":["generic_html5","hls_manifest"],"permissions":{"allowed_hosts":["example.com"]},"repair":{"enabled":true,"mode":"conservative","failure_threshold":3,"cooldown_minutes":60,"auto_quarantine":true,"strategies":["resolver_refresh"]}}"""
++        val av=AdapterValidator.validate(schema); checks += Check("Schema v3 valid fixture",av.isValid,"${av.errorCode} ${av.errorMessage}")
++        val missing=schema.replace("[\"generic_html5\",\"hls_manifest\"]","[]"); val mv=AdapterValidator.validate(missing); checks += Check("Missing iframe dependency rejected",!mv.isValid&&mv.errorCode=="ENGINE_DEP_REQUIRED_MISSING",mv.errorCode)
++        val undeclared="""{"version":3,"id":"sample","name":"Sample","adapter_version":"1.0.0","base_url":"https://example.com","engine":"generic_html5","engine_dependencies":[],"permissions":{"allowed_hosts":["example.com"]},"view":{"strategies":["generic_html5","jwplayer_config"]},"repair":{"mode":"conservative"}}"""
++        checks += Check("Undeclared view engine rejected",AdapterValidator.validate(undeclared).errorCode=="ADAPTER_VIEW_ENGINE_UNDECLARED")
++        val unsafeRepair="""{"version":3,"id":"sample","name":"Sample","adapter_version":"1.0.0","base_url":"https://example.com","engine":"generic_html5","engine_dependencies":[],"permissions":{"allowed_hosts":["example.com"]},"repair":{"enabled":true,"mode":"execute_script","strategies":["resolver_refresh"]}}"""
++        checks += Check("Unsafe repair mode rejected",AdapterValidator.validate(unsafeRepair).errorCode=="ADAPTER_REPAIR_MODE_UNSUPPORTED")
++        val unknownRepair="""{"version":3,"id":"sample","name":"Sample","adapter_version":"1.0.0","base_url":"https://example.com","engine":"generic_html5","engine_dependencies":[],"permissions":{"allowed_hosts":["example.com"]},"repair":{"enabled":true,"mode":"conservative","strategies":["arbitrary_code"]}}"""
++        checks += Check("Unknown repair strategy rejected",AdapterValidator.validate(unknownRepair).errorCode=="ADAPTER_REPAIR_STRATEGY_UNKNOWN")
++        val generic = GenericHtml5Engine().resolvePlayback("<video><source src=\"/v.mp4\" type=\"video/mp4\"></video>", "https://example.com/watch/1")
++        checks += Check("Generic HTML5 runtime", generic.success && generic.sources.firstOrNull()?.url == "https://example.com/v.mp4")
++        val hls = HlsManifestEngine().resolvePlayback("#EXTM3U\n#EXTINF:6,\nseg.ts", "https://cdn.example/media.m3u8")
++        checks += Check("HLS media runtime", hls.success && hls.sources.firstOrNull()?.protocol == "hls")
++        val pipeline = ResolverPipeline.resolve("<video><source src=\"https://cdn.example/master.m3u8\"></video>", "https://example.com/watch", "generic_html5", listOf("hls_manifest"), ResolverFetcher { if (it.contains("master.m3u8")) "#EXTM3U\n#EXTINF:5,\nseg.ts" else null })
++        checks += Check("Resolver pipeline runtime", pipeline.success && pipeline.sources.isNotEmpty())
++        return SelfTestReport(checks)
++    }
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/core/settings/AppSettings.kt b/app/src/main/java/pro/noodle/mobile/core/settings/AppSettings.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/settings/AppSettings.kt
+@@ -0,0 +1,87 @@
++package pro.noodle.mobile.core.settings
++
++import android.content.Context
++import androidx.datastore.preferences.core.*
++import androidx.datastore.preferences.preferencesDataStore
++import kotlinx.coroutines.flow.Flow
++import kotlinx.coroutines.flow.map
++
++internal val Context.noodleSettingsStore by preferencesDataStore("noodle_settings")
++
++data class AppSettings(
++    val theme: String = "noodle_neon",
++    val uiScalePercent: Int = 100,
++    val parallelDownloads: Int = 2,
++    val backgroundMonitoring: Boolean = false,
++    val monitoringIntervalHours: Int = 24,
++    val rememberPlaybackPosition: Boolean = true,
++    val relatedVideosColumns: Int = 2,
++    val lockMode: String = "none",
++    val lockSalt: String = "",
++    val lockHash: String = "",
++    val followedSources: Set<String> = emptySet(),
++)
++
++class AppSettingsRepository(private val context: Context) {
++    private object Keys {
++        val theme = stringPreferencesKey("theme")
++        val uiScalePercent = intPreferencesKey("ui_scale_percent")
++        val parallelDownloads = intPreferencesKey("parallel_downloads")
++        val backgroundMonitoring = booleanPreferencesKey("background_monitoring")
++        val monitoringIntervalHours = intPreferencesKey("monitoring_interval_hours")
++        val rememberPlaybackPosition = booleanPreferencesKey("remember_playback_position")
++        val relatedVideosColumns = intPreferencesKey("related_videos_columns")
++        val lockMode = stringPreferencesKey("lock_mode")
++        val lockSalt = stringPreferencesKey("lock_salt")
++        val lockHash = stringPreferencesKey("lock_hash")
++        val followedSources = stringSetPreferencesKey("followed_sources")
++    }
++
++    val settings: Flow<AppSettings> = context.noodleSettingsStore.data.map { p ->
++        AppSettings(
++            theme = p[Keys.theme] ?: "noodle_neon",
++            uiScalePercent = (p[Keys.uiScalePercent] ?: 100).let { raw ->
++                when {
++                    raw >= 95 -> 100
++                    raw >= 85 -> 90
++                    else -> 80
++                }
++            },
++            parallelDownloads = (p[Keys.parallelDownloads] ?: 2).coerceIn(1, 3),
++            backgroundMonitoring = p[Keys.backgroundMonitoring] ?: false,
++            monitoringIntervalHours = (p[Keys.monitoringIntervalHours] ?: 24).coerceIn(6, 168),
++            rememberPlaybackPosition = p[Keys.rememberPlaybackPosition] ?: true,
++            relatedVideosColumns = (p[Keys.relatedVideosColumns] ?: 2).let { if (it == 1) 1 else 2 },
++            lockMode = p[Keys.lockMode] ?: "none",
++            lockSalt = p[Keys.lockSalt] ?: "",
++            lockHash = p[Keys.lockHash] ?: "",
++            followedSources = p[Keys.followedSources] ?: emptySet(),
++        )
++    }
++
++    suspend fun setTheme(value: String) = context.noodleSettingsStore.edit { it[Keys.theme] = value }
++    suspend fun setUiScalePercent(value: Int) = context.noodleSettingsStore.edit {
++        it[Keys.uiScalePercent] = when {
++            value >= 95 -> 100
++            value >= 85 -> 90
++            else -> 80
++        }
++    }
++    suspend fun setParallelDownloads(value: Int) = context.noodleSettingsStore.edit { it[Keys.parallelDownloads] = value.coerceIn(1, 3) }
++    suspend fun setBackgroundMonitoring(value: Boolean) = context.noodleSettingsStore.edit { it[Keys.backgroundMonitoring] = value }
++    suspend fun setMonitoringIntervalHours(value: Int) = context.noodleSettingsStore.edit { it[Keys.monitoringIntervalHours] = value.coerceIn(6, 168) }
++    suspend fun setRememberPlaybackPosition(value: Boolean) = context.noodleSettingsStore.edit { it[Keys.rememberPlaybackPosition] = value }
++    suspend fun setRelatedVideosColumns(value: Int) = context.noodleSettingsStore.edit {
++        it[Keys.relatedVideosColumns] = if (value == 1) 1 else 2
++    }
++    suspend fun setAppLock(mode: String, salt: String = "", hash: String = "") = context.noodleSettingsStore.edit {
++        it[Keys.lockMode] = mode
++        if (salt.isBlank()) it.remove(Keys.lockSalt) else it[Keys.lockSalt] = salt
++        if (hash.isBlank()) it.remove(Keys.lockHash) else it[Keys.lockHash] = hash
++    }
++    suspend fun setSourceFollowed(sourceKey: String, followed: Boolean) = context.noodleSettingsStore.edit { p ->
++        val next = (p[Keys.followedSources] ?: emptySet()).toMutableSet()
++        if (followed) next += sourceKey else next -= sourceKey
++        p[Keys.followedSources] = next
++    }
++}

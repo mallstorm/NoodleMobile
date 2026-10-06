@@ -1,0 +1,249 @@
+diff --git a/app/src/main/java/pro/noodle/mobile/core/settings/SourceOverridesRepository.kt b/app/src/main/java/pro/noodle/mobile/core/settings/SourceOverridesRepository.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/settings/SourceOverridesRepository.kt
+@@ -0,0 +1,72 @@
++package pro.noodle.mobile.core.settings
++
++import android.content.Context
++import androidx.datastore.preferences.core.edit
++import androidx.datastore.preferences.core.stringPreferencesKey
++import androidx.datastore.preferences.core.stringSetPreferencesKey
++import kotlinx.coroutines.flow.Flow
++import kotlinx.coroutines.flow.map
++
++/**
++ * User-owned source enable/disable state. It intentionally lives outside signed/bundled SNP JSON,
++ * so an app/SNP update cannot silently re-enable a source the user disabled.
++ *
++ * forceEnabledSourceIds lets the user explicitly enable a Studio/custom SNP whose adapter.json
++ * deliberately ships with enabled=false. soloSourceId is a reversible test mode: search uses only
++ * that source without destroying the user's existing enable/disable choices.
++ */
++class SourceOverridesRepository(private val context: Context) {
++    private val disabledKey = stringSetPreferencesKey("disabled_source_ids")
++    private val forceEnabledKey = stringSetPreferencesKey("force_enabled_source_ids")
++    private val soloKey = stringPreferencesKey("solo_source_id")
++
++    val disabledSourceIds: Flow<Set<String>> = context.noodleSettingsStore.data.map { prefs ->
++        prefs[disabledKey].orEmpty().map { it.lowercase() }.toSet()
++    }
++
++    val forceEnabledSourceIds: Flow<Set<String>> = context.noodleSettingsStore.data.map { prefs ->
++        prefs[forceEnabledKey].orEmpty().map { it.lowercase() }.toSet()
++    }
++
++    val soloSourceId: Flow<String> = context.noodleSettingsStore.data.map { prefs ->
++        prefs[soloKey].orEmpty().trim().lowercase()
++    }
++
++    suspend fun setEnabled(sourceId: String, enabled: Boolean) {
++        val id = sourceId.trim().lowercase()
++        if (id.isBlank()) return
++        context.noodleSettingsStore.edit { prefs ->
++            val disabled = prefs[disabledKey].orEmpty().toMutableSet()
++            val forced = prefs[forceEnabledKey].orEmpty().toMutableSet()
++            if (enabled) {
++                disabled.remove(id)
++                forced.add(id)
++            } else {
++                disabled.add(id)
++                forced.remove(id)
++                if (prefs[soloKey].orEmpty().equals(id, true)) prefs.remove(soloKey)
++            }
++            prefs[disabledKey] = disabled
++            prefs[forceEnabledKey] = forced
++        }
++    }
++
++    suspend fun clear(sourceId: String) {
++        val id = sourceId.trim().lowercase()
++        if (id.isBlank()) return
++        context.noodleSettingsStore.edit { prefs ->
++            val disabled = prefs[disabledKey].orEmpty().toMutableSet().apply { remove(id) }
++            val forced = prefs[forceEnabledKey].orEmpty().toMutableSet().apply { remove(id) }
++            prefs[disabledKey] = disabled
++            prefs[forceEnabledKey] = forced
++            if (prefs[soloKey].orEmpty().equals(id, true)) prefs.remove(soloKey)
++        }
++    }
++
++    suspend fun setSoloSource(sourceId: String?) {
++        val id = sourceId.orEmpty().trim().lowercase()
++        context.noodleSettingsStore.edit { prefs ->
++            if (id.isBlank()) prefs.remove(soloKey) else prefs[soloKey] = id
++        }
++    }
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/core/source/AdapterBreakageMonitor.kt b/app/src/main/java/pro/noodle/mobile/core/source/AdapterBreakageMonitor.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/source/AdapterBreakageMonitor.kt
+@@ -0,0 +1,56 @@
++package pro.noodle.mobile.core.source
++
++import android.content.Context
++import pro.noodle.mobile.core.json.JsonValue
++import pro.noodle.mobile.core.settings.SourceOverridesRepository
++
++
++enum class BreakageStatus(val wireName:String){HEALTHY("healthy"),DEGRADED("degraded"),BROKEN("broken"),REPAIR_SUCCEEDED("repair_succeeded"),REPAIR_FAILED("repair_failed"),QUARANTINED("quarantined"),INVALID("invalid")}
++
++data class BreakageResult(
++    val adapterId:String,
++    val status:BreakageStatus,
++    val semanticStatus:String="",
++    val consecutiveFailures:Int=0,
++    val threshold:Int=3,
++    val repairAction:String="",
++    val errorCode:String="",
++    val message:String="",
++)
++
++class AdapterBreakageMonitor(
++    context:Context,
++    private val repo:RuntimeAdapterRepository=RuntimeAdapterRepository(context),
++    private val probe:AdapterProbeService=AdapterProbeService(context,repo),
++    private val repair:AdapterRepairPipeline=AdapterRepairPipeline(context,repo),
++){
++    private val store=SourceStatusStore(FileRefs.breakage(repo.paths))
++    private val overrides=SourceOverridesRepository(context.applicationContext)
++
++    suspend fun checkOne(adapterId:String):BreakageResult{
++        val runtime=repo.find(adapterId)?:return BreakageResult(adapterId,BreakageStatus.INVALID,errorCode="SNP_NOT_FOUND",message="SNP не найден.")
++        val d=runtime.definition
++        val threshold=d.repairFailureThreshold.coerceAtLeast(1)
++        val oldFailures=store.getInt(d.id,"failures")
++        val lastRepair=store.getLong(d.id,"last_repair_unix")
++        val semantic=probe.semantic(d.id)
++        if(semantic.status==SemanticStatus.HEALTHY){
++            val out=BreakageResult(d.id,BreakageStatus.HEALTHY,semantic.status.wireName,0,threshold,message=semantic.message)
++            save(out,lastRepair);return out
++        }
++        val failures=oldFailures+1
++        if(failures<threshold){val out=BreakageResult(d.id,BreakageStatus.DEGRADED,semantic.status.wireName,failures,threshold,errorCode=semantic.errorCode,message=semantic.message);save(out,lastRepair);return out}
++        if(!d.repairEnabled){val out=BreakageResult(d.id,BreakageStatus.BROKEN,semantic.status.wireName,failures,threshold,errorCode=semantic.errorCode,message=semantic.message);save(out,lastRepair);return out}
++        val now=System.currentTimeMillis()/1000
++        val cooldown=d.repairCooldownMinutes.toLong()*60
++        if(lastRepair>0&&cooldown>0&&now-lastRepair<cooldown){val out=BreakageResult(d.id,BreakageStatus.BROKEN,semantic.status.wireName,failures,threshold,errorCode=semantic.errorCode,message=semantic.message+" Repair cooldown ещё активен.");save(out,lastRepair);return out}
++        val r=repair.tryRepair(d.id)
++        if(r.success){val out=BreakageResult(d.id,BreakageStatus.REPAIR_SUCCEEDED,semantic.status.wireName,0,threshold,"${r.strategy}:${r.oldVersion}->${r.newVersion}",message=r.message);save(out,now);return out}
++        var status=BreakageStatus.REPAIR_FAILED
++        var message=r.message.ifBlank{semantic.message}
++        if(d.repairAutoQuarantine){overrides.setEnabled(d.id,false);status=BreakageStatus.QUARANTINED;message+=" SNP отключён до ручной проверки."}
++        val out=BreakageResult(d.id,status,semantic.status.wireName,failures,threshold,r.strategy,r.errorCode.ifBlank{semantic.errorCode},message);save(out,now);return out
++    }
++
++    private fun save(r:BreakageResult,lastRepair:Long){store.put(r.adapterId,mapOf("status" to JsonValue.Str(r.status.wireName),"semantic_status" to JsonValue.Str(r.semanticStatus),"failures" to JsonValue.Num(r.consecutiveFailures.toDouble()),"threshold" to JsonValue.Num(r.threshold.toDouble()),"last_repair_unix" to JsonValue.Num(lastRepair.toDouble()),"error_code" to JsonValue.Str(r.errorCode),"message" to JsonValue.Str(r.message)))}
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/core/source/AdapterCompatibility.kt b/app/src/main/java/pro/noodle/mobile/core/source/AdapterCompatibility.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/source/AdapterCompatibility.kt
+@@ -0,0 +1,19 @@
++package pro.noodle.mobile.core.source
++
++import pro.noodle.mobile.core.version.BuildIdentity
++
++import pro.noodle.mobile.core.version.SemanticVersion
++
++data class AdapterCompatibilityResult(val compatible: Boolean, val status: String, val errorCode: String = "", val message: String = "")
++
++object AdapterCompatibility {
++    const val CURRENT_APP_VERSION = BuildIdentity.SNP_COMPATIBILITY_VERSION // Desktop Stage 9 compatibility contract; Android build version is independent.
++    fun evaluate(minVersion: String, maxVersion: String, appVersion: String = CURRENT_APP_VERSION): AdapterCompatibilityResult {
++        val app = SemanticVersion.parseOrNull(appVersion) ?: return AdapterCompatibilityResult(false, "app_version_invalid", "APP_VERSION_INVALID", "Некорректная версия приложения.")
++        val min = minVersion.takeIf { it.isNotBlank() }?.let { SemanticVersion.parseOrNull(it) ?: return AdapterCompatibilityResult(false, "min_invalid", "ADAPTER_MIN_APP_VERSION_INVALID", "Некорректный min_app_version.") }
++        val max = maxVersion.takeIf { it.isNotBlank() }?.let { SemanticVersion.parseOrNull(it) ?: return AdapterCompatibilityResult(false, "max_invalid", "ADAPTER_MAX_APP_VERSION_INVALID", "Некорректный max_app_version.") }
++        if (min != null && app < min) return AdapterCompatibilityResult(false, "requires_newer_app", "ADAPTER_APP_TOO_OLD", "Требуется Noodle >= $minVersion.")
++        if (max != null && app > max) return AdapterCompatibilityResult(false, "requires_older_app", "ADAPTER_APP_TOO_NEW", "SNP ограничен версией Noodle <= $maxVersion.")
++        return AdapterCompatibilityResult(true, "compatible")
++    }
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/core/source/AdapterMigration.kt b/app/src/main/java/pro/noodle/mobile/core/source/AdapterMigration.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/source/AdapterMigration.kt
+@@ -0,0 +1,82 @@
++package pro.noodle.mobile.core.source
++
++import pro.noodle.mobile.core.adapter.AdapterSchemaParser
++import pro.noodle.mobile.core.adapter.AdapterValidator
++import pro.noodle.mobile.core.engine.EngineDependencies
++import pro.noodle.mobile.core.json.*
++import java.io.File
++
++
++data class AdapterMigrationResult(
++    val success: Boolean,
++    val changed: Boolean = false,
++    val adapterId: String = "",
++    val oldSchemaVersion: Int = 0,
++    val newSchemaVersion: Int = 3,
++    val snapshotPath: String = "",
++    val errorCode: String = "",
++    val message: String = "",
++)
++
++class AdapterMigration(private val paths: AdapterStorePaths, private val recovery: AdapterRecoveryManager) {
++    fun migrateCustomToV3(adapterDir: File, createSnapshot: Boolean = true): AdapterMigrationResult {
++        if (!paths.isCustom(adapterDir)) return AdapterMigrationResult(false, errorCode = "ADAPTER_MIGRATION_CUSTOM_ONLY", message = "Штатные SNP мигрируют вместе с приложением.")
++        val adapterFile = File(adapterDir, "adapter.json")
++        if (!adapterFile.isFile) return AdapterMigrationResult(false, errorCode = "ADAPTER_FILE_MISSING", message = "adapter.json отсутствует.")
++        val originalText = runCatching { adapterFile.readText(Charsets.UTF_8) }.getOrElse { return AdapterMigrationResult(false, errorCode = "ADAPTER_MIGRATION_READ_FAILED", message = it.message.orEmpty()) }
++        val load = AdapterSchemaParser.parse(originalText)
++        if (!load.success || load.definition == null) return AdapterMigrationResult(false, errorCode = "ADAPTER_MIGRATION_BUILD_FAILED", message = "${load.errorCode}: ${load.errorMessage}")
++        val d = load.definition
++        if (d.schemaVersion >= 3) return AdapterMigrationResult(true, changed = false, adapterId = d.id, oldSchemaVersion = d.schemaVersion, message = "SNP уже использует Schema v3.")
++
++        val root = try { MiniJson.parse(originalText) as? JsonValue.Obj ?: return AdapterMigrationResult(false, errorCode = "ADAPTER_MIGRATION_JSON_INVALID", message = "adapter.json не является JSON-объектом.") }
++        catch (e: Exception) { return AdapterMigrationResult(false, errorCode = "ADAPTER_MIGRATION_JSON_INVALID", message = e.message.orEmpty()) }
++        val map = LinkedHashMap(root.values)
++        map["version"] = JsonValue.Num(3.0)
++        map["engine_dependencies"] = JsonValue.Arr(EngineDependencies.recommendedFor(d.engine).map { JsonValue.Str(it) })
++        map["repair"] = JsonValue.Obj(linkedMapOf(
++            "enabled" to JsonValue.Bool(d.healthAutoRepair),
++            "mode" to JsonValue.Str("conservative"),
++            "failure_threshold" to JsonValue.Num(3.0),
++            "cooldown_minutes" to JsonValue.Num(60.0),
++            "auto_quarantine" to JsonValue.Bool(false),
++            "strategies" to JsonValue.Arr(buildList {
++                if (d.engine.equals("declarative_catalog", true)) add(JsonValue.Str("selector_relearn"))
++                add(JsonValue.Str("resolver_refresh"))
++            }),
++        ))
++        val health = (map["health"] as? JsonValue.Obj)?.let { LinkedHashMap(it.values) } ?: linkedMapOf()
++        if ("auto_repair" !in health) health["auto_repair"] = JsonValue.Bool(false)
++        map["health"] = JsonValue.Obj(health)
++        val candidateText = JsonValue.Obj(map).toJson(pretty = true)
++        val validation = AdapterValidator.validate(candidateText)
++        if (!validation.isValid) return AdapterMigrationResult(false, adapterId = d.id, oldSchemaVersion = d.schemaVersion, errorCode = validation.errorCode, message = validation.errorMessage)
++
++        var snapshot = ""
++        val hadManifest = File(adapterDir, "snp-package.json").isFile
++        val candidateFile = File(paths.updates, d.id.lowercase() + ".migration-candidate.json")
++        candidateFile.delete()
++        return try {
++            if (createSnapshot) {
++                snapshot = recovery.createSnapshot(d.id, adapterDir, d.adapterVersion)?.path.orEmpty()
++                if (snapshot.isBlank()) return AdapterMigrationResult(false, adapterId=d.id, oldSchemaVersion=d.schemaVersion, errorCode="ADAPTER_MIGRATION_SNAPSHOT_FAILED", message="Не удалось создать snapshot перед миграцией.")
++            }
++            candidateFile.parentFile?.mkdirs()
++            candidateFile.writeText(candidateText, Charsets.UTF_8)
++            // Candidate lives outside runtime so it is never included in package discovery or snapshots.
++            adapterFile.writeText(candidateFile.readText(Charsets.UTF_8), Charsets.UTF_8)
++            if (hadManifest) AdapterPackageManager.createManifest(adapterDir, d.id, d.adapterVersion, d.publisher)
++            val post = if (hadManifest) AdapterPackageManager.verifyDirectory(adapterDir) else AdapterPackageInfo(true)
++            if (!post.valid) throw IllegalStateException("Post-migration integrity failed: ${post.errorCode}")
++            AdapterMigrationResult(true, changed = true, adapterId = d.id, oldSchemaVersion = d.schemaVersion, snapshotPath = snapshot, message = "Schema v${d.schemaVersion} -> v3.")
++        } catch (e: Exception) {
++            runCatching {
++                adapterFile.writeText(originalText, Charsets.UTF_8)
++                if (hadManifest) AdapterPackageManager.createManifest(adapterDir, d.id, d.adapterVersion, d.publisher)
++            }
++            AdapterMigrationResult(false, adapterId = d.id, oldSchemaVersion = d.schemaVersion, snapshotPath = snapshot, errorCode = "ADAPTER_MIGRATION_EXCEPTION", message = "${e.javaClass.simpleName}: ${e.message}")
++        } finally {
++            candidateFile.delete()
++        }
++    }
++}

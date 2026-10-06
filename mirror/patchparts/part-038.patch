@@ -1,0 +1,267 @@
+diff --git a/app/src/main/java/pro/noodle/mobile/ui/downloads/DownloadsViewModel.kt b/app/src/main/java/pro/noodle/mobile/ui/downloads/DownloadsViewModel.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/ui/downloads/DownloadsViewModel.kt
+@@ -0,0 +1,47 @@
++package pro.noodle.mobile.ui.downloads
++
++import android.app.Application
++import androidx.lifecycle.AndroidViewModel
++import androidx.lifecycle.viewModelScope
++import androidx.media3.common.util.UnstableApi
++import kotlinx.coroutines.flow.*
++import kotlinx.coroutines.launch
++import pro.noodle.mobile.core.download.DownloadRepository
++import pro.noodle.mobile.core.download.OfflineMediaRepository
++import pro.noodle.mobile.core.download.OfflinePlaybackSpec
++import pro.noodle.mobile.core.storage.DownloadEntity
++
++@OptIn(UnstableApi::class)
++class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
++    private val repo = DownloadRepository(app)
++    private val offlineRepo = OfflineMediaRepository(app)
++
++    val items: StateFlow<List<DownloadEntity>> = repo.observeAll()
++        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
++    val completed: StateFlow<List<DownloadEntity>> = repo.observeCompleted()
++        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
++
++    private val _offlinePlayback = MutableStateFlow<OfflinePlaybackSpec?>(null)
++    val offlinePlayback: StateFlow<OfflinePlaybackSpec?> = _offlinePlayback.asStateFlow()
++    private val _message = MutableStateFlow("")
++    val message: StateFlow<String> = _message.asStateFlow()
++
++    fun pause(id: String) = viewModelScope.launch { repo.pause(id) }
++    fun resume(id: String) = viewModelScope.launch { repo.resume(id) }
++    fun cancel(id: String) = viewModelScope.launch { repo.cancel(id) }
++    fun remove(id: String) = viewModelScope.launch {
++        if (_offlinePlayback.value?.id == id) _offlinePlayback.value = null
++        repo.remove(id)
++    }
++
++    fun openOffline(id: String) = viewModelScope.launch {
++        offlineRepo.open(id).onSuccess {
++            _message.value = ""
++            _offlinePlayback.value = it
++        }.onFailure {
++            _message.value = it.message ?: "Не удалось открыть офлайн-медиа"
++        }
++    }
++
++    fun closeOffline() { _offlinePlayback.value = null }
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/ui/favorites/FavoritesViewModel.kt b/app/src/main/java/pro/noodle/mobile/ui/favorites/FavoritesViewModel.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/ui/favorites/FavoritesViewModel.kt
+@@ -0,0 +1,29 @@
++package pro.noodle.mobile.ui.favorites
++
++import android.app.Application
++import androidx.lifecycle.AndroidViewModel
++import androidx.lifecycle.viewModelScope
++import kotlinx.coroutines.flow.*
++import kotlinx.coroutines.launch
++import okhttp3.OkHttpClient
++import pro.noodle.mobile.core.model.VideoItem
++import pro.noodle.mobile.core.network.SecureHttpClient
++import pro.noodle.mobile.core.player.PlaybackRepository
++import pro.noodle.mobile.core.player.PlaybackSession
++import pro.noodle.mobile.core.search.BundledSearchRepository
++import pro.noodle.mobile.core.storage.UserMediaRepository
++
++data class FavoritesUiState(val items:List<VideoItem> = emptyList(),val resolving:Boolean=false,val playback:PlaybackSession?=null,val message:String="")
++
++class FavoritesViewModel(app:Application):AndroidViewModel(app){
++    private val user=UserMediaRepository(app)
++    private val http=SecureHttpClient()
++    private val sources=BundledSearchRepository(app,http)
++    private val playbackRepo=PlaybackRepository(app,http)
++    private val mutable=MutableStateFlow(FavoritesUiState())
++    val state:StateFlow<FavoritesUiState> = combine(user.favorites(),mutable){items,s->s.copy(items=items)}.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5_000),FavoritesUiState())
++    fun remove(v:VideoItem)=viewModelScope.launch{user.removeFavorite(v)}
++    fun open(v:VideoItem){val a=sources.adapterFor(v)?:run{mutable.update{it.copy(message="SNP источника не найден")};return};mutable.update{it.copy(resolving=true,message="")};viewModelScope.launch{user.saveHistory(v,0L,0L);val r=playbackRepo.resolve(v,a);mutable.update{if(r.success&&r.session!=null)it.copy(resolving=false,playback=r.session) else it.copy(resolving=false,message="${r.errorCode}: ${r.errorMessage}")}}}
++    fun closePlayer(){mutable.update{it.copy(playback=null,resolving=false)}}
++    fun streamingClient(s:PlaybackSession):OkHttpClient=http.streamingClient(s.networkPolicy,s.sourceKey)
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/ui/history/HistoryScreen.kt b/app/src/main/java/pro/noodle/mobile/ui/history/HistoryScreen.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/ui/history/HistoryScreen.kt
+@@ -0,0 +1,92 @@
++package pro.noodle.mobile.ui.history
++
++import androidx.compose.foundation.Image
++import androidx.compose.foundation.layout.*
++import androidx.compose.foundation.lazy.LazyColumn
++import androidx.compose.foundation.lazy.items
++import androidx.compose.material.icons.Icons
++import androidx.compose.material.icons.outlined.Delete
++import androidx.compose.material.icons.outlined.History
++import androidx.compose.material.icons.outlined.PlayCircle
++import androidx.compose.material3.*
++import androidx.compose.runtime.*
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.graphics.asImageBitmap
++import androidx.compose.ui.layout.ContentScale
++import androidx.compose.ui.text.font.FontWeight
++import androidx.compose.ui.text.style.TextOverflow
++import androidx.compose.ui.unit.dp
++import pro.noodle.mobile.core.storage.HistoryItem
++import pro.noodle.mobile.ui.player.PlayerScreen
++import java.text.DateFormat
++import java.util.Date
++
++@Composable
++fun HistoryScreen(vm: HistoryViewModel) {
++    val state by vm.state.collectAsState()
++    state.playback?.let { session ->
++        val client = remember(session.sourceKey, session.video.id) { vm.streamingClient(session) }
++        PlayerScreen(session, client, vm::closePlayer)
++        return
++    }
++
++    LazyColumn(
++        modifier = Modifier.fillMaxSize(),
++        contentPadding = PaddingValues(12.dp),
++        verticalArrangement = Arrangement.spacedBy(9.dp),
++    ) {
++        item {
++            Row(verticalAlignment = Alignment.CenterVertically) {
++                Column(Modifier.weight(1f)) {
++                    Text("История", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
++                    Text("Недавно открытые ролики", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
++                }
++                if (state.items.isNotEmpty()) TextButton(onClick = vm::clear) { Text("Очистить") }
++            }
++            if (state.resolving) LinearProgressIndicator(Modifier.fillMaxWidth())
++            if (state.message.isNotBlank()) Text(state.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
++        }
++        if (state.items.isEmpty()) {
++            item {
++                Box(Modifier.fillParentMaxSize().padding(top = 80.dp), contentAlignment = Alignment.TopCenter) {
++                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
++                        Icon(Icons.Outlined.History, null, modifier = Modifier.size(42.dp), tint = MaterialTheme.colorScheme.primary)
++                        Text("История пока пуста", fontWeight = FontWeight.SemiBold)
++                        Text("Открытые ролики будут появляться здесь", color = MaterialTheme.colorScheme.onSurfaceVariant)
++                    }
++                }
++            }
++        } else {
++            items(state.items, key = { it.video.favoriteKey }) { item ->
++                HistoryCard(item, vm)
++            }
++        }
++    }
++}
++
++@Composable
++private fun HistoryCard(item: HistoryItem, vm: HistoryViewModel) {
++    val video = item.video
++    ElevatedCard(onClick = { vm.open(item) }, modifier = Modifier.fillMaxWidth()) {
++        Row(Modifier.padding(9.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
++            val bitmap by produceState<android.graphics.Bitmap?>(initialValue = null, key1 = video.thumbnailUrl) {
++                value = vm.loadThumbnail(video)
++            }
++            Surface(modifier = Modifier.size(width = 118.dp, height = 72.dp), shape = MaterialTheme.shapes.medium) {
++                if (bitmap != null) Image(bitmap!!.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
++                else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Icon(Icons.Outlined.PlayCircle, null, modifier = Modifier.size(32.dp)) }
++            }
++            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
++                Text(video.title, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
++                Text(video.sourceName, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
++                Text(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(item.updatedAt)), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
++                if (item.durationMs > 0) {
++                    val progress = (item.positionMs.toFloat() / item.durationMs.toFloat()).coerceIn(0f, 1f)
++                    LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
++                }
++            }
++            IconButton(onClick = { vm.remove(item) }) { Icon(Icons.Outlined.Delete, "Удалить") }
++        }
++    }
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/ui/history/HistoryViewModel.kt b/app/src/main/java/pro/noodle/mobile/ui/history/HistoryViewModel.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/ui/history/HistoryViewModel.kt
+@@ -0,0 +1,79 @@
++package pro.noodle.mobile.ui.history
++
++import android.app.Application
++import android.graphics.Bitmap
++import android.graphics.BitmapFactory
++import androidx.lifecycle.AndroidViewModel
++import androidx.lifecycle.viewModelScope
++import kotlinx.coroutines.flow.*
++import kotlinx.coroutines.launch
++import okhttp3.OkHttpClient
++import pro.noodle.mobile.core.model.VideoItem
++import pro.noodle.mobile.core.network.NetworkPolicy
++import pro.noodle.mobile.core.network.SecureHttpClient
++import pro.noodle.mobile.core.player.PlaybackRepository
++import pro.noodle.mobile.core.player.PlaybackSession
++import pro.noodle.mobile.core.search.BundledSearchRepository
++import pro.noodle.mobile.core.storage.HistoryItem
++import pro.noodle.mobile.core.storage.UserMediaRepository
++import java.util.concurrent.ConcurrentHashMap
++
++data class HistoryUiState(
++    val items: List<HistoryItem> = emptyList(),
++    val resolving: Boolean = false,
++    val playback: PlaybackSession? = null,
++    val message: String = "",
++)
++
++class HistoryViewModel(app: Application) : AndroidViewModel(app) {
++    private val user = UserMediaRepository(app)
++    private val http = SecureHttpClient()
++    private val sources = BundledSearchRepository(app, http)
++    private val playbackRepo = PlaybackRepository(app, http)
++    private val mutable = MutableStateFlow(HistoryUiState())
++    val state: StateFlow<HistoryUiState> = combine(user.history(), mutable) { items, state -> state.copy(items = items) }
++        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HistoryUiState())
++    private val thumbnailCache = ConcurrentHashMap<String, Bitmap>()
++    private val thumbnailMisses = ConcurrentHashMap.newKeySet<String>()
++
++    suspend fun loadThumbnail(video: VideoItem): Bitmap? {
++        val url = video.thumbnailUrl.trim()
++        if (url.isBlank()) return null
++        thumbnailCache[url]?.let { return it }
++        if (url in thumbnailMisses) return null
++        val adapter = sources.adapterFor(video) ?: return null
++        val result = http.fetchBytes(
++            url = url,
++            policy = NetworkPolicy(adapter.allowedHosts, allowCookies = adapter.allowCookies, maxResponseBytes = 3 * 1024 * 1024),
++            sourceKey = adapter.id,
++            accept = "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.5",
++            referer = adapter.baseUrl,
++        )
++        if (!result.success || result.bytes.isEmpty()) { thumbnailMisses += url; return null }
++        val bitmap = BitmapFactory.decodeByteArray(result.bytes, 0, result.bytes.size)
++        if (bitmap == null) { thumbnailMisses += url; return null }
++        thumbnailCache[url] = bitmap
++        return bitmap
++    }
++
++    fun open(item: HistoryItem) {
++        val video = item.video
++        val adapter = sources.adapterFor(video) ?: run {
++            mutable.update { it.copy(message = "SNP источника не найден") }
++            return
++        }
++        mutable.update { it.copy(resolving = true, message = "") }
++        viewModelScope.launch {
++            val r = playbackRepo.resolve(video, adapter)
++            mutable.update {
++                if (r.success && r.session != null) it.copy(resolving = false, playback = r.session)
++                else it.copy(resolving = false, message = "${r.errorCode}: ${r.errorMessage}")
++            }
++        }
++    }
++
++    fun remove(item: HistoryItem) = viewModelScope.launch { user.removeHistory(item.video) }
++    fun clear() = viewModelScope.launch { user.clearHistory() }
++    fun closePlayer() = mutable.update { it.copy(playback = null, resolving = false) }
++    fun streamingClient(session: PlaybackSession): OkHttpClient = http.streamingClient(session.networkPolicy, session.sourceKey)
++}

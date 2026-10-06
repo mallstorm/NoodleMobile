@@ -1,0 +1,452 @@
+diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+new file mode 100644
+--- /dev/null
++++ b/app/build.gradle.kts
+@@ -0,0 +1,94 @@
++plugins {
++    id("com.android.application")
++    id("org.jetbrains.kotlin.plugin.compose")
++    id("com.google.devtools.ksp")
++}
++
++android {
++    namespace = "pro.noodle.mobile"
++    compileSdk = 37
++    compileSdkMinor = 0
++
++    defaultConfig {
++        applicationId = "pro.noodle.mobile"
++        minSdk = 28
++        targetSdk = 37
++        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
++        versionCode = 100010
++        versionName = "0.10.0-alpha10"
++    }
++
++    buildFeatures { compose = true }
++
++    testOptions {
++        animationsDisabled = true
++        unitTests.isIncludeAndroidResources = false
++    }
++
++    lint {
++        abortOnError = true
++        checkDependencies = true
++        warningsAsErrors = false
++    }
++
++    compileOptions {
++        sourceCompatibility = JavaVersion.VERSION_17
++        targetCompatibility = JavaVersion.VERSION_17
++    }
++
++    buildTypes {
++        release {
++            isMinifyEnabled = true
++            isShrinkResources = true
++            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
++        }
++    }
++}
++
++ksp { arg("room.schemaLocation", "$projectDir/schemas") }
++
++dependencies {
++    implementation(platform("androidx.compose:compose-bom:2026.06.00"))
++    implementation("androidx.activity:activity-compose:1.13.0")
++    implementation("androidx.compose.ui:ui")
++    implementation("androidx.compose.ui:ui-tooling-preview")
++    implementation("androidx.compose.material3:material3")
++    implementation("androidx.compose.material:material-icons-extended")
++    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
++    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0")
++    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
++    implementation("androidx.core:core-ktx:1.19.0")
++
++    implementation("com.squareup.okhttp3:okhttp:4.12.0")
++    implementation("androidx.webkit:webkit:1.16.0")
++
++    implementation("androidx.media3:media3-exoplayer:1.10.1")
++    implementation("androidx.media3:media3-exoplayer-hls:1.10.1")
++    implementation("androidx.media3:media3-exoplayer-dash:1.10.1")
++    implementation("androidx.media3:media3-ui:1.10.1")
++    implementation("androidx.media3:media3-datasource-okhttp:1.10.1")
++    implementation("androidx.media3:media3-database:1.10.1")
++    implementation("androidx.media3:media3-exoplayer-workmanager:1.10.1")
++
++    val roomVersion = "2.8.4"
++    implementation("androidx.room:room-runtime:$roomVersion")
++    implementation("androidx.room:room-ktx:$roomVersion")
++    ksp("androidx.room:room-compiler:$roomVersion")
++
++    implementation("androidx.datastore:datastore-preferences:1.2.1")
++    implementation("androidx.work:work-runtime-ktx:2.11.2")
++    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
++
++    testImplementation("junit:junit:4.13.2")
++
++    androidTestImplementation(platform("androidx.compose:compose-bom:2026.06.00"))
++    androidTestImplementation("androidx.test:core-ktx:1.7.0")
++    androidTestImplementation("androidx.test.ext:junit:1.3.0")
++    androidTestImplementation("androidx.test:runner:1.7.0")
++    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
++    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
++    androidTestImplementation("androidx.room:room-testing:$roomVersion")
++
++    debugImplementation("androidx.compose.ui:ui-tooling")
++    debugImplementation("androidx.compose.ui:ui-test-manifest")
++}
+diff --git a/app/lint.xml b/app/lint.xml
+new file mode 100644
+--- /dev/null
++++ b/app/lint.xml
+@@ -0,0 +1,6 @@
++<?xml version="1.0" encoding="utf-8"?>
++<lint>
++    <issue id="UnsafeOptInUsageError">
++        <option name="opt-in" value="androidx.media3.common.util.UnstableApi" />
++    </issue>
++</lint>
+diff --git a/app/proguard-rules.pro b/app/proguard-rules.pro
+new file mode 100644
+--- /dev/null
++++ b/app/proguard-rules.pro
+@@ -0,0 +1,1 @@
++# Stage 1 has no reflection-based domain serializer. Keep rules stay intentionally minimal.
+diff --git a/app/src/androidTest/java/pro/noodle/mobile/DatabaseInstrumentedTest.kt b/app/src/androidTest/java/pro/noodle/mobile/DatabaseInstrumentedTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/androidTest/java/pro/noodle/mobile/DatabaseInstrumentedTest.kt
+@@ -0,0 +1,63 @@
++package pro.noodle.mobile
++
++import android.content.Context
++import androidx.room.Room
++import androidx.test.core.app.ApplicationProvider
++import androidx.test.ext.junit.runners.AndroidJUnit4
++import kotlinx.coroutines.flow.first
++import kotlinx.coroutines.runBlocking
++import org.junit.After
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertTrue
++import org.junit.Before
++import org.junit.Test
++import org.junit.runner.RunWith
++import pro.noodle.mobile.core.storage.DownloadEntity
++import pro.noodle.mobile.core.storage.DownloadState
++import pro.noodle.mobile.core.storage.NoodleDatabase
++
++@RunWith(AndroidJUnit4::class)
++class DatabaseInstrumentedTest {
++    private lateinit var db: NoodleDatabase
++
++    @Before fun open() {
++        val context = ApplicationProvider.getApplicationContext<Context>()
++        db = Room.inMemoryDatabaseBuilder(context, NoodleDatabase::class.java)
++            .allowMainThreadQueries()
++            .build()
++    }
++
++    @After fun close() = db.close()
++
++    @Test fun downloadRoundTripPreservesAdaptiveSelectionMetadata() = runBlocking {
++        val now = System.currentTimeMillis()
++        db.downloads().upsert(
++            DownloadEntity(
++                id = "test-adaptive",
++                title = "Fixture",
++                sourceUrl = "https://media.example/master.m3u8",
++                sourceKey = "fixture",
++                allowedHosts = "media.example",
++                allowCookies = false,
++                destinationUri = "media3://adaptive",
++                mimeType = "application/x-mpegURL",
++                state = DownloadState.COMPLETED,
++                protocol = "hls",
++                videoSelectionLabel = "720p",
++                videoMaxWidth = 1280,
++                videoMaxHeight = 720,
++                audioSelectionLanguage = "ru",
++                textSelectionLanguage = "en",
++                includeSubtitles = true,
++                createdAt = now,
++                updatedAt = now,
++            )
++        )
++        val item = db.downloads().get("test-adaptive")!!
++        assertEquals("720p", item.videoSelectionLabel)
++        assertEquals(1280, item.videoMaxWidth)
++        assertEquals("ru", item.audioSelectionLanguage)
++        assertTrue(item.includeSubtitles)
++        assertEquals(1, db.downloads().observeCompleted().first().size)
++    }
++}
+diff --git a/app/src/androidTest/java/pro/noodle/mobile/DownloadPolicyInstrumentedTest.kt b/app/src/androidTest/java/pro/noodle/mobile/DownloadPolicyInstrumentedTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/androidTest/java/pro/noodle/mobile/DownloadPolicyInstrumentedTest.kt
+@@ -0,0 +1,33 @@
++package pro.noodle.mobile
++
++import androidx.test.ext.junit.runners.AndroidJUnit4
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertNotNull
++import org.junit.Test
++import org.junit.runner.RunWith
++import pro.noodle.mobile.core.download.AdaptiveDownloadSelection
++import pro.noodle.mobile.core.download.DownloadPolicyCodec
++import pro.noodle.mobile.core.network.NetworkPolicy
++
++@RunWith(AndroidJUnit4::class)
++class DownloadPolicyInstrumentedTest {
++    @Test fun policyRoundTripRemainsFailClosed() {
++        val policy = NetworkPolicy(listOf("cdn.example", "*.media.example"), allowHttp = false, allowCookies = true)
++        val decoded = DownloadPolicyCodec.decode(DownloadPolicyCodec.encode("fixture", policy))
++        assertNotNull(decoded)
++        assertEquals("fixture", decoded!!.sourceKey)
++        assertEquals(policy.allowedHosts, decoded.policy.allowedHosts)
++        assertFalse(decoded.policy.allowHttp)
++        assertEquals(null, DownloadPolicyCodec.decode(byteArrayOf(1, 2, 3)))
++    }
++
++    @Test fun selectionNormalizationNeverCreatesZeroSizedVideoConstraint() {
++        val selection = AdaptiveDownloadSelection(0, -5, " ", " ru ", " en ", true).normalized()
++        assertEquals(1, selection.maxVideoWidth)
++        assertEquals(1, selection.maxVideoHeight)
++        assertEquals("Auto", selection.videoLabel)
++        assertEquals("ru", selection.audioLanguage)
++        assertEquals("en", selection.textLanguage)
++    }
++}
+diff --git a/app/src/androidTest/java/pro/noodle/mobile/MainActivitySmokeTest.kt b/app/src/androidTest/java/pro/noodle/mobile/MainActivitySmokeTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/androidTest/java/pro/noodle/mobile/MainActivitySmokeTest.kt
+@@ -0,0 +1,20 @@
++package pro.noodle.mobile
++
++import androidx.compose.ui.test.assertIsDisplayed
++import androidx.compose.ui.test.junit4.createAndroidComposeRule
++import androidx.compose.ui.test.onNodeWithText
++import androidx.test.ext.junit.runners.AndroidJUnit4
++import org.junit.Rule
++import org.junit.Test
++import org.junit.runner.RunWith
++
++@RunWith(AndroidJUnit4::class)
++class MainActivitySmokeTest {
++    @get:Rule val compose = createAndroidComposeRule<MainActivity>()
++
++    @Test fun mainShellStarts() {
++        compose.onNodeWithText("Noodle Mobile").assertIsDisplayed()
++        compose.onNodeWithText("Поиск").assertIsDisplayed()
++        compose.onNodeWithText("Загрузки").assertIsDisplayed()
++    }
++}
+diff --git a/app/src/androidTest/java/pro/noodle/mobile/MediaDownloadRuntimeInstrumentedTest.kt b/app/src/androidTest/java/pro/noodle/mobile/MediaDownloadRuntimeInstrumentedTest.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/androidTest/java/pro/noodle/mobile/MediaDownloadRuntimeInstrumentedTest.kt
+@@ -0,0 +1,34 @@
++package pro.noodle.mobile
++
++import android.content.Context
++import android.os.Looper
++import androidx.media3.common.util.UnstableApi
++import androidx.test.core.app.ApplicationProvider
++import androidx.test.ext.junit.runners.AndroidJUnit4
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.runBlocking
++import kotlinx.coroutines.withContext
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertTrue
++import org.junit.Test
++import org.junit.runner.RunWith
++import pro.noodle.mobile.core.download.MediaDownloadRuntime
++
++@OptIn(UnstableApi::class)
++@RunWith(AndroidJUnit4::class)
++class MediaDownloadRuntimeInstrumentedTest {
++    @Test
++    fun downloadManagerRemainsMainLooperAffined() = runBlocking {
++        val context = ApplicationProvider.getApplicationContext<Context>()
++        val manager = withContext(Dispatchers.Main.immediate) {
++            MediaDownloadRuntime.manager(context)
++        }
++        assertEquals(Looper.getMainLooper(), manager.applicationLooper)
++
++        val failure = withContext(Dispatchers.IO) {
++            runCatching { MediaDownloadRuntime.manager(context) }.exceptionOrNull()
++        }
++        assertTrue(failure is IllegalStateException)
++        assertTrue(failure?.message?.contains("DOWNLOAD_MANAGER_MAIN_THREAD_REQUIRED") == true)
++    }
++}
+diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/AndroidManifest.xml
+@@ -0,0 +1,45 @@
++<manifest xmlns:android="http://schemas.android.com/apk/res/android"
++    xmlns:tools="http://schemas.android.com/tools">
++    <uses-permission android:name="android.permission.INTERNET" />
++    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
++    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
++    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
++    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
++    <uses-permission android:name="android.permission.USE_FINGERPRINT" />
++
++    <application
++        android:allowBackup="false"
++        android:usesCleartextTraffic="false"
++        android:networkSecurityConfig="@xml/network_security_config"
++        android:label="Noodle Mobile"
++        android:icon="@mipmap/ic_launcher"
++        android:roundIcon="@mipmap/ic_launcher_round"
++        android:theme="@style/Theme.NoodleMobile"
++        android:supportsRtl="true">
++        <service
++            android:name="androidx.work.impl.foreground.SystemForegroundService"
++            android:foregroundServiceType="dataSync"
++            tools:node="merge" />
++
++        <service
++            android:name=".core.download.NoodleDownloadService"
++            android:exported="false"
++            android:foregroundServiceType="dataSync">
++            <intent-filter>
++                <action android:name="androidx.media3.exoplayer.downloadService.action.RESTART" />
++                <category android:name="android.intent.category.DEFAULT" />
++            </intent-filter>
++        </service>
++
++        <activity
++            android:name=".MainActivity"
++            android:exported="true"
++            android:supportsPictureInPicture="true"
++            android:configChanges="orientation|screenLayout|screenSize|smallestScreenSize|keyboardHidden">
++            <intent-filter>
++                <action android:name="android.intent.action.MAIN" />
++                <category android:name="android.intent.category.LAUNCHER" />
++            </intent-filter>
++        </activity>
++    </application>
++</manifest>
+diff --git a/app/src/main/assets/adapters/bundled/me.fapaxi.pro/adapter.json b/app/src/main/assets/adapters/bundled/me.fapaxi.pro/adapter.json
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/assets/adapters/bundled/me.fapaxi.pro/adapter.json
+@@ -0,0 +1,67 @@
++{
++  "version": 3,
++  "id": "me.fapaxi.pro",
++  "name": "MeFapaxi",
++  "base_url": "https://me.fapaxi.pro",
++  "engine": "kvs_view",
++  "enabled": true,
++  "capabilities": {
++    "search": true,
++    "pagination": true,
++    "direct_url": true,
++    "embedded_playback": true
++  },
++  "permissions": {
++    "allowed_hosts": [
++      "me.fapaxi.pro",
++      "*.me.fapaxi.pro",
++      "fapax.me",
++      "*.fapax.me"
++    ],
++    "allow_javascript": false,
++    "allow_cookies": true
++  },
++  "view": {
++    "strategies": [
++      "kvs_view",
++      "jwplayer_config",
++      "videojs_config",
++      "generic_html5",
++      "oembed_provider",
++      "iframe_chain",
++      "hls_manifest",
++      "dash_manifest",
++      "kvs_flashvars",
++      "open_graph"
++    ]
++  },
++  "adapter_version": "1.0.0",
++  "publisher": "Noodle Desktop bundled",
++  "homepage": "https://me.fapaxi.pro",
++  "health": {
++    "query": "video",
++    "min_results": 1,
++    "require_playback": true,
++    "auto_repair": false
++  },
++  "min_app_version": "1.9.0",
++  "engine_dependencies": [
++    "jwplayer_config",
++    "videojs_config",
++    "generic_html5",
++    "oembed_provider",
++    "iframe_chain",
++    "hls_manifest",
++    "dash_manifest"
++  ],
++  "repair": {
++    "enabled": false,
++    "mode": "conservative",
++    "failure_threshold": 3,
++    "cooldown_minutes": 60,
++    "auto_quarantine": false,
++    "strategies": [
++      "resolver_refresh"
++    ]
++  }
++}
+diff --git a/app/src/main/assets/adapters/bundled/me.fapaxi.pro/snp-package.json b/app/src/main/assets/adapters/bundled/me.fapaxi.pro/snp-package.json
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/assets/adapters/bundled/me.fapaxi.pro/snp-package.json
+@@ -0,0 +1,39 @@
++{
++  "format_version": 1,
++  "adapter_id": "me.fapaxi.pro",
++  "version": "1.0.0",
++  "publisher": "Noodle Desktop bundled",
++  "integrity_algorithm": "sha256",
++  "files": [
++    {
++      "path": "_search.html",
++      "sha256": "c4ef3cd0e2de33498338ecbf0b6672f3a6a6e87f380b333b68d00ba711abf69e",
++      "size": 48013
++    },
++    {
++      "path": "_view.html",
++      "sha256": "fedd880a2f6fec209010dc73902e569c70e4e32ec5468381dfd80bbe6386019c",
++      "size": 58204
++    },
++    {
++      "path": "adapter.json",
++      "sha256": "8784ceef8ddfc9ab8e4ed060ce41fbd6343ec129f3be8d9eed43ad06cb7a04ef",
++      "size": 1379
++    },
++    {
++      "path": "analysis.txt",
++      "sha256": "f4ad1255816e28ff9c52515f3016a1efa406ce947e3ac9167ddb45715b645791",
++      "size": 3095
++    },
++    {
++      "path": "snippets.pas",
++      "sha256": "63dcb8e7c5dd102cbbd95584c3815439085a133bc4d61abcbe803f2da7186fe4",
++      "size": 3102
++    }
++  ],
++  "signature": {
++    "algorithm": "none",
++    "key_id": "",
++    "value": ""
++  }
++}

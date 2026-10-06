@@ -1,0 +1,296 @@
+diff --git a/app/src/main/java/pro/noodle/mobile/core/catalog/TrustedKeyCodec.kt b/app/src/main/java/pro/noodle/mobile/core/catalog/TrustedKeyCodec.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/catalog/TrustedKeyCodec.kt
+@@ -0,0 +1,50 @@
++package pro.noodle.mobile.core.catalog
++
++import pro.noodle.mobile.core.json.*
++import java.math.BigInteger
++
++object TrustedKeyCodec {
++    private val keyIdRegex = Regex("^[A-Za-z0-9._-]{3,128}$")
++    private val hexRegex = Regex("^[0-9a-fA-F]+$")
++
++    fun validate(key: TrustedCatalogKey): TrustedKeyValidationResult {
++        if (!keyIdRegex.matches(key.keyId)) return bad("CATALOG_KEY_ID_INVALID", "key_id должен содержать 3–128 символов A-Z, a-z, 0-9, ._-.")
++        if (!key.algorithm.equals("rsa-sha256", true)) return bad("CATALOG_KEY_ALGORITHM_UNSUPPORTED", "Поддерживается только rsa-sha256.")
++        val hex = key.modulusHex.trim()
++        if (hex.length % 2 != 0 || !hexRegex.matches(hex)) return bad("CATALOG_KEY_MODULUS_INVALID", "RSA modulus должен быть корректной hex-строкой.")
++        val bits = runCatching { BigInteger(hex, 16).bitLength() }.getOrDefault(0)
++        if (bits < 2048) return bad("CATALOG_KEY_RSA_TOO_SMALL", "RSA modulus должен иметь минимум 2048 реальных бит (получено $bits).")
++        if (key.exponent !in setOf(3L, 65537L)) return bad("CATALOG_KEY_EXPONENT_INVALID", "Поддерживается exponent 3 или 65537.")
++        return TrustedKeyValidationResult(true)
++    }
++
++    fun parseRegistry(text: String, builtIn: Boolean = false): Result<List<TrustedCatalogKey>> = runCatching {
++        val root = MiniJson.parse(text) as? JsonValue.Obj ?: error("trusted_keys root must be object")
++        require(root.int("format_version") == 1) { "trusted_keys format_version must be 1" }
++        val arr = root.arr("keys") ?: error("trusted_keys.keys missing")
++        arr.values.map { value ->
++            val o = value as? JsonValue.Obj ?: error("trusted key must be object")
++            val key = TrustedCatalogKey(
++                keyId = o.string("key_id").orEmpty(),
++                algorithm = o.string("algorithm") ?: "rsa-sha256",
++                exponent = (o.values["exponent"] as? JsonValue.Num)?.value?.toLong() ?: 65537L,
++                modulusHex = o.string("modulus_hex").orEmpty(),
++                builtIn = builtIn,
++            )
++            val vr = validate(key); require(vr.valid) { "${vr.errorCode}: ${vr.message}" }
++            key
++        }.distinctBy { it.keyId.lowercase() }
++    }
++
++    fun renderRegistry(keys: List<TrustedCatalogKey>): String = JsonValue.Obj(linkedMapOf(
++        "format_version" to JsonValue.Num(1.0),
++        "keys" to JsonValue.Arr(keys.map { key -> JsonValue.Obj(linkedMapOf(
++            "key_id" to JsonValue.Str(key.keyId),
++            "algorithm" to JsonValue.Str("rsa-sha256"),
++            "exponent" to JsonValue.Num(key.exponent.toDouble()),
++            "modulus_hex" to JsonValue.Str(key.modulusHex.lowercase()),
++        )) }),
++    )).toJson(pretty = true)
++
++    private fun bad(code: String, msg: String) = TrustedKeyValidationResult(false, code, msg)
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/core/catalog/TrustedKeyManager.kt b/app/src/main/java/pro/noodle/mobile/core/catalog/TrustedKeyManager.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/catalog/TrustedKeyManager.kt
+@@ -0,0 +1,46 @@
++package pro.noodle.mobile.core.catalog
++
++import android.content.Context
++import java.io.File
++
++class TrustedKeyManager(context: Context) {
++    private val app = context.applicationContext
++    private val userFile = File(app.filesDir, "config/catalog_trusted_keys.json")
++
++    fun list(): List<TrustedCatalogKey> {
++        val builtIn = runCatching { app.assets.open("catalog/trusted_keys.json").bufferedReader().use { TrustedKeyCodec.parseRegistry(it.readText(), builtIn = true).getOrThrow() } }.getOrDefault(emptyList())
++        val user = if (userFile.isFile) TrustedKeyCodec.parseRegistry(userFile.readText(Charsets.UTF_8), builtIn = false).getOrDefault(emptyList()) else emptyList()
++        val builtinIds = builtIn.map { it.keyId.lowercase() }.toSet()
++        return (builtIn + user.filter { it.keyId.lowercase() !in builtinIds }).sortedBy { it.keyId.lowercase() }
++    }
++
++    fun asMap(): Map<String, TrustedCatalogKey> = list().associateBy { it.keyId }
++
++    fun importRegistry(text: String): TrustedKeyValidationResult {
++        val incoming = TrustedKeyCodec.parseRegistry(text, builtIn = false).getOrElse { return TrustedKeyValidationResult(false, "CATALOG_KEYS_IMPORT_INVALID", it.message.orEmpty()) }
++        val current = list()
++        val builtIns = current.filter { it.builtIn }
++        val builtInIds = builtIns.map { it.keyId.lowercase() }.toSet()
++        if (incoming.any { it.keyId.lowercase() in builtInIds }) return TrustedKeyValidationResult(false, "CATALOG_KEY_BUILTIN_IMMUTABLE", "Встроенный trusted key нельзя заменить импортом.")
++        val merged = (current.filterNot { it.builtIn }.associateBy { it.keyId.lowercase() }.toMutableMap()).apply { incoming.forEach { put(it.keyId.lowercase(), it) } }.values.toList()
++        persist(merged)
++        return TrustedKeyValidationResult(true, message = "Импортировано ключей: ${incoming.size}")
++    }
++
++    fun remove(keyId: String): TrustedKeyValidationResult {
++        val current = list(); val found = current.firstOrNull { it.keyId.equals(keyId, true) } ?: return TrustedKeyValidationResult(false, "CATALOG_KEY_NOT_FOUND", "Trusted key не найден.")
++        if (found.builtIn) return TrustedKeyValidationResult(false, "CATALOG_KEY_BUILTIN_IMMUTABLE", "Встроенный trusted key нельзя удалить.")
++        persist(current.filter { !it.builtIn && !it.keyId.equals(keyId, true) })
++        return TrustedKeyValidationResult(true, message = "Trusted key удалён.")
++    }
++
++    fun exportUserRegistry(): String = TrustedKeyCodec.renderRegistry(list().filterNot { it.builtIn })
++
++    private fun persist(keys: List<TrustedCatalogKey>) {
++        userFile.parentFile?.mkdirs()
++        val tmp = File(userFile.parentFile, userFile.name + ".tmp")
++        tmp.writeText(TrustedKeyCodec.renderRegistry(keys.map { it.copy(builtIn = false) }), Charsets.UTF_8)
++        if (userFile.exists()) userFile.delete()
++        if (!tmp.renameTo(userFile)) { userFile.writeText(tmp.readText(Charsets.UTF_8), Charsets.UTF_8); tmp.delete() }
++    }
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/core/diagnostics/DiagnosticsSanitizer.kt b/app/src/main/java/pro/noodle/mobile/core/diagnostics/DiagnosticsSanitizer.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/diagnostics/DiagnosticsSanitizer.kt
+@@ -0,0 +1,11 @@
++package pro.noodle.mobile.core.diagnostics
++
++object DiagnosticsSanitizer {
++    private val header = Regex("(?im)^(Authorization|Proxy-Authorization|Cookie|Set-Cookie)\\s*:\\s*.*$")
++    private val kv = Regex("(?i)(token|access_token|refresh_token|session(?:_id)?|password|passwd|secret|api[_-]?key)\\s*([:=])\\s*([^\\s&,;]+)")
++    private val query = Regex("(?i)([?&](?:token|access_token|refresh_token|session|session_id|password|secret|api_key)=)[^&#\\s]+")
++    fun sanitize(text:String):String = text
++        .replace(header) { "${it.groupValues[1]}: <redacted>" }
++        .replace(kv) { "${it.groupValues[1]}${it.groupValues[2]}<redacted>" }
++        .replace(query) { "${it.groupValues[1]}<redacted>" }
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/core/diagnostics/DiagnosticsService.kt b/app/src/main/java/pro/noodle/mobile/core/diagnostics/DiagnosticsService.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/diagnostics/DiagnosticsService.kt
+@@ -0,0 +1,65 @@
++package pro.noodle.mobile.core.diagnostics
++
++import android.content.Context
++import android.os.Build
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.withContext
++import pro.noodle.mobile.core.catalog.TrustedKeyManager
++import pro.noodle.mobile.core.engine.EngineDependencies
++import pro.noodle.mobile.core.engine.EngineRegistry
++import pro.noodle.mobile.core.engine.runtime.RuntimeEngineRegistry
++import pro.noodle.mobile.core.selftest.CoreSelfTest
++import pro.noodle.mobile.core.source.AdapterPackageManager
++import pro.noodle.mobile.core.source.RuntimeAdapterRepository
++import pro.noodle.mobile.core.storage.NoodleDatabase
++import java.io.File
++import java.util.zip.ZipEntry
++import java.util.zip.ZipOutputStream
++
++
++data class AndroidDiagnosticCheck(val name:String,val passed:Boolean,val detail:String="")
++data class AndroidDiagnosticReport(val checks:List<AndroidDiagnosticCheck>){val passed:Boolean get()=checks.all{it.passed}}
++
++class DiagnosticsService(context:Context){
++    private val app=context.applicationContext
++    private val runtime=RuntimeAdapterRepository(app)
++    suspend fun selfTest():AndroidDiagnosticReport=withContext(Dispatchers.IO){
++        val checks=mutableListOf<AndroidDiagnosticCheck>()
++        CoreSelfTest.run().checks.forEach{checks+=AndroidDiagnosticCheck(it.name,it.passed,it.detail)}
++        val writable=runCatching{val f=File(app.filesDir,"diagnostics/.write-test");f.parentFile?.mkdirs();f.writeText("ok");val ok=f.readText()=="ok";f.delete();ok}.getOrDefault(false)
++        checks+=AndroidDiagnosticCheck("Private storage writable",writable,app.filesDir.path)
++        checks+=AndroidDiagnosticCheck("Engine registry count",EngineRegistry.knownEngineIds.size==15,"canonical=${EngineRegistry.knownEngineIds.size}")
++        checks+=AndroidDiagnosticCheck("Runtime engine count",RuntimeEngineRegistry.implementedIds.size==15,"runtime=${RuntimeEngineRegistry.implementedIds.size}")
++        val dep=EngineDependencies.validateRegistry();checks+=AndroidDiagnosticCheck("Dependency graph",dep.success,dep.errorMessage)
++        val sources=runtime.listAll();checks+=AndroidDiagnosticCheck("Bundled SNP available",sources.count{it.bundled}>=5,"bundled=${sources.count{it.bundled}} custom=${sources.count{!it.bundled}}")
++        sources.filter{it.bundled}.forEach{r->checks+=AndroidDiagnosticCheck("Package ${r.definition.id}",r.packageInfo.valid,"${r.packageInfo.trustStatus.wireName} ${r.packageInfo.errorCode}")}
++        checks+=AndroidDiagnosticCheck("Trusted key registry readable",runCatching{TrustedKeyManager(app).list();true}.getOrDefault(false),"keys=${runCatching{TrustedKeyManager(app).list().size}.getOrDefault(0)}")
++        checks+=AndroidDiagnosticCheck("Room opens",runCatching{NoodleDatabase.get(app).openHelper.writableDatabase.isOpen}.getOrDefault(false))
++        AndroidDiagnosticReport(checks)
++    }
++
++    suspend fun createZip():File=withContext(Dispatchers.IO){
++        val report=selfTest();val out=File(app.cacheDir,"noodle-diagnostics-${System.currentTimeMillis()}.zip")
++        val pkg=runCatching{app.packageManager.getPackageInfo(app.packageName,0)}.getOrNull()
++        val header=buildString{
++            appendLine("Noodle Mobile diagnostics")
++            appendLine("package=${app.packageName}")
++            appendLine("versionName=${pkg?.versionName.orEmpty()}")
++            appendLine("versionCode=${pkg?.longVersionCode ?: 0}")
++            appendLine("android=${Build.VERSION.RELEASE} sdk=${Build.VERSION.SDK_INT}")
++            appendLine("device=${Build.MANUFACTURER} ${Build.MODEL}")
++            appendLine("abis=${Build.SUPPORTED_ABIS.joinToString()}")
++            appendLine("result=${if(report.passed)"PASS" else "FAIL"}")
++        }
++        val checkText=buildString{report.checks.forEach{appendLine("${if(it.passed)"PASS" else "FAIL"} | ${it.name}${if(it.detail.isBlank())"" else " | ${DiagnosticsSanitizer.sanitize(it.detail)}"}")}}
++        val sourceText=buildString{runtime.listAll().forEach{r->appendLine("${r.definition.id}\t${r.definition.adapterVersion}\t${if(r.bundled)"bundled" else "custom"}\t${r.packageInfo.trustStatus.wireName}\t${r.compatibility.status}")}}
++        ZipOutputStream(out.outputStream().buffered()).use{z->
++            fun entry(name:String,text:String){z.putNextEntry(ZipEntry(name));z.write(DiagnosticsSanitizer.sanitize(text).toByteArray(Charsets.UTF_8));z.closeEntry()}
++            entry("device.txt",header);entry("self-test.txt",checkText);entry("sources.txt",sourceText)
++            val stateFiles=listOf("semantic_state.json","health_state.json","fingerprint_state.json","breakage_state.json","update_state.json")
++            val diagDir=runtime.paths.diagnostics
++            stateFiles.forEach{name->val f=File(diagDir,name);if(f.isFile)entry("source-state/$name",f.readText(Charsets.UTF_8))}
++        }
++        out
++    }
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/core/download/AdaptiveDownloadPlanner.kt b/app/src/main/java/pro/noodle/mobile/core/download/AdaptiveDownloadPlanner.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/download/AdaptiveDownloadPlanner.kt
+@@ -0,0 +1,99 @@
++package pro.noodle.mobile.core.download
++
++import android.content.Context
++import android.net.Uri
++import androidx.media3.common.C
++import androidx.media3.common.MediaItem
++import androidx.media3.common.MimeTypes
++import androidx.media3.common.TrackSelectionParameters
++import androidx.media3.common.util.UnstableApi
++import androidx.media3.exoplayer.DefaultRenderersFactory
++import androidx.media3.exoplayer.offline.DownloadHelper
++import androidx.media3.exoplayer.offline.DownloadRequest
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.suspendCancellableCoroutine
++import kotlinx.coroutines.withContext
++import pro.noodle.mobile.core.model.MediaSource
++import pro.noodle.mobile.core.network.NetworkPolicy
++import java.io.IOException
++import kotlin.coroutines.resume
++
++sealed interface AdaptivePlanResult {
++    data class Ready(val request: DownloadRequest) : AdaptivePlanResult
++    data class Failed(val code: String, val message: String) : AdaptivePlanResult
++}
++
++@UnstableApi
++class AdaptiveDownloadPlanner(private val context: Context) {
++    suspend fun plan(
++        id: String,
++        source: MediaSource,
++        policy: NetworkPolicy,
++        sourceKey: String,
++        selection: AdaptiveDownloadSelection,
++    ): AdaptivePlanResult {
++        val selected = selection.normalized()
++        val parameters = TrackSelectionParameters.Builder()
++            .setMaxVideoSize(selected.maxVideoWidth, selected.maxVideoHeight)
++            // Offline media stores one best-supported video/audio representation inside the
++            // selected bounds instead of retaining an adaptive ladder of redundant qualities.
++            .setForceHighestSupportedBitrate(true)
++            .apply {
++                if (selected.audioLanguage.isNotBlank()) setPreferredAudioLanguage(selected.audioLanguage)
++                setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !selected.includeSubtitles)
++                if (selected.includeSubtitles && selected.textLanguage.isNotBlank()) {
++                    setPreferredTextLanguage(selected.textLanguage)
++                }
++            }
++            .build()
++
++        val item = MediaItem.Builder()
++            .setUri(Uri.parse(source.url))
++            .setMimeType(adaptiveMime(source))
++            .build()
++
++        // MediaDownloadRuntime owns the shared DownloadManager/Cache and is initialized on the
++        // main looper. DownloadHelper preparation is also started there so an IO-scoped caller
++        // (PlayerScreen intentionally uses Dispatchers.IO) cannot race the runtime initialization.
++        return withContext(Dispatchers.Main.immediate) {
++            val helper = DownloadHelper.Factory()
++                .setRenderersFactory(DefaultRenderersFactory(context))
++                .setDataSourceFactory(MediaDownloadRuntime.downloadHelperDataSourceFactory(context, policy, sourceKey))
++                .setTrackSelectionParameters(parameters)
++                .create(item)
++
++            suspendCancellableCoroutine { continuation ->
++                continuation.invokeOnCancellation { helper.release() }
++                helper.prepare(object : DownloadHelper.Callback {
++                    override fun onPrepared(helper: DownloadHelper, tracksInfoAvailable: Boolean) {
++                        if (!continuation.isActive) {
++                            helper.release()
++                            return
++                        }
++                        val result = runCatching {
++                            AdaptivePlanResult.Ready(
++                                helper.getDownloadRequest(id, DownloadPolicyCodec.encode(sourceKey, policy))
++                            )
++                        }.getOrElse {
++                            AdaptivePlanResult.Failed("ADAPTIVE_PLAN_BUILD_FAILED", it.message ?: "Unable to build DownloadRequest")
++                        }
++                        helper.release()
++                        continuation.resume(result)
++                    }
++
++                    override fun onPrepareError(helper: DownloadHelper, e: IOException) {
++                        helper.release()
++                        if (continuation.isActive) {
++                            continuation.resume(AdaptivePlanResult.Failed("ADAPTIVE_PREPARE_FAILED", e.message ?: "Manifest preparation failed"))
++                        }
++                    }
++                })
++            }
++        }
++    }
++
++    private fun adaptiveMime(source: MediaSource): String = when {
++        source.protocol.equals("dash", true) || source.url.contains(".mpd", true) || source.mimeType.contains("dash", true) -> MimeTypes.APPLICATION_MPD
++        else -> MimeTypes.APPLICATION_M3U8
++    }
++}

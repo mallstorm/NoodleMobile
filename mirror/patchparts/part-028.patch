@@ -1,0 +1,307 @@
+diff --git a/app/src/main/java/pro/noodle/mobile/core/source/SourceRuntimeDiagnosticsStore.kt b/app/src/main/java/pro/noodle/mobile/core/source/SourceRuntimeDiagnosticsStore.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/source/SourceRuntimeDiagnosticsStore.kt
+@@ -0,0 +1,85 @@
++package pro.noodle.mobile.core.source
++
++import android.content.Context
++import pro.noodle.mobile.core.json.JsonValue
++import java.io.File
++import java.net.URI
++
++/**
++ * Sanitized runtime telemetry for Source Center diagnostics. Query strings, cookies and auth
++ * headers are never persisted. URLs are reduced to scheme://host/path so a diagnostics export can
++ * explain routing/playback failures without leaking user queries or tokens.
++ */
++class SourceRuntimeDiagnosticsStore(context: Context) {
++    private val repo = RuntimeAdapterRepository(context.applicationContext)
++    private val store = SourceStatusStore(File(repo.paths.diagnostics, "runtime_state.json"))
++
++    fun recordSearch(
++        sourceId: String,
++        engine: String,
++        url: String,
++        httpStatus: Int,
++        latencyMs: Long,
++        resultCount: Int,
++        errorCode: String = "",
++    ) {
++        store.put(sourceId, mapOf(
++            "engine" to JsonValue.Str(engine),
++            "last_search_url" to JsonValue.Str(sanitizeUrl(url)),
++            "search_http" to JsonValue.Num(httpStatus.toDouble()),
++            "search_latency_ms" to JsonValue.Num(latencyMs.coerceAtLeast(0).toDouble()),
++            "search_count" to JsonValue.Num(resultCount.coerceAtLeast(0).toDouble()),
++            "search_error" to JsonValue.Str(errorCode),
++            "search_at" to JsonValue.Num(System.currentTimeMillis().toDouble()),
++        ))
++    }
++
++    fun recordPlayback(
++        sourceId: String,
++        watchUrl: String,
++        mediaUrl: String,
++        status: String,
++        errorCode: String = "",
++    ) {
++        store.put(sourceId, mapOf(
++            "last_watch_url" to JsonValue.Str(sanitizeUrl(watchUrl)),
++            "last_playback_url" to JsonValue.Str(sanitizeUrl(mediaUrl)),
++            "playback_status" to JsonValue.Str(status),
++            "playback_error" to JsonValue.Str(errorCode),
++            "playback_at" to JsonValue.Num(System.currentTimeMillis().toDouble()),
++        ))
++    }
++
++    fun summary(sourceId: String): String = buildString {
++        val engine = store.get(sourceId, "engine")
++        val searchUrl = store.get(sourceId, "last_search_url")
++        val searchHttp = store.getInt(sourceId, "search_http")
++        val searchMs = store.getLong(sourceId, "search_latency_ms")
++        val searchCount = store.getInt(sourceId, "search_count")
++        val playbackUrl = store.get(sourceId, "last_playback_url")
++        val playbackStatus = store.get(sourceId, "playback_status")
++        val playbackError = store.get(sourceId, "playback_error")
++        if (engine.isNotBlank()) append("engine=$engine")
++        if (searchUrl.isNotBlank()) appendSeparator().append("search=$searchUrl")
++        if (searchHttp > 0) appendSeparator().append("HTTP $searchHttp")
++        if (searchMs > 0) appendSeparator().append("${searchMs}ms")
++        if (searchCount > 0) appendSeparator().append("cards=$searchCount")
++        if (playbackUrl.isNotBlank()) appendSeparator().append("media=$playbackUrl")
++        if (playbackStatus.isNotBlank()) appendSeparator().append("playback=$playbackStatus")
++        if (playbackError.isNotBlank()) appendSeparator().append("error=$playbackError")
++    }
++
++    private fun StringBuilder.appendSeparator(): StringBuilder {
++        if (isNotEmpty()) append(" • ")
++        return this
++    }
++
++    private fun sanitizeUrl(raw: String): String {
++        if (raw.isBlank()) return ""
++        return runCatching {
++            val u = URI(raw)
++            if (u.scheme.isNullOrBlank() || u.host.isNullOrBlank()) ""
++            else "${u.scheme.lowercase()}://${u.host.lowercase()}${u.path.orEmpty().take(240)}"
++        }.getOrDefault("")
++    }
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/core/source/SourceStatusStore.kt b/app/src/main/java/pro/noodle/mobile/core/source/SourceStatusStore.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/source/SourceStatusStore.kt
+@@ -0,0 +1,34 @@
++package pro.noodle.mobile.core.source
++
++import pro.noodle.mobile.core.json.*
++import java.io.File
++
++class SourceStatusStore(private val file: File) {
++    fun get(adapterId: String, field: String): String {
++        val root = readRoot()
++        val item = root.obj(adapterId.lowercase()) ?: return ""
++        return item.string(field).orEmpty()
++    }
++
++    fun getLong(adapterId: String, field: String): Long {
++        val item = readRoot().obj(adapterId.lowercase()) ?: return 0L
++        return (item.values[field] as? JsonValue.Num)?.value?.toLong() ?: 0L
++    }
++
++    fun getInt(adapterId: String, field: String): Int = getLong(adapterId, field).toInt()
++
++    fun put(adapterId: String, values: Map<String, JsonValue>) {
++        file.parentFile?.mkdirs()
++        val root = LinkedHashMap(readRoot().values)
++        val old = (root[adapterId.lowercase()] as? JsonValue.Obj)?.values.orEmpty()
++        val merged = LinkedHashMap(old)
++        merged.putAll(values)
++        merged["updated_at"] = JsonValue.Num(System.currentTimeMillis().toDouble())
++        root[adapterId.lowercase()] = JsonValue.Obj(merged)
++        file.writeText(JsonValue.Obj(root).toJson(pretty = true), Charsets.UTF_8)
++    }
++
++    private fun readRoot(): JsonValue.Obj = runCatching {
++        if (!file.isFile) JsonValue.Obj(linkedMapOf()) else MiniJson.parse(file.readText(Charsets.UTF_8)) as? JsonValue.Obj ?: JsonValue.Obj(linkedMapOf())
++    }.getOrDefault(JsonValue.Obj(linkedMapOf()))
++}
+diff --git a/app/src/main/java/pro/noodle/mobile/core/storage/NoodleDatabase.kt b/app/src/main/java/pro/noodle/mobile/core/storage/NoodleDatabase.kt
+new file mode 100644
+--- /dev/null
++++ b/app/src/main/java/pro/noodle/mobile/core/storage/NoodleDatabase.kt
+@@ -0,0 +1,173 @@
++package pro.noodle.mobile.core.storage
++
++import android.content.Context
++import androidx.room.*
++import androidx.room.migration.Migration
++import androidx.sqlite.db.SupportSQLiteDatabase
++import kotlinx.coroutines.flow.Flow
++import pro.noodle.mobile.core.model.VideoItem
++
++@Entity(tableName = "favorites")
++data class FavoriteEntity(
++    @PrimaryKey val favoriteKey: String,
++    val id: String,
++    val remoteId: String,
++    val watchUrl: String,
++    val title: String,
++    val thumbnailUrl: String,
++    val duration: String,
++    val views: String,
++    val sourceName: String,
++    val sourceBaseUrl: String,
++    val sourceEngine: String,
++    val tags: String,
++    val note: String,
++    val createdAt: Long,
++)
++
++@Entity(tableName = "playback_positions")
++data class PlaybackPositionEntity(
++    @PrimaryKey val mediaKey: String,
++    val positionMs: Long,
++    val durationMs: Long,
++    val updatedAt: Long,
++)
++
++@Entity(tableName = "history")
++data class HistoryEntity(
++    @PrimaryKey val mediaKey: String,
++    val id: String,
++    val remoteId: String,
++    val watchUrl: String,
++    val title: String,
++    val thumbnailUrl: String,
++    val duration: String,
++    val views: String,
++    val sourceName: String,
++    val sourceBaseUrl: String,
++    val sourceEngine: String,
++    val positionMs: Long,
++    val durationMs: Long,
++    val updatedAt: Long,
++)
++
++enum class DownloadState { QUEUED, RUNNING, PAUSED, COMPLETED, FAILED, CANCELED }
++
++@Entity(tableName = "downloads")
++data class DownloadEntity(
++    @PrimaryKey val id: String,
++    val title: String,
++    val sourceUrl: String,
++    val sourceKey: String,
++    val allowedHosts: String,
++    val allowCookies: Boolean,
++    val allowHttp: Boolean = false,
++    val destinationUri: String,
++    val mimeType: String,
++    val state: DownloadState,
++    val downloadedBytes: Long = 0,
++    val totalBytes: Long = -1,
++    val errorCode: String = "",
++    val errorMessage: String = "",
++    val localFilePath: String = "",
++    val thumbnailUrl: String = "",
++    val protocol: String = "",
++    val videoSelectionLabel: String = "",
++    val videoMaxWidth: Int = Int.MAX_VALUE,
++    val videoMaxHeight: Int = Int.MAX_VALUE,
++    val audioSelectionLanguage: String = "",
++    val textSelectionLanguage: String = "",
++    val includeSubtitles: Boolean = false,
++    val createdAt: Long,
++    val updatedAt: Long,
++)
++
++@Dao
++interface FavoriteDao {
++    @Query("SELECT * FROM favorites ORDER BY createdAt DESC") fun observeAll(): Flow<List<FavoriteEntity>>
++    @Query("SELECT EXISTS(SELECT 1 FROM favorites WHERE favoriteKey=:key)") fun observeIsFavorite(key: String): Flow<Boolean>
++    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(item: FavoriteEntity)
++    @Query("DELETE FROM favorites WHERE favoriteKey=:key") suspend fun delete(key: String)
++}
++
++@Dao
++interface PlaybackPositionDao {
++    @Query("SELECT * FROM playback_positions WHERE mediaKey=:key LIMIT 1") suspend fun get(key: String): PlaybackPositionEntity?
++    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(item: PlaybackPositionEntity)
++    @Query("DELETE FROM playback_positions WHERE mediaKey=:key") suspend fun delete(key: String)
++}
++
++@Dao
++interface HistoryDao {
++    @Query("SELECT * FROM history ORDER BY updatedAt DESC") fun observeAll(): Flow<List<HistoryEntity>>
++    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(item: HistoryEntity)
++    @Query("DELETE FROM history WHERE mediaKey=:key") suspend fun delete(key: String)
++    @Query("DELETE FROM history") suspend fun clear()
++}
++
++@Dao
++interface DownloadDao {
++    @Query("SELECT * FROM downloads ORDER BY createdAt DESC") fun observeAll(): Flow<List<DownloadEntity>>
++    @Query("SELECT * FROM downloads WHERE state='COMPLETED' ORDER BY updatedAt DESC") fun observeCompleted(): Flow<List<DownloadEntity>>
++    @Query("SELECT * FROM downloads WHERE id=:id LIMIT 1") suspend fun get(id: String): DownloadEntity?
++    @Query("SELECT COUNT(*) FROM downloads WHERE state='RUNNING' AND id != :id AND updatedAt >= :cutoff") suspend fun countRunningRecentExcluding(id: String, cutoff: Long): Int
++    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(item: DownloadEntity)
++    @Query("UPDATE downloads SET state=:state, downloadedBytes=:downloaded, totalBytes=:total, errorCode=:errorCode, errorMessage=:errorMessage, updatedAt=:updatedAt WHERE id=:id")
++    suspend fun updateProgress(id: String, state: DownloadState, downloaded: Long, total: Long, errorCode: String, errorMessage: String, updatedAt: Long)
++    @Query("UPDATE downloads SET state=:state, updatedAt=:updatedAt WHERE id=:id") suspend fun updateState(id: String, state: DownloadState, updatedAt: Long)
++    @Query("UPDATE downloads SET state='COMPLETED', downloadedBytes=:downloaded, totalBytes=:total, localFilePath=:localPath, errorCode='', errorMessage='', updatedAt=:updatedAt WHERE id=:id") suspend fun markCompleted(id: String, downloaded: Long, total: Long, localPath: String, updatedAt: Long)
++    @Query("DELETE FROM downloads WHERE id=:id") suspend fun delete(id: String)
++}
++
++@Database(entities = [FavoriteEntity::class, PlaybackPositionEntity::class, HistoryEntity::class, DownloadEntity::class], version = 4, exportSchema = true)
++@TypeConverters(DbConverters::class)
++abstract class NoodleDatabase : RoomDatabase() {
++    abstract fun favorites(): FavoriteDao
++    abstract fun playbackPositions(): PlaybackPositionDao
++    abstract fun history(): HistoryDao
++    abstract fun downloads(): DownloadDao
++
++    companion object {
++        private val MIGRATION_1_2 = object : Migration(1, 2) {
++            override fun migrate(db: SupportSQLiteDatabase) {
++                db.execSQL("ALTER TABLE downloads ADD COLUMN allowHttp INTEGER NOT NULL DEFAULT 0")
++            }
++        }
++        private val MIGRATION_2_3 = object : Migration(2, 3) {
++            override fun migrate(db: SupportSQLiteDatabase) {
++                db.execSQL("ALTER TABLE downloads ADD COLUMN thumbnailUrl TEXT NOT NULL DEFAULT ''")
++                db.execSQL("ALTER TABLE downloads ADD COLUMN protocol TEXT NOT NULL DEFAULT ''")
++                db.execSQL("ALTER TABLE downloads ADD COLUMN videoSelectionLabel TEXT NOT NULL DEFAULT ''")
++                db.execSQL("ALTER TABLE downloads ADD COLUMN videoMaxWidth INTEGER NOT NULL DEFAULT 2147483647")
++                db.execSQL("ALTER TABLE downloads ADD COLUMN videoMaxHeight INTEGER NOT NULL DEFAULT 2147483647")
++                db.execSQL("ALTER TABLE downloads ADD COLUMN audioSelectionLanguage TEXT NOT NULL DEFAULT ''")
++                db.execSQL("ALTER TABLE downloads ADD COLUMN textSelectionLanguage TEXT NOT NULL DEFAULT ''")
++                db.execSQL("ALTER TABLE downloads ADD COLUMN includeSubtitles INTEGER NOT NULL DEFAULT 0")
++            }
++        }
++        private val MIGRATION_3_4 = object : Migration(3, 4) {
++            override fun migrate(db: SupportSQLiteDatabase) {
++                db.execSQL(
++                    "CREATE TABLE IF NOT EXISTS history (mediaKey TEXT NOT NULL, id TEXT NOT NULL, remoteId TEXT NOT NULL, watchUrl TEXT NOT NULL, title TEXT NOT NULL, thumbnailUrl TEXT NOT NULL, duration TEXT NOT NULL, views TEXT NOT NULL, sourceName TEXT NOT NULL, sourceBaseUrl TEXT NOT NULL, sourceEngine TEXT NOT NULL, positionMs INTEGER NOT NULL, durationMs INTEGER NOT NULL, updatedAt INTEGER NOT NULL, PRIMARY KEY(mediaKey))"
++                )
++            }
++        }
++        @Volatile private var instance: NoodleDatabase? = null
++        fun get(context: Context): NoodleDatabase = instance ?: synchronized(this) {
++            instance ?: Room.databaseBuilder(context.applicationContext, NoodleDatabase::class.java, "noodle-mobile.db")
++                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
++                .build().also { instance = it }
++        }
++    }
++}
++
++class DbConverters {
++    @TypeConverter fun stateToString(v: DownloadState): String = v.name
++    @TypeConverter fun stringToState(v: String): DownloadState = runCatching { DownloadState.valueOf(v) }.getOrDefault(DownloadState.FAILED)
++}
++
++private const val SEP = '\u001F'
++fun FavoriteEntity.toVideoItem() = VideoItem(id=id, remoteId=remoteId, watchUrl=watchUrl, title=title, thumbnailUrl=thumbnailUrl, duration=duration, views=views, sourceName=sourceName, sourceBaseUrl=sourceBaseUrl, sourceEngine=sourceEngine, favoriteKey=favoriteKey, tags=tags.split(SEP).filter { it.isNotBlank() }, note=note, favoriteTimestamp=createdAt)
++fun VideoItem.toFavoriteEntity(now: Long = System.currentTimeMillis()) = FavoriteEntity(favoriteKey=favoriteKey.ifBlank { "$sourceBaseUrl|${remoteId.ifBlank { watchUrl }}" }, id=id, remoteId=remoteId, watchUrl=watchUrl, title=title, thumbnailUrl=thumbnailUrl, duration=duration, views=views, sourceName=sourceName, sourceBaseUrl=sourceBaseUrl, sourceEngine=sourceEngine, tags=tags.joinToString(SEP.toString()), note=note, createdAt=if(favoriteTimestamp>0) favoriteTimestamp else now)
++fun HistoryEntity.toVideoItem() = VideoItem(id=id, remoteId=remoteId, watchUrl=watchUrl, title=title, thumbnailUrl=thumbnailUrl, duration=duration, views=views, sourceName=sourceName, sourceBaseUrl=sourceBaseUrl, sourceEngine=sourceEngine, favoriteKey=mediaKey)
++fun VideoItem.toHistoryEntity(positionMs: Long, durationMs: Long, now: Long = System.currentTimeMillis()) = HistoryEntity(mediaKey=favoriteKey.ifBlank { "$sourceBaseUrl|${remoteId.ifBlank { watchUrl }}" }, id=id, remoteId=remoteId, watchUrl=watchUrl, title=title, thumbnailUrl=thumbnailUrl, duration=duration, views=views, sourceName=sourceName, sourceBaseUrl=sourceBaseUrl, sourceEngine=sourceEngine, positionMs=positionMs.coerceAtLeast(0), durationMs=durationMs.coerceAtLeast(0), updatedAt=now)
