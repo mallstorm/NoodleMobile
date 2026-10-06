@@ -16,6 +16,7 @@ import pro.noodle.mobile.core.catalog.MarketplaceRepository
 import pro.noodle.mobile.core.catalog.TrustedCatalogKey
 import pro.noodle.mobile.core.catalog.VerifiedCatalog
 import pro.noodle.mobile.core.studio.AdapterStudioService
+import pro.noodle.mobile.core.studio.StudioAiCandidateRepairService
 import pro.noodle.mobile.core.studio.StudioAiModel
 import pro.noodle.mobile.core.studio.StudioAiProvider
 import pro.noodle.mobile.core.studio.StudioAiRouter
@@ -54,6 +55,7 @@ class SourceToolsViewModel(app: Application) : AndroidViewModel(app) {
     private val catalogSettings = CatalogSettingsRepository(app)
     private val studio = AdapterStudioService(app)
     private val studioBrowser = StudioBrowserRecoveryService(app)
+    private val studioAiRepair = StudioAiCandidateRepairService(app)
     private val studioBackup = StudioBackupService(app)
     private val studioAi = StudioAiRouter(app)
     private val initialProvider = studioAi.selectedProvider()
@@ -327,19 +329,23 @@ class SourceToolsViewModel(app: Application) : AndroidViewModel(app) {
             )
         }
 
-        // Strict three-stage compiler: deterministic HTTP first, sandboxed browser second, AI only
-        // as the last repair layer. A healthy local/browser SNP never spends an AI request.
+        // Strict compiler chain: deterministic HTTP -> expanded/browser recovery -> AI repairs the
+        // exact strongest candidate. The AI stage never restarts discovery from the original URL.
         var result = studio.generate(
             url = state.studioUrl,
             instruction = state.studioInstruction,
             provider = StudioAiProvider.LOCAL,
             model = "",
         )
+        var repairSeed = result
 
         if (result.testStatus != "healthy" && state.studioUrl.isNotBlank()) {
             _state.update { it.copy(studioMessage = "Adapter Studio: Browser Discovery, выполняю JavaScript и проверяю post-JS DOM…") }
             val browserResult = runCatching { studioBrowser.recover(state.studioUrl) }.getOrNull()
             if (browserResult != null) {
+                // Even if Browser Discovery is not yet healthy, its JSON/evidence is the strongest
+                // repair seed because it already contains known-route and post-JS observations.
+                if (browserResult.json.isNotBlank()) repairSeed = browserResult
                 val browserBetter = browserResult.testStatus == "healthy" ||
                     (!result.success && browserResult.success) ||
                     (result.testStatus in setOf("discovery_failed", "search_failed", "no_results", "playback_failed") && browserResult.testStatus !in setOf("browser_discovery_failed", "error"))
@@ -348,17 +354,37 @@ class SourceToolsViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         if (result.testStatus != "healthy" && state.studioProvider != StudioAiProvider.LOCAL) {
-            _state.update { it.copy(studioMessage = "Adapter Studio: локальные уровни не сертифицированы; запускаю AI repair через ${state.studioProvider.title}…") }
-            val aiResult = studio.generate(
-                url = state.studioUrl,
+            _state.update {
+                it.copy(
+                    studioMessage = "Adapter Studio: локальные уровни не сертифицированы; AI repair получает лучший local/Browser candidate через ${state.studioProvider.title}…",
+                )
+            }
+            val seed = repairSeed.takeIf { it.json.isNotBlank() } ?: result
+            val aiResult = studioAiRepair.repair(
+                targetUrl = state.studioUrl,
+                candidate = seed,
                 instruction = state.studioInstruction,
                 provider = state.studioProvider,
                 model = state.studioModel,
             )
-            val aiBetter = aiResult.testStatus == "healthy" ||
-                (!result.success && aiResult.success) ||
-                (aiResult.json.isNotBlank() && result.testStatus != "healthy")
-            if (aiBetter) result = aiResult
+            if (aiResult.testStatus == "healthy") {
+                result = aiResult
+            } else {
+                // Never downgrade the locally selected candidate merely because AI returned a valid
+                // but still uncertified JSON. Keep local/browser JSON and surface AI diagnostics.
+                result = result.copy(
+                    message = aiResult.message.ifBlank { result.message },
+                    testDetails = buildString {
+                        append(result.testDetails)
+                        if (aiResult.testDetails.isNotBlank() && aiResult.testDetails != result.testDetails) {
+                            if (isNotEmpty()) append("\n")
+                            append(aiResult.testDetails)
+                        }
+                    }.trim(),
+                    attempts = aiResult.attempts,
+                    model = aiResult.model,
+                )
+            }
         }
 
         if (result.model.isNotBlank()) setStudioModel(result.model)
