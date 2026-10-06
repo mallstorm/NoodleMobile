@@ -30,7 +30,7 @@ jobs:
             ':(exclude).github/workflows/export-ntl-mirror.yml' \
             ':(exclude)mirror/**'
           base64 -w 0 mirror/export/NoodleMobile-source.tar.gz > /tmp/NoodleMobile-source.tar.gz.b64
-          split -b 12000 -d -a 3 /tmp/NoodleMobile-source.tar.gz.b64 mirror/chunks/part-
+          split -b 6000 -d -a 3 /tmp/NoodleMobile-source.tar.gz.b64 mirror/chunks/part-
           printf '%s\n' "$(git rev-parse HEAD)" > mirror/export/SOURCE_SHA.txt
           sha256sum mirror/export/NoodleMobile-source.tar.gz > mirror/export/SOURCE_ARCHIVE_SHA256.txt
           wc -c mirror/export/NoodleMobile-source.tar.gz
