@@ -1,0 +1,30 @@
+name: Wrap mirror chunks
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/wrap-mirror-chunks.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  wrap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Wrap chunk lines
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in mirror/chunks/part-*; do
+            fold -w 1000 "$f" > "$f.tmp"
+            mv "$f.tmp" "$f"
+          done
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add mirror/chunks
+          git commit -m "ci: wrap mirror chunks for transfer" || true
+          git push origin HEAD:main
