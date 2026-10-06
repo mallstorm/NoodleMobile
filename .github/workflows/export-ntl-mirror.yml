@@ -1,0 +1,47 @@
+name: Export NTL mirror bundle
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - ".github/workflows/export-ntl-mirror.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout current main
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Pack tracked source snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p mirror
+          git archive --format=tar.gz --output=/tmp/NoodleMobile-source.tar.gz HEAD \
+            ':(exclude).github/workflows/export-ntl-mirror.yml'
+          base64 -w 0 /tmp/NoodleMobile-source.tar.gz > mirror/NoodleMobile-source.tar.gz.b64
+          printf '%s\n' "$(git rev-parse HEAD)" > mirror/SOURCE_SHA.txt
+          sha256sum /tmp/NoodleMobile-source.tar.gz > mirror/SOURCE_ARCHIVE_SHA256.txt
+          wc -c mirror/NoodleMobile-source.tar.gz.b64
+
+      - name: Commit mirror bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add mirror/NoodleMobile-source.tar.gz.b64 mirror/SOURCE_SHA.txt mirror/SOURCE_ARCHIVE_SHA256.txt
+          if git diff --cached --quiet; then
+            echo "Mirror bundle unchanged"
+            exit 0
+          fi
+          git commit -m "ci: export NoodleMobile snapshot for ntl mirror"
+          git push origin HEAD:main
