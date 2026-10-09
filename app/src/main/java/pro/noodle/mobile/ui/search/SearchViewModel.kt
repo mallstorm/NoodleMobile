@@ -3,8 +3,12 @@ package pro.noodle.mobile.ui.search
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.os.SystemClock
+import android.util.LruCache
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -14,6 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 import okhttp3.OkHttpClient
 import pro.noodle.mobile.core.model.VideoItem
@@ -53,13 +58,23 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     private var pagingJob: Job? = null
     private var resolveJob: Job? = null
     private var nextPage = 1
-    private val thumbnailCache = ConcurrentHashMap<String, Bitmap>()
+    private var lastPagingFinishedAtMs = 0L
+
+    /**
+     * Thumbnails used to be retained forever as full-size ARGB bitmaps. A single compressed
+     * 2–3 MB JPEG can decode to 8–20 MB in memory, so a short result scroll could make MIUI's
+     * low-memory killer terminate the process. Keep a hard byte-bounded cache instead.
+     */
+    private val thumbnailCache = object : LruCache<String, Bitmap>(THUMBNAIL_CACHE_KB) {
+        override fun sizeOf(key: String, value: Bitmap): Int =
+            (value.allocationByteCount / 1024).coerceAtLeast(1)
+    }
     private val thumbnailMisses = ConcurrentHashMap.newKeySet<String>()
 
     suspend fun loadThumbnail(video: VideoItem): Bitmap? {
         val url = video.thumbnailUrl.trim()
         if (url.isBlank()) return null
-        thumbnailCache[url]?.let { return it }
+        thumbnailCache.get(url)?.let { return it }
         if (url in thumbnailMisses) return null
         val adapter = searchRepo.adapterFor(video) ?: return null
         val result = http.fetchBytes(
@@ -67,7 +82,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
             policy = pro.noodle.mobile.core.network.NetworkPolicy(
                 adapter.allowedHosts,
                 allowCookies = adapter.allowCookies,
-                maxResponseBytes = 3 * 1024 * 1024,
+                maxResponseBytes = THUMBNAIL_MAX_RESPONSE_BYTES,
             ),
             sourceKey = adapter.id,
             accept = "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.5",
@@ -77,13 +92,37 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
             thumbnailMisses += url
             return null
         }
-        val bitmap = BitmapFactory.decodeByteArray(result.bytes, 0, result.bytes.size)
+        val bitmap = withContext(Dispatchers.Default) { decodeThumbnail(result.bytes) }
         if (bitmap == null) {
             thumbnailMisses += url
             return null
         }
-        thumbnailCache[url] = bitmap
+        thumbnailCache.put(url, bitmap)
         return bitmap
+    }
+
+    /** Decode only a UI-sized preview instead of materialising the source image at full resolution. */
+    private fun decodeThumbnail(bytes: ByteArray): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+        val largestSide = maxOf(bounds.outWidth, bounds.outHeight)
+        var sample = 1
+        while (largestSide / sample > THUMBNAIL_TARGET_MAX_DIMENSION && sample < 32) {
+            sample *= 2
+        }
+
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = sample
+            inPreferredConfig = Bitmap.Config.RGB_565
+        }
+        return try {
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+        } catch (_: OutOfMemoryError) {
+            thumbnailCache.evictAll()
+            null
+        }
     }
 
     fun setQuery(v: String) = _state.update { it.copy(query = v) }
@@ -97,6 +136,9 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         pagingJob?.cancel()
         resolveJob?.cancel()
         nextPage = 1
+        lastPagingFinishedAtMs = 0L
+        thumbnailCache.evictAll()
+        thumbnailMisses.clear()
         _state.update {
             it.copy(
                 loading = true,
@@ -110,16 +152,33 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
             )
         }
         searchJob = viewModelScope.launch {
-            val batch = searchRepo.search(q)
-            if (g != generation) return@launch
-            _state.update {
-                it.copy(
-                    loading = false,
-                    items = rankItems(batch.items, q),
-                    errors = batch.errors,
-                    hasMore = batch.items.isNotEmpty(),
-                    message = if (batch.items.isEmpty()) "Ничего не найдено" else "",
-                )
+            try {
+                // Adapter verification, package hashing and HTML parsing are blocking/CPU-heavy.
+                // Never execute them on the Compose/UI dispatcher.
+                val batch = withContext(Dispatchers.IO) { searchRepo.search(q) }
+                if (g != generation) return@launch
+                val ranked = withContext(Dispatchers.IO) { rankItems(batch.items, q) }
+                if (g != generation) return@launch
+                _state.update {
+                    it.copy(
+                        loading = false,
+                        items = ranked,
+                        errors = batch.errors,
+                        hasMore = batch.items.isNotEmpty(),
+                        message = if (batch.items.isEmpty()) "Ничего не найдено" else "",
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                if (g != generation) return@launch
+                _state.update {
+                    it.copy(
+                        loading = false,
+                        hasMore = false,
+                        message = "Ошибка поиска: ${e.message ?: e.javaClass.simpleName}",
+                    )
+                }
             }
         }
     }
@@ -127,34 +186,55 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     fun loadMore() {
         val snapshot = _state.value
         val q = snapshot.query.trim()
-        if (q.isBlank() || snapshot.loading || snapshot.loadingMore || !snapshot.hasMore || snapshot.items.isEmpty()) return
+        val now = SystemClock.elapsedRealtime()
+        if (
+            q.isBlank() || snapshot.loading || snapshot.loadingMore || !snapshot.hasMore || snapshot.items.isEmpty() ||
+            now - lastPagingFinishedAtMs < PAGING_COOLDOWN_MS
+        ) return
+
         val g = generation
         val startPage = nextPage
         val pages = (startPage until startPage + PAGE_BURST).toList()
         _state.update { it.copy(loadingMore = true, message = "") }
         pagingJob?.cancel()
         pagingJob = viewModelScope.launch {
-            val batches = coroutineScope {
-                pages.map { page ->
-                    async { page to searchRepo.search(q, page = page, maxPerSource = PAGE_SIZE) }
-                }.awaitAll().sortedBy { it.first }
-            }
-            if (g != generation) return@launch
-            val incoming = batches.flatMap { it.second.items }
-            val old = _state.value.items
-            val seen = old.mapTo(HashSet()) { stableKey(it) }
-            val fresh = incoming.filter { seen.add(stableKey(it)) }
-            nextPage = startPage + PAGE_BURST
-            val pagingErrors = batches.flatMap { it.second.errors }
-                .distinctBy { "${it.sourceId}|${it.errorCode}|${it.message}" }
-            _state.update {
-                it.copy(
-                    loadingMore = false,
-                    items = rankItems(old + fresh, q),
-                    errors = (it.errors + pagingErrors).distinctBy { e -> "${e.sourceId}|${e.errorCode}|${e.message}" },
-                    hasMore = fresh.isNotEmpty(),
-                    message = if (fresh.isEmpty()) "Больше результатов на следующих страницах не найдено" else "",
-                )
+            try {
+                val batches = coroutineScope {
+                    pages.map { page ->
+                        async(Dispatchers.IO) { page to searchRepo.search(q, page = page, maxPerSource = PAGE_SIZE) }
+                    }.awaitAll().sortedBy { it.first }
+                }
+                if (g != generation) return@launch
+                val incoming = batches.flatMap { it.second.items }
+                val old = _state.value.items
+                val seen = old.mapTo(HashSet()) { stableKey(it) }
+                val fresh = incoming.filter { seen.add(stableKey(it)) }
+                nextPage = startPage + PAGE_BURST
+                val pagingErrors = batches.flatMap { it.second.errors }
+                    .distinctBy { "${it.sourceId}|${it.errorCode}|${it.message}" }
+                val ranked = withContext(Dispatchers.IO) { rankItems(old + fresh, q) }
+                if (g != generation) return@launch
+                lastPagingFinishedAtMs = SystemClock.elapsedRealtime()
+                _state.update {
+                    it.copy(
+                        loadingMore = false,
+                        items = ranked,
+                        errors = (it.errors + pagingErrors).distinctBy { e -> "${e.sourceId}|${e.errorCode}|${e.message}" },
+                        hasMore = fresh.isNotEmpty(),
+                        message = if (fresh.isEmpty()) "Больше результатов на следующих страницах не найдено" else "",
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                if (g != generation) return@launch
+                lastPagingFinishedAtMs = SystemClock.elapsedRealtime()
+                _state.update {
+                    it.copy(
+                        loadingMore = false,
+                        message = "Ошибка догрузки: ${e.message ?: e.javaClass.simpleName}",
+                    )
+                }
             }
         }
     }
@@ -236,11 +316,21 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(playback = null, resolving = false) }
     }
 
+    override fun onCleared() {
+        thumbnailCache.evictAll()
+        thumbnailMisses.clear()
+        super.onCleared()
+    }
+
     private fun stableKey(v: VideoItem): String =
         "${v.sourceBaseUrl}|${v.remoteId}|${v.watchUrl}".lowercase()
 
     companion object {
-        private const val PAGE_BURST = 4
-        private const val PAGE_SIZE = 30
+        private const val PAGE_BURST = 1
+        private const val PAGE_SIZE = 18
+        private const val PAGING_COOLDOWN_MS = 1_500L
+        private const val THUMBNAIL_CACHE_KB = 16 * 1024
+        private const val THUMBNAIL_MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+        private const val THUMBNAIL_TARGET_MAX_DIMENSION = 512
     }
 }

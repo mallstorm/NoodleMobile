@@ -1,6 +1,7 @@
 package pro.noodle.mobile.core.search
 
 import android.content.Context
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -26,22 +27,38 @@ data class SearchBatch(val items: List<VideoItem>, val errors: List<SourceSearch
 class BundledSearchRepository(
     context: Context,
     private val http: SecureHttpClient = SecureHttpClient(),
-    private val parallelism: Int = 6,
+    private val parallelism: Int = 4,
 ) {
     private val runtimeRepo = RuntimeAdapterRepository(context.applicationContext)
     private val overrides = SourceOverridesRepository(context.applicationContext)
     private val diagnostics = SourceRuntimeDiagnosticsStore(context.applicationContext)
-    // Shared by every search call, including concurrent pagination bursts. This prevents
-    // 4 paged searches x N sources from multiplying into an unbounded number of sockets.
-    private val networkSemaphore = Semaphore(parallelism.coerceIn(1, 6))
 
-    private fun allAdapters(): List<AdapterDefinition> = runtimeRepo.listAll().map { it.definition }
+    // Shared by every search call, including pagination. Keep the socket/parser fan-out modest on
+    // memory-sensitive Android devices rather than allowing page bursts to multiply allocations.
+    private val networkSemaphore = Semaphore(parallelism.coerceIn(1, 4))
+
+    /**
+     * RuntimeAdapterRepository verifies package integrity by hashing every file. adapterFor() is
+     * called repeatedly while ranking cards and loading thumbnails, so doing a fresh listAll() for
+     * each card turns result rendering into a disk/SHA storm. Refresh once at search start and use
+     * the verified definitions as an in-memory snapshot for the rest of that result generation.
+     */
+    @Volatile
+    private var adapterSnapshot: List<AdapterDefinition> = emptyList()
+
+    private fun allAdapters(): List<AdapterDefinition> {
+        val cached = adapterSnapshot
+        if (cached.isNotEmpty()) return cached
+        return runtimeRepo.listAll().map { it.definition }.also { adapterSnapshot = it }
+    }
 
     private suspend fun activeAdapters(): List<AdapterDefinition> {
         val disabled = overrides.disabledSourceIds.first()
         val forced = overrides.forceEnabledSourceIds.first()
         val solo = overrides.soloSourceId.first()
-        return runtimeRepo.listAll()
+        val runtime = runtimeRepo.listAll()
+        adapterSnapshot = runtime.map { it.definition }
+        return runtime
             .filter { it.compatibility.compatible && it.packageInfo.valid }
             .map { it.definition }
             .filter { d ->
@@ -51,21 +68,32 @@ class BundledSearchRepository(
             }
     }
 
-    suspend fun search(query: String, page: Int = -1, maxPerSource: Int = 30): SearchBatch = coroutineScope {
+    suspend fun search(query: String, page: Int = -1, maxPerSource: Int = 20): SearchBatch = coroutineScope {
         if (query.isBlank()) return@coroutineScope SearchBatch(emptyList(), emptyList())
         val adapters = activeAdapters()
         directUrlResult(query, adapters)?.let { return@coroutineScope it }
         val parts = adapters.map { adapter ->
             async {
                 networkSemaphore.withPermit {
-                    withTimeoutOrNull(SOURCE_SEARCH_TIMEOUT_MS) {
-                        searchOne(adapter, query, page, maxPerSource)
-                    } ?: (emptyList<VideoItem>() to SourceSearchError(
-                        adapter.id,
-                        adapter.name,
-                        "SEARCH_TIMEOUT",
-                        "Источник не ответил за ${SOURCE_SEARCH_TIMEOUT_MS / 1000} с.",
-                    ))
+                    try {
+                        withTimeoutOrNull(SOURCE_SEARCH_TIMEOUT_MS) {
+                            searchOne(adapter, query, page, maxPerSource)
+                        } ?: (emptyList<VideoItem>() to SourceSearchError(
+                            adapter.id,
+                            adapter.name,
+                            "SEARCH_TIMEOUT",
+                            "Источник не ответил за ${SOURCE_SEARCH_TIMEOUT_MS / 1000} с.",
+                        ))
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (e: Exception) {
+                        emptyList<VideoItem>() to SourceSearchError(
+                            adapter.id,
+                            adapter.name,
+                            "SEARCH_SOURCE_EXCEPTION",
+                            e.message ?: e.javaClass.simpleName,
+                        )
+                    }
                 }
             }
         }.awaitAll()
@@ -91,16 +119,27 @@ class BundledSearchRepository(
                 "RELATED_SOURCE_NOT_FOUND",
                 "SNP текущего источника не найден.",
             )))
-        val result = networkSemaphore.withPermit {
-            withTimeoutOrNull(RELATED_SEARCH_TIMEOUT_MS) {
-                searchOne(adapter, query, page, maxPerSource.coerceIn(4, 12))
-            }
-        } ?: (emptyList<VideoItem>() to SourceSearchError(
-            adapter.id,
-            adapter.name,
-            "RELATED_TIMEOUT",
-            "Похожие видео загружались слишком долго.",
-        ))
+        val result = try {
+            networkSemaphore.withPermit {
+                withTimeoutOrNull(RELATED_SEARCH_TIMEOUT_MS) {
+                    searchOne(adapter, query, page, maxPerSource.coerceIn(4, 12))
+                }
+            } ?: (emptyList<VideoItem>() to SourceSearchError(
+                adapter.id,
+                adapter.name,
+                "RELATED_TIMEOUT",
+                "Похожие видео загружались слишком долго.",
+            ))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (e: Exception) {
+            emptyList<VideoItem>() to SourceSearchError(
+                adapter.id,
+                adapter.name,
+                "RELATED_SOURCE_EXCEPTION",
+                e.message ?: e.javaClass.simpleName,
+            )
+        }
         return SearchBatch(result.first, listOfNotNull(result.second))
     }
 
