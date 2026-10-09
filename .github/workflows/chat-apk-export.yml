@@ -1,0 +1,70 @@
+name: Chat APK Export
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/chat-apk-export.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  export-apk:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Free old NoodleMobile artifact storage
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          repo="${GITHUB_REPOSITORY}"
+          target=$((400 * 1024 * 1024))
+          tmp="$(mktemp)"
+          gh api --paginate "repos/$repo/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | [.created_at, .id, .size_in_bytes, .name] | @tsv' \
+            | sort > "$tmp" || true
+          freed=0
+          count=0
+          while IFS=$'\t' read -r created id size name; do
+            [ -n "${id:-}" ] || continue
+            if [ "$freed" -ge "$target" ]; then break; fi
+            echo "Deleting old artifact id=$id size=$size name=$name created=$created"
+            gh api --method DELETE "repos/$repo/actions/artifacts/$id"
+            freed=$((freed + size))
+            count=$((count + 1))
+          done < "$tmp"
+          echo "Freed $freed bytes across $count artifacts"
+
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v4
+
+      - name: Install Android SDK
+        run: |
+          sdkmanager "platform-tools" "platforms;android-37.0" "build-tools;36.0.0"
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '9.5.1'
+
+      - name: Build app APK
+        run: |
+          chmod +x gradlew
+          gradle :app:assembleDebug --no-daemon
+          sha256sum app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload chat APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: NoodleMobile-chat-RU-AI
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 1
+          if-no-files-found: error
