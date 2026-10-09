@@ -66,16 +66,16 @@ internal data class DubbingUiState(
     val phase: DubbingPhase = DubbingPhase.OFF,
     val message: String = "RU AI",
     val sourceLanguage: String = "",
-    val source: DubbingSource = DubbingSource.SUBTITLES,
+    val source: DubbingSource = DubbingSource.ASR,
     val requiresSetup: Boolean = false,
 )
 
 /**
- * Russian AI voice-over synchronized to the Media3 playback clock.
+ * Russian AI auto-dubbing synchronized to the Media3 playback clock.
  *
- * Subtitle path remains low-latency live TTS. For video without text tracks the controller uses
- * ASR, translates timed segments and pre-renders Russian speech into a persistent audio cache.
- * A dedicated ExoPlayer then starts the prepared speech file at the exact main-player offset.
+ * Speech-first pipeline: the audio track is always the source, regardless of subtitle availability.
+ * Audio is transcribed with speaker timing, translated to Russian and pre-rendered into a persistent
+ * speech cache. A dedicated ExoPlayer starts each prepared Russian segment at the main-player clock.
  */
 @OptIn(UnstableApi::class)
 internal class RussianDubbingController(
@@ -214,7 +214,7 @@ internal class RussianDubbingController(
         }
         if (enabled) {
             player.volume = targetOriginalVolume(activeConfig.mode)
-            if (usingAsr) restartAsrPipeline() else applyConfiguredVoice("")
+            restartAsrPipeline()
         }
     }
 
@@ -242,10 +242,8 @@ internal class RussianDubbingController(
     private fun enable() {
         if (closed || enabled) return
         activeConfig = preferences.load()
-        val textGroup = player.currentTracks.groups.firstOrNull { group ->
-            group.type == C.TRACK_TYPE_TEXT && (0 until group.length).any { group.isTrackSupported(it) }
-        }
-        if (textGroup != null) enableSubtitleMode(textGroup) else enableAsrMode()
+        // RU AI is deliberately speech-first. Subtitles never decide the dubbing path.
+        enableAsrMode()
     }
 
     private fun enableSubtitleMode(textGroup: androidx.media3.common.Tracks.Group) {
@@ -288,7 +286,7 @@ internal class RussianDubbingController(
         mutableState.value = DubbingUiState(
             enabled = true,
             phase = DubbingPhase.PREPARING,
-            message = "RU AI • готовлю защищённый ASR…",
+            message = "RU AI • слушаю речь и готовлю дубляж…",
             source = DubbingSource.ASR,
         )
         startAsr()
@@ -849,9 +847,9 @@ internal class RussianDubbingController(
     private companion object {
         const val VOICE_OVER_ORIGINAL_VOLUME = 0.22f
         const val DUB_ORIGINAL_VOLUME = 0.05f
-        const val CHUNK_MS = 60_000L
-        const val INITIAL_RENDER_AHEAD_MS = 20_000L
-        const val PREFETCH_BEFORE_END_MS = 18_000L
+        const val CHUNK_MS = 30_000L
+        const val INITIAL_RENDER_AHEAD_MS = 12_000L
+        const val PREFETCH_BEFORE_END_MS = 10_000L
         const val SCHEDULER_TICK_MS = 120L
         const val SEEK_RESET_THRESHOLD_MS = 2_500L
         const val SEGMENT_EARLY_WINDOW_MS = 140L

@@ -358,7 +358,7 @@ private fun DubbingSettingsDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text(
-                    "Субтитры переводятся локально. ASR API используется только для видео без субтитров.",
+                    "RU AI всегда переводит именно речь из аудиодорожки. Субтитры для автодубляжа не требуются и не используются как источник.",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -394,7 +394,7 @@ private fun DubbingSettingsDialog(
                 }
 
                 HorizontalDivider()
-                Text("ASR для видео без субтитров", style = MaterialTheme.typography.labelLarge)
+                Text("Распознавание речи и автодубляж", style = MaterialTheme.typography.labelLarge)
                 OutlinedTextField(
                     value = endpoint,
                     onValueChange = { endpoint = it },
@@ -428,7 +428,7 @@ private fun DubbingSettingsDialog(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Text(
-                    "Облачное распознавание может тарифицироваться выбранным провайдером.",
+                    "Аудио распознаётся по речи; облачный ASR может тарифицироваться выбранным провайдером.",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
