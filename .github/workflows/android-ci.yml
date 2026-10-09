@@ -86,8 +86,11 @@ jobs:
           chmod +x gradlew tools/*.sh
           bash tools/ci-android-build.sh
 
+      # Artifact quota exhaustion must not turn a successfully compiled/certified Android build red.
+      # The failed upload remains visible on the step while the build result stays authoritative.
       - name: Upload build diagnostics
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: noodle-alpha10-multisource-hotfix2-diagnostics
@@ -102,6 +105,7 @@ jobs:
 
       - name: Upload certified APKs
         if: success()
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: NoodleMobile-0.10.0-alpha10-MultiSourceHotfix2-API37
