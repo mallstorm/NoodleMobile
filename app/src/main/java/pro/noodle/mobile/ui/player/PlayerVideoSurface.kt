@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -39,6 +40,16 @@ internal fun PlayerVideoSurface(
     activity: android.app.Activity?,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
+    val dubbingController = remember(player) {
+        RussianDubbingController(context.applicationContext, player)
+    }
+    val dubbingState by dubbingController.state.collectAsState()
+
+    DisposableEffect(dubbingController) {
+        onDispose { dubbingController.close() }
+    }
+
     var controlsVisible by remember { mutableStateOf(true) }
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
@@ -145,6 +156,23 @@ internal fun PlayerVideoSurface(
                     Icon(Icons.Outlined.ArrowBack, "Назад", tint = Color.White)
                 }
                 Spacer(Modifier.weight(1f))
+                FilledTonalButton(
+                    onClick = {
+                        dubbingController.toggle()
+                        controlsVisible = true
+                    },
+                    modifier = Modifier.height(40.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = if (dubbingState.enabled) Color.White.copy(alpha = .92f) else Color.Black.copy(alpha = .55f),
+                        contentColor = if (dubbingState.enabled) Color.Black else Color.White,
+                    ),
+                ) {
+                    Icon(Icons.Outlined.Translate, "Русская AI-озвучка", modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text(if (dubbingState.enabled) "RU AI" else "RU", style = MaterialTheme.typography.labelMedium)
+                }
+                Spacer(Modifier.width(4.dp))
                 IconButton(onClick = onOpenSettings) {
                     Icon(Icons.Outlined.Settings, "Настройки воспроизведения", tint = Color.White)
                 }
@@ -206,6 +234,20 @@ internal fun PlayerVideoSurface(
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter),
             ) {
+                if (dubbingState.phase != DubbingPhase.OFF) {
+                    Surface(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+                        color = Color.Black.copy(alpha = .62f),
+                        contentColor = Color.White,
+                        shape = MaterialTheme.shapes.small,
+                    ) {
+                        Text(
+                            dubbingState.message,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                }
                 Row(
                     Modifier
                         .fillMaxWidth()
