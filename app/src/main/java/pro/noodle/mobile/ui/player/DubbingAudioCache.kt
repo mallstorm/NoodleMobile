@@ -13,6 +13,7 @@ internal class DubbingAudioCache(context: Context) {
         model: String,
         voiceName: String,
         segment: AsrSegment,
+        russianText: String,
     ): File {
         val raw = buildString {
             append(CACHE_VERSION).append('|')
@@ -22,7 +23,8 @@ internal class DubbingAudioCache(context: Context) {
             append(segment.startMs).append('|')
             append(segment.endMs).append('|')
             append(segment.speaker).append('|')
-            append(segment.text)
+            append(segment.text).append('|')
+            append(russianText)
         }
         val digest = MessageDigest.getInstance("SHA-256")
             .digest(raw.toByteArray())
@@ -69,7 +71,7 @@ internal class DubbingAudioCache(context: Context) {
 
     private companion object {
         const val DIRECTORY = "ru-dubbing-audio"
-        const val CACHE_VERSION = "v1"
+        const val CACHE_VERSION = "v2"
         const val MIN_VALID_BYTES = 256L
         const val MAX_CACHE_BYTES = 192L * 1024L * 1024L
         const val TARGET_CACHE_BYTES = 128L * 1024L * 1024L
