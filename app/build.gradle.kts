@@ -69,6 +69,7 @@ dependencies {
     implementation("androidx.media3:media3-datasource-okhttp:1.10.1")
     implementation("androidx.media3:media3-database:1.10.1")
     implementation("androidx.media3:media3-exoplayer-workmanager:1.10.1")
+    implementation("androidx.media3:media3-transformer:1.10.1")
 
     implementation("com.google.mlkit:translate:17.0.3")
     implementation("com.google.mlkit:language-id:17.0.6")

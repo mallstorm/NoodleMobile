@@ -7,8 +7,10 @@ import android.util.Rational
 import android.view.ViewGroup
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -18,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -45,9 +48,21 @@ internal fun PlayerVideoSurface(
         RussianDubbingController(context.applicationContext, player)
     }
     val dubbingState by dubbingController.state.collectAsState()
+    var showDubbingSettings by remember { mutableStateOf(false) }
 
     DisposableEffect(dubbingController) {
         onDispose { dubbingController.close() }
+    }
+
+    LaunchedEffect(dubbingState.requiresSetup) {
+        if (dubbingState.requiresSetup) showDubbingSettings = true
+    }
+
+    if (showDubbingSettings) {
+        DubbingSettingsDialog(
+            controller = dubbingController,
+            onDismiss = { showDubbingSettings = false },
+        )
     }
 
     var controlsVisible by remember { mutableStateOf(true) }
@@ -164,7 +179,11 @@ internal fun PlayerVideoSurface(
                     modifier = Modifier.height(40.dp),
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                     colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = if (dubbingState.enabled) Color.White.copy(alpha = .92f) else Color.Black.copy(alpha = .55f),
+                        containerColor = if (dubbingState.enabled) {
+                            Color.White.copy(alpha = .92f)
+                        } else {
+                            Color.Black.copy(alpha = .55f)
+                        },
                         contentColor = if (dubbingState.enabled) Color.Black else Color.White,
                     ),
                 ) {
@@ -172,7 +191,12 @@ internal fun PlayerVideoSurface(
                     Spacer(Modifier.width(5.dp))
                     Text(if (dubbingState.enabled) "RU AI" else "RU", style = MaterialTheme.typography.labelMedium)
                 }
-                Spacer(Modifier.width(4.dp))
+                IconButton(
+                    onClick = { showDubbingSettings = true },
+                    modifier = Modifier.size(40.dp),
+                ) {
+                    Icon(Icons.Outlined.Tune, "Настройки RU AI", tint = Color.White)
+                }
                 IconButton(onClick = onOpenSettings) {
                     Icon(Icons.Outlined.Settings, "Настройки воспроизведения", tint = Color.White)
                 }
@@ -309,6 +333,127 @@ internal fun PlayerVideoSurface(
             }
         }
     }
+}
+
+@Composable
+private fun DubbingSettingsDialog(
+    controller: RussianDubbingController,
+    onDismiss: () -> Unit,
+) {
+    val initial = remember { controller.configuration() }
+    var endpoint by remember { mutableStateOf(initial.endpoint) }
+    var model by remember { mutableStateOf(initial.model) }
+    var mode by remember { mutableStateOf(initial.mode) }
+    var voiceName by remember { mutableStateOf(initial.voiceName) }
+    var apiKey by remember { mutableStateOf("") }
+    val storedKey = controller.hasAsrApiKey()
+    val voices = controller.russianVoiceNames()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Русская AI-озвучка") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    "Субтитры переводятся локально. ASR API используется только для видео без субтитров.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = mode == DubbingMode.VOICE_OVER,
+                        onClick = { mode = DubbingMode.VOICE_OVER },
+                        label = { Text("Закадровый") },
+                    )
+                    FilterChip(
+                        selected = mode == DubbingMode.DUB,
+                        onClick = { mode = DubbingMode.DUB },
+                        label = { Text("Дубляж") },
+                    )
+                }
+
+                Text("Русский голос", style = MaterialTheme.typography.labelLarge)
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    FilterChip(
+                        selected = voiceName.isBlank(),
+                        onClick = { voiceName = "" },
+                        label = { Text("Авто / по спикерам") },
+                    )
+                    voices.forEach { voice ->
+                        FilterChip(
+                            selected = voiceName == voice,
+                            onClick = { voiceName = voice },
+                            label = { Text(voice.substringAfterLast('.').take(22)) },
+                        )
+                    }
+                }
+
+                HorizontalDivider()
+                Text("ASR для видео без субтитров", style = MaterialTheme.typography.labelLarge)
+                OutlinedTextField(
+                    value = endpoint,
+                    onValueChange = { endpoint = it },
+                    singleLine = true,
+                    label = { Text("Endpoint") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = model,
+                    onValueChange = { model = it },
+                    singleLine = true,
+                    label = { Text("Модель") },
+                    supportingText = { Text("По умолчанию: speaker-aware diarization") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = apiKey,
+                    onValueChange = { apiKey = it },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    label = { Text(if (storedKey) "API key (уже сохранён)" else "API key") },
+                    supportingText = {
+                        Text(
+                            if (storedKey) {
+                                "Оставьте пустым, чтобы сохранить текущий ключ."
+                            } else {
+                                "Ключ шифруется Android Keystore и не пишется в открытом виде."
+                            }
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    "Облачное распознавание может тарифицироваться выбранным провайдером.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    controller.saveConfiguration(
+                        DubbingConfig(
+                            endpoint = endpoint.trim().ifBlank { DubbingConfig.DEFAULT_ENDPOINT },
+                            model = model.trim().ifBlank { DubbingConfig.DEFAULT_MODEL },
+                            mode = mode,
+                            voiceName = voiceName,
+                        ),
+                        newApiKey = apiKey.trim().takeIf { it.isNotBlank() },
+                    )
+                    onDismiss()
+                }
+            ) { Text("Сохранить") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Отмена") }
+        },
+    )
 }
 
 private fun formatTime(ms: Long): String {
