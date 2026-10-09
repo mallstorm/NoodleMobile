@@ -22,6 +22,7 @@ import java.util.concurrent.Executors
 @UnstableApi
 object MediaDownloadRuntime {
     @Volatile private var holder: Holder? = null
+    @Volatile private var activeStreamingFactory: DataSource.Factory? = null
 
     /** DownloadManager is thread-affine in Media3. First construction must happen on main. */
     private fun holder(context: Context): Holder {
@@ -37,9 +38,18 @@ object MediaDownloadRuntime {
         return holder(context).manager
     }
 
-    /** Streaming playback: cache hit first, otherwise network through the exact SNP policy. */
+    /**
+     * Streaming playback: cache hit first, otherwise network through the exact SNP policy.
+     * The active factory is also exposed to the RU-ASR Transformer so audio extraction uses the
+     * same cache, cookies, headers, redirects and host sandbox as the visible player.
+     */
     fun cacheDataSourceFactory(context: Context, policy: NetworkPolicy, sourceKey: String): DataSource.Factory =
-        holder(context).cacheFactory(policy, sourceKey, readOnly = true)
+        holder(context).cacheFactory(policy, sourceKey, readOnly = true).also {
+            activeStreamingFactory = it
+        }
+
+    /** Exact DataSource.Factory currently owned by the foreground streaming player. */
+    fun activeStreamingDataSourceFactory(): DataSource.Factory? = activeStreamingFactory
 
     /** DownloadHelper preparation must resolve manifests through the exact same SNP sandbox. */
     fun downloadHelperDataSourceFactory(context: Context, policy: NetworkPolicy, sourceKey: String): DataSource.Factory =
