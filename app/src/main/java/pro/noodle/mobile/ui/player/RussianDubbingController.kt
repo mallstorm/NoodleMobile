@@ -70,37 +70,10 @@ internal class RussianDubbingController(
     private var lastCueText = ""
     private var originalVolume = 1f
     private var originalTrackParameters: TrackSelectionParameters? = null
+    private lateinit var tts: TextToSpeech
 
     private val mutableState = MutableStateFlow(DubbingUiState())
     val state: StateFlow<DubbingUiState> = mutableState.asStateFlow()
-
-    private val tts = TextToSpeech(appContext) { status ->
-        ttsReady = status == TextToSpeech.SUCCESS
-        if (ttsReady) {
-            val result = tts.setLanguage(Locale("ru", "RU"))
-            ttsReady = result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED
-            tts.setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build()
-            )
-        }
-        if (enabled && !ttsReady) {
-            mutableState.value = DubbingUiState(
-                enabled = true,
-                phase = DubbingPhase.ERROR,
-                message = "Русский голос TTS недоступен",
-            )
-        }
-    }.also { engine ->
-        engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(utteranceId: String?) = Unit
-            override fun onDone(utteranceId: String?) = Unit
-            @Deprecated("Deprecated in Java")
-            override fun onError(utteranceId: String?) = Unit
-        })
-    }
 
     private val listener = object : Player.Listener {
         override fun onCues(cueGroup: CueGroup) {
@@ -113,11 +86,42 @@ internal class RussianDubbingController(
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
-            if (!isPlaying) tts.stop()
+            if (!isPlaying && this@RussianDubbingController::tts.isInitialized) tts.stop()
         }
     }
 
     init {
+        tts = TextToSpeech(appContext) { status ->
+            // Post initialization work so the lateinit field is assigned even if an OEM TTS
+            // implementation invokes OnInit unusually early.
+            scope.launch {
+                if (closed) return@launch
+                ttsReady = status == TextToSpeech.SUCCESS
+                if (ttsReady) {
+                    val result = tts.setLanguage(Locale("ru", "RU"))
+                    ttsReady = result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED
+                    tts.setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build()
+                    )
+                }
+                if (enabled && !ttsReady) {
+                    mutableState.value = DubbingUiState(
+                        enabled = true,
+                        phase = DubbingPhase.ERROR,
+                        message = "Русский голос TTS недоступен",
+                    )
+                }
+            }
+        }
+        tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) = Unit
+            override fun onDone(utteranceId: String?) = Unit
+            @Deprecated("Deprecated in Java")
+            override fun onError(utteranceId: String?) = Unit
+        })
         player.addListener(listener)
     }
 
@@ -128,7 +132,7 @@ internal class RussianDubbingController(
     private fun enable() {
         if (closed || enabled) return
         val textGroup = player.currentTracks.groups.firstOrNull { group ->
-            group.type == C.TRACK_TYPE_TEXT && (0 until group.length).any(group::isTrackSupported)
+            group.type == C.TRACK_TYPE_TEXT && (0 until group.length).any { group.isTrackSupported(it) }
         }
         if (textGroup == null) {
             mutableState.value = DubbingUiState(
@@ -138,7 +142,7 @@ internal class RussianDubbingController(
             )
             return
         }
-        val trackIndex = (0 until textGroup.length).firstOrNull(textGroup::isTrackSupported) ?: 0
+        val trackIndex = (0 until textGroup.length).firstOrNull { textGroup.isTrackSupported(it) } ?: 0
         originalVolume = player.volume
         originalTrackParameters = player.trackSelectionParameters
         player.trackSelectionParameters = player.trackSelectionParameters
@@ -161,7 +165,7 @@ internal class RussianDubbingController(
         enabled = false
         cueJob?.cancel()
         cueJob = null
-        tts.stop()
+        if (this::tts.isInitialized) tts.stop()
         player.volume = originalVolume
         originalTrackParameters?.let { player.trackSelectionParameters = it }
         originalTrackParameters = null
@@ -261,8 +265,10 @@ internal class RussianDubbingController(
         translator?.close()
         translator = null
         languageIdentifier.close()
-        tts.stop()
-        tts.shutdown()
+        if (this::tts.isInitialized) {
+            tts.stop()
+            tts.shutdown()
+        }
         scope.cancel()
     }
 
