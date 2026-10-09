@@ -1,0 +1,1 @@
+Temporary certification trigger for finalized speech-first RU AI autodubbing. Remove after successful Android CI.
