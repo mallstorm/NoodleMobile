@@ -70,6 +70,9 @@ dependencies {
     implementation("androidx.media3:media3-database:1.10.1")
     implementation("androidx.media3:media3-exoplayer-workmanager:1.10.1")
 
+    implementation("com.google.mlkit:translate:17.0.3")
+    implementation("com.google.mlkit:language-id:17.0.6")
+
     val roomVersion = "2.8.4"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
