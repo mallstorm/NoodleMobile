@@ -54,7 +54,6 @@ internal enum class DubbingPhase {
     ERROR,
 }
 
-
 internal data class DubbingUiState(
     val enabled: Boolean = false,
     val phase: DubbingPhase = DubbingPhase.OFF,
@@ -64,11 +63,12 @@ internal data class DubbingUiState(
 )
 
 /**
- * Russian AI auto-dubbing synchronized to the Media3 playback clock.
+ * Speech-first Russian auto-dubbing synchronized to the Media3 playback clock.
  *
- * Speech-first pipeline: the audio track is always the source, regardless of subtitle availability.
- * Audio is transcribed with speaker timing, translated to Russian and pre-rendered into a persistent
- * speech cache. A dedicated ExoPlayer starts each prepared Russian segment at the main-player clock.
+ * The audio track is always the source. ASR produces timed/speaker-aware segments, ML Kit translates
+ * them to Russian, Android TTS pre-renders speech, and [DubbingTimelineAssembler] places those files
+ * on a continuous PCM timeline for each rolling media chunk. A dedicated ExoPlayer follows the main
+ * player clock and corrects drift while the proven per-segment/live-TTS path remains a fallback.
  */
 @OptIn(UnstableApi::class)
 internal class RussianDubbingController(
@@ -83,19 +83,21 @@ internal class RussianDubbingController(
     private val asrClient = OpenAiAsrClient()
     private val transcriptCache = AsrTranscriptCache(appContext)
     private val audioCache = DubbingAudioCache(appContext)
+    private val timelineAssembler = DubbingTimelineAssembler(appContext)
     private val dubbedAudioPlayer = ExoPlayer.Builder(appContext).build()
     private val translationMutex = Mutex()
     private val renderMutex = Mutex()
     private val renderWaiters = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
 
     private var translator: Translator? = null
-    private var translatorSourceLanguage: String = ""
+    private var translatorSourceLanguage = ""
     private var cueJob: Job? = null
     private var asrJob: Job? = null
     private val asrLoadJobs = mutableMapOf<Long, Job>()
     private val asrRenderJobs = mutableMapOf<Long, Job>()
     private val asrChunks = mutableMapOf<Long, List<AsrSegment>>()
     private val preparedAudioFiles = mutableMapOf<String, File>()
+    private val preparedTimelineChunks = mutableMapOf<Long, File>()
     private val preparedChunks = mutableSetOf<Long>()
 
     private var enabled = false
@@ -108,6 +110,7 @@ internal class RussianDubbingController(
     private var originalVolume = 1f
     private var activeConfig = preferences.load()
     private var activeMediaKey = ""
+    private var activeTimelineChunkStart = NO_TIMELINE_CHUNK
     private lateinit var liveTts: TextToSpeech
     private lateinit var renderTts: TextToSpeech
 
@@ -198,10 +201,15 @@ internal class RussianDubbingController(
         }
     }
 
-    private fun configureRussianTts(engine: TextToSpeech, status: Int, setMediaAttributes: Boolean): Boolean {
+    private fun configureRussianTts(
+        engine: TextToSpeech,
+        status: Int,
+        setMediaAttributes: Boolean,
+    ): Boolean {
         if (status != TextToSpeech.SUCCESS) return false
         val result = engine.setLanguage(Locale("ru", "RU"))
-        val ready = result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED
+        val ready = result != TextToSpeech.LANG_MISSING_DATA &&
+            result != TextToSpeech.LANG_NOT_SUPPORTED
         if (ready && setMediaAttributes) {
             engine.setAudioAttributes(
                 AudioAttributes.Builder()
@@ -222,7 +230,6 @@ internal class RussianDubbingController(
     private fun enable() {
         if (closed || enabled) return
         activeConfig = preferences.load()
-        // RU AI is deliberately speech-first. Subtitles never decide the dubbing path.
         enableAsrMode()
     }
 
@@ -237,9 +244,9 @@ internal class RussianDubbingController(
             return
         }
         rememberPlaybackState()
-        setIdleOriginalVolume()
         enabled = true
         usingAsr = true
+        setIdleOriginalVolume()
         spokenAsrKey = ""
         lastPlayerPositionMs = player.currentPosition.coerceAtLeast(0L)
         mutableState.value = DubbingUiState(
@@ -256,24 +263,31 @@ internal class RussianDubbingController(
 
     private fun restartAsrPipeline() {
         if (!enabled || !usingAsr) return
-        asrJob?.cancel()
-        asrJob = null
-        asrLoadJobs.values.forEach { it.cancel() }
-        asrLoadJobs.clear()
-        asrRenderJobs.values.forEach { it.cancel() }
-        asrRenderJobs.clear()
-        renderWaiters.values.forEach { it.cancel() }
-        renderWaiters.clear()
+        cancelPipelineJobs()
         asrChunks.clear()
         preparedAudioFiles.clear()
+        preparedTimelineChunks.clear()
         preparedChunks.clear()
-        dubbedAudioPlayer.stop()
+        stopDubbedAudioPlayback()
         spokenAsrKey = ""
         translator?.close()
         translator = null
         translatorSourceLanguage = ""
         if (this::renderTts.isInitialized) renderTts.stop()
         startAsr()
+    }
+
+    private fun cancelPipelineJobs() {
+        asrJob?.cancel()
+        asrJob = null
+        cueJob?.cancel()
+        cueJob = null
+        asrLoadJobs.values.forEach { it.cancel() }
+        asrLoadJobs.clear()
+        asrRenderJobs.values.forEach { it.cancel() }
+        asrRenderJobs.clear()
+        renderWaiters.values.forEach { it.cancel() }
+        renderWaiters.clear()
     }
 
     private fun disable() {
@@ -283,26 +297,21 @@ internal class RussianDubbingController(
         }
         enabled = false
         usingAsr = false
-        cueJob?.cancel()
-        cueJob = null
-        asrJob?.cancel()
-        asrJob = null
-        asrLoadJobs.values.forEach { it.cancel() }
-        asrLoadJobs.clear()
-        asrRenderJobs.values.forEach { it.cancel() }
-        asrRenderJobs.clear()
-        renderWaiters.values.forEach { it.cancel() }
-        renderWaiters.clear()
+        cancelPipelineJobs()
         asrChunks.clear()
         preparedAudioFiles.clear()
+        preparedTimelineChunks.clear()
         preparedChunks.clear()
-        dubbedAudioPlayer.stop()
+        stopDubbedAudioPlayback()
         dubbedAudioPlayer.clearMediaItems()
         if (this::liveTts.isInitialized) liveTts.stop()
         if (this::renderTts.isInitialized) renderTts.stop()
         player.volume = originalVolume
         spokenAsrKey = ""
         activeMediaKey = ""
+        translator?.close()
+        translator = null
+        translatorSourceLanguage = ""
         mutableState.value = DubbingUiState()
     }
 
@@ -316,14 +325,21 @@ internal class RussianDubbingController(
                 val initialStart = chunkStartFor(anchor)
                 val segments = loadAsrChunk(initialStart, announce = true)
                 if (!enabled || !usingAsr) return@launch
+
                 val initialWindow = segments.filter {
                     it.endMs >= anchor && it.startMs <= anchor + INITIAL_RENDER_AHEAD_MS
                 }
-                if (initialWindow.isNotEmpty()) prepareAsrSegments(initialWindow, announce = true)
+                if (initialWindow.isNotEmpty()) {
+                    prepareAsrSegments(initialWindow, announce = true)
+                }
                 queueRenderChunk(initialStart, segments, announce = false)
+
                 if (!enabled || !usingAsr) return@launch
                 player.seekTo(anchor)
                 if (resumePlayback) player.play()
+
+                // Give the next ASR + translation + TTS window a complete chunk of lead time.
+                queueAsrChunk(initialStart + CHUNK_MS, announce = false)
                 runAsrScheduler()
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -343,7 +359,7 @@ internal class RussianDubbingController(
         while (scope.isActive && enabled && usingAsr) {
             val position = player.currentPosition.coerceAtLeast(0L)
             if (abs(position - lastPlayerPositionMs) > SEEK_RESET_THRESHOLD_MS) {
-                dubbedAudioPlayer.stop()
+                stopDubbedAudioPlayback()
                 spokenAsrKey = ""
             }
             lastPlayerPositionMs = position
@@ -355,19 +371,35 @@ internal class RussianDubbingController(
             } else if (segments != null) {
                 queueRenderChunk(chunkStart, segments, announce = false)
                 if (player.isPlaying) {
-                    val segment = segments.firstOrNull {
+                    val activeSegment = segments.firstOrNull {
                         position >= (it.startMs - SEGMENT_EARLY_WINDOW_MS).coerceAtLeast(0L) &&
                             position <= it.endMs + SEGMENT_LATE_WINDOW_MS
                     }
-                    if (segment != null) {
-                        setSpeechOriginalVolume()
-                        val key = segmentKey(segment)
-                        if (key != spokenAsrKey) {
-                            spokenAsrKey = key
-                            processAsrSegment(segment, key)
+                    val timeline = preparedTimelineChunks[chunkStart]?.takeIf { it.isFile }
+
+                    if (timeline != null) {
+                        playOrSyncTimelineChunk(chunkStart, timeline, position)
+                        if (activeSegment != null) {
+                            setSpeechOriginalVolume()
+                        } else {
+                            setIdleOriginalVolume()
                         }
                     } else {
-                        setIdleOriginalVolume()
+                        if (activeTimelineChunkStart != NO_TIMELINE_CHUNK) {
+                            stopDubbedAudioPlayback()
+                        }
+                        if (activeSegment != null) {
+                            setSpeechOriginalVolume()
+                            val key = segmentKey(activeSegment)
+                            if (key != spokenAsrKey) {
+                                spokenAsrKey = key
+                                processAsrSegment(activeSegment, key)
+                            }
+                        } else {
+                            setIdleOriginalVolume()
+                            if (dubbedAudioPlayer.isPlaying) dubbedAudioPlayer.stop()
+                            if (this::liveTts.isInitialized) liveTts.stop()
+                        }
                     }
                 }
             }
@@ -381,7 +413,12 @@ internal class RussianDubbingController(
     }
 
     private fun queueAsrChunk(startMs: Long, announce: Boolean) {
-        if (startMs < 0L || asrChunks.containsKey(startMs) || asrLoadJobs[startMs]?.isActive == true) return
+        if (startMs < 0L || asrChunks.containsKey(startMs) || asrLoadJobs[startMs]?.isActive == true) {
+            return
+        }
+        val duration = player.duration.takeIf { it != C.TIME_UNSET && it > 0L }
+        if (duration != null && startMs >= duration) return
+
         val job = scope.launch {
             try {
                 val segments = loadAsrChunk(startMs, announce)
@@ -407,9 +444,14 @@ internal class RussianDubbingController(
         val mediaKey = source.localConfiguration?.uri?.toString().orEmpty()
         if (mediaKey.isBlank()) error("ASR_MEDIA_URI_MISSING")
         activeMediaKey = mediaKey
+
         val duration = player.duration.takeIf { it != C.TIME_UNSET && it > 0L }
         if (duration != null && startMs >= duration) return emptyList()
-        val endMs = if (duration != null) (startMs + CHUNK_MS).coerceAtMost(duration) else startMs + CHUNK_MS
+        val endMs = if (duration != null) {
+            (startMs + CHUNK_MS).coerceAtMost(duration)
+        } else {
+            startMs + CHUNK_MS
+        }
         if (endMs <= startMs) return emptyList()
 
         val config = preferences.load()
@@ -437,6 +479,7 @@ internal class RussianDubbingController(
         } finally {
             audio.delete()
         }
+
         val absolute = relative.map { segment ->
             segment.copy(
                 startMs = startMs + segment.startMs,
@@ -447,6 +490,7 @@ internal class RussianDubbingController(
         if (absolute.isEmpty()) error("ASR_EMPTY_TRANSCRIPT")
         transcriptCache.save(mediaKey, startMs, endMs, config.model, absolute)
         asrChunks[startMs] = absolute
+
         if (announce && enabled) {
             mutableState.value = mutableState.value.copy(
                 phase = DubbingPhase.PREPARING,
@@ -457,15 +501,29 @@ internal class RussianDubbingController(
     }
 
     private fun queueRenderChunk(startMs: Long, segments: List<AsrSegment>, announce: Boolean) {
-        if (segments.isEmpty() || startMs in preparedChunks || asrRenderJobs[startMs]?.isActive == true) return
+        if (segments.isEmpty() || startMs in preparedChunks || asrRenderJobs[startMs]?.isActive == true) {
+            return
+        }
         val job = scope.launch {
             try {
-                prepareAsrSegments(segments, announce)
+                val readyCount = prepareAsrSegments(segments, announce)
+                if (!enabled || !usingAsr) return@launch
+
+                if (readyCount == segments.size) {
+                    val timeline = buildTimelineChunk(startMs, segments)
+                    preparedTimelineChunks[startMs] = timeline
+                    mutableState.value = mutableState.value.copy(
+                        phase = DubbingPhase.ACTIVE,
+                        message = "RU AI • непрерывная русская дорожка готова",
+                    )
+                }
+                // One complete render pass is enough. Unsupported/failed speech files retain the
+                // prepared-segment/live fallback instead of retriggering work every scheduler tick.
                 preparedChunks += startMs
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                // Per-segment live TTS remains the fallback if pre-rendering is unavailable.
+                preparedChunks += startMs
             } finally {
                 asrRenderJobs.remove(startMs)
             }
@@ -473,7 +531,10 @@ internal class RussianDubbingController(
         asrRenderJobs[startMs] = job
     }
 
-    private suspend fun prepareAsrSegments(segments: List<AsrSegment>, announce: Boolean): Int {
+    private suspend fun prepareAsrSegments(
+        segments: List<AsrSegment>,
+        announce: Boolean,
+    ): Int {
         if (segments.isEmpty()) return 0
         awaitRenderTtsReady()
         if (announce && enabled) {
@@ -482,12 +543,13 @@ internal class RussianDubbingController(
                 message = "RU AI • готовлю синхронные русские реплики…",
             )
         }
+
         var readyCount = 0
         for (segment in segments) {
             if (!enabled || !usingAsr) break
             val key = segmentKey(segment)
-            val current = preparedAudioFiles[key]
-            if (current?.isFile == true) {
+            val existing = preparedAudioFiles[key]
+            if (existing?.isFile == true) {
                 readyCount++
                 continue
             }
@@ -497,11 +559,12 @@ internal class RussianDubbingController(
                 readyCount++
             }
         }
+
         if (announce && enabled) {
             mutableState.value = mutableState.value.copy(
                 phase = DubbingPhase.ACTIVE,
                 message = if (readyCount > 0) {
-                    "RU AI • синхронная русская дорожка готова"
+                    "RU AI • русские реплики готовы, собираю дорожку…"
                 } else {
                     "RU AI • live TTS fallback"
                 },
@@ -513,13 +576,16 @@ internal class RussianDubbingController(
     private suspend fun renderAsrSegment(segment: AsrSegment): File? = renderMutex.withLock {
         if (!enabled || !usingAsr) return@withLock null
         awaitRenderTtsReady()
+
         val mediaKey = activeMediaKey.ifBlank {
             player.currentMediaItem?.localConfiguration?.uri?.toString().orEmpty()
         }
         if (mediaKey.isBlank()) return@withLock null
+
         val voice = selectVoice(renderTts, segment.speaker) ?: return@withLock null
         val russian = translateToRussian(segment.text)
         if (russian.isBlank()) return@withLock null
+
         val target = audioCache.targetFile(
             mediaKey = mediaKey,
             model = activeConfig.model,
@@ -539,7 +605,8 @@ internal class RussianDubbingController(
             if (actualMs > 0L) {
                 val ratio = actualMs.toFloat() / segmentDurationMs.toFloat()
                 if (ratio !in TTS_DURATION_FIT_MIN..TTS_DURATION_FIT_MAX) {
-                    val correctedRate = (initialRate * ratio).coerceIn(MIN_RENDER_SPEECH_RATE, MAX_RENDER_SPEECH_RATE)
+                    val correctedRate = (initialRate * ratio)
+                        .coerceIn(MIN_RENDER_SPEECH_RATE, MAX_RENDER_SPEECH_RATE)
                     if (abs(correctedRate - initialRate) >= MIN_RERENDER_RATE_DELTA) {
                         temp.delete()
                         renderSpeechToFile(russian, voice, correctedRate, temp)
@@ -578,7 +645,8 @@ internal class RussianDubbingController(
         val retriever = MediaMetadataRetriever()
         try {
             retriever.setDataSource(file.absolutePath)
-            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull() ?: 0L
         } finally {
             retriever.release()
         }
@@ -591,6 +659,92 @@ internal class RussianDubbingController(
                 if (closed) error("RU_TTS_CLOSED")
                 delay(50L)
             }
+        }
+    }
+
+    private suspend fun buildTimelineChunk(startMs: Long, segments: List<AsrSegment>): File {
+        val mediaKey = activeMediaKey.ifBlank {
+            player.currentMediaItem?.localConfiguration?.uri?.toString().orEmpty()
+        }
+        if (mediaKey.isBlank()) error("RU_TIMELINE_MEDIA_KEY_MISSING")
+
+        val speech = segments.map { segment ->
+            val file = preparedAudioFiles[segmentKey(segment)]?.takeIf { it.isFile }
+                ?: error("RU_TIMELINE_SEGMENT_MISSING")
+            DubbingTimelineAssembler.SpeechFile(segment, file)
+        }
+        val endMs = chunkEndFor(startMs)
+        return withContext(Dispatchers.IO) {
+            timelineAssembler.assemble(
+                mediaKey = mediaKey,
+                chunkStartMs = startMs,
+                chunkEndMs = endMs,
+                speech = speech,
+            )
+        }
+    }
+
+    private fun playOrSyncTimelineChunk(
+        startMs: Long,
+        file: File,
+        mediaPositionMs: Long,
+    ) {
+        if (!enabled || !usingAsr || !player.isPlaying || !file.isFile) return
+
+        val chunkEnd = chunkEndFor(startMs)
+        val maxOffset = (chunkEnd - startMs - 1L).coerceAtLeast(0L)
+        val expectedOffset = (mediaPositionMs - startMs).coerceIn(0L, maxOffset)
+        val mediaId = "ru-timeline:$startMs:${file.name}"
+        val currentId = dubbedAudioPlayer.currentMediaItem?.mediaId
+
+        if (activeTimelineChunkStart != startMs || currentId != mediaId) {
+            cueJob?.cancel()
+            cueJob = null
+            if (this::liveTts.isInitialized) liveTts.stop()
+            dubbedAudioPlayer.stop()
+            dubbedAudioPlayer.playbackParameters = player.playbackParameters
+            dubbedAudioPlayer.setMediaItem(
+                MediaItem.Builder()
+                    .setMediaId(mediaId)
+                    .setUri(Uri.fromFile(file))
+                    .build(),
+                expectedOffset,
+            )
+            dubbedAudioPlayer.prepare()
+            dubbedAudioPlayer.playWhenReady = true
+            activeTimelineChunkStart = startMs
+            spokenAsrKey = ""
+            mutableState.value = mutableState.value.copy(
+                enabled = true,
+                phase = DubbingPhase.ACTIVE,
+                message = if (activeConfig.mode == DubbingMode.DUB) {
+                    "RU AI • непрерывный синхронный дубляж"
+                } else {
+                    "RU AI • непрерывный синхронный закадровый"
+                },
+                sourceLanguage = translatorSourceLanguage,
+            )
+            return
+        }
+
+        if (!dubbedAudioPlayer.playWhenReady) dubbedAudioPlayer.playWhenReady = true
+        val driftMs = dubbedAudioPlayer.currentPosition - expectedOffset
+        if (abs(driftMs) >= TIMELINE_DRIFT_CORRECTION_MS) {
+            dubbedAudioPlayer.seekTo(expectedOffset)
+        }
+    }
+
+    private fun stopDubbedAudioPlayback() {
+        dubbedAudioPlayer.stop()
+        activeTimelineChunkStart = NO_TIMELINE_CHUNK
+    }
+
+    private fun chunkEndFor(startMs: Long): Long {
+        val duration = player.duration.takeIf { it != C.TIME_UNSET && it > 0L }
+        return if (duration != null) {
+            (startMs + CHUNK_MS).coerceAtMost(duration)
+        } else {
+            startMs + CHUNK_MS
         }
     }
 
@@ -610,7 +764,9 @@ internal class RussianDubbingController(
                     message = "RU AI • live fallback${speakerSuffix(segment.speaker)}…",
                 )
                 val russian = translateToRussian(segment.text)
-                if (!enabled || !usingAsr || spokenAsrKey != expectedKey || !player.isPlaying) return@launch
+                if (!enabled || !usingAsr || spokenAsrKey != expectedKey || !player.isPlaying) {
+                    return@launch
+                }
                 speakLive(
                     russian = russian,
                     speaker = segment.speaker,
@@ -632,6 +788,7 @@ internal class RussianDubbingController(
     private fun playPreparedSegment(segment: AsrSegment, expectedKey: String, file: File) {
         if (!enabled || !usingAsr || spokenAsrKey != expectedKey || !player.isPlaying) return
         setSpeechOriginalVolume()
+        activeTimelineChunkStart = NO_TIMELINE_CHUNK
         val offsetMs = (player.currentPosition - segment.startMs)
             .coerceAtLeast(0L)
             .coerceAtMost((segment.endMs - segment.startMs).coerceAtLeast(0L))
@@ -663,12 +820,16 @@ internal class RussianDubbingController(
             return
         }
         setSpeechOriginalVolume()
+        stopDubbedAudioPlayback()
         applyConfiguredVoice(speaker)
+
         val playbackRate = player.playbackParameters.speed.coerceIn(0.75f, 1.5f)
         val fitRate = if (segmentDurationMs > 0L) {
             val estimatedMs = (russian.length * APPROX_MS_PER_CHARACTER).toFloat()
             (estimatedMs / segmentDurationMs.toFloat()).coerceIn(0.85f, 1.55f)
-        } else 1f
+        } else {
+            1f
+        }
         liveTts.setSpeechRate((playbackRate * fitRate).coerceIn(0.7f, 1.7f))
         val result = liveTts.speak(
             russian,
@@ -703,7 +864,9 @@ internal class RussianDubbingController(
             ?.let { name -> voices.firstOrNull { it.name == name } }
             ?: if (speaker.isNotBlank() && voices.size > 1) {
                 voices[(speaker.hashCode() and Int.MAX_VALUE) % voices.size]
-            } else voices.first()
+            } else {
+                voices.first()
+            }
     }
 
     private fun applyConfiguredVoice(speaker: String) {
@@ -718,7 +881,8 @@ internal class RussianDubbingController(
             translatorSourceLanguage = identified.takeUnless { it == "und" }.orEmpty()
                 .ifBlank { TranslateLanguage.ENGLISH }
         }
-        val source = TranslateLanguage.fromLanguageTag(translatorSourceLanguage) ?: TranslateLanguage.ENGLISH
+        val source = TranslateLanguage.fromLanguageTag(translatorSourceLanguage)
+            ?: TranslateLanguage.ENGLISH
         translatorSourceLanguage = source
         if (source == TranslateLanguage.RUSSIAN) return@withLock text
 
@@ -769,10 +933,12 @@ internal class RussianDubbingController(
     }
 
     private fun targetSpeechOriginalVolume(mode: DubbingMode): Float =
-        if (mode == DubbingMode.DUB) DUB_SPEECH_ORIGINAL_VOLUME else VOICE_OVER_SPEECH_ORIGINAL_VOLUME
+        if (mode == DubbingMode.DUB) DUB_SPEECH_ORIGINAL_VOLUME
+        else VOICE_OVER_SPEECH_ORIGINAL_VOLUME
 
     private fun targetIdleOriginalVolume(mode: DubbingMode): Float =
-        if (mode == DubbingMode.DUB) DUB_IDLE_ORIGINAL_VOLUME else VOICE_OVER_IDLE_ORIGINAL_VOLUME
+        if (mode == DubbingMode.DUB) DUB_IDLE_ORIGINAL_VOLUME
+        else VOICE_OVER_IDLE_ORIGINAL_VOLUME
 
     private fun chunkStartFor(positionMs: Long): Long =
         (positionMs.coerceAtLeast(0L) / CHUNK_MS) * CHUNK_MS
@@ -804,8 +970,12 @@ internal class RussianDubbingController(
     }
 
     private suspend fun <T> Task<T>.awaitTask(): T = suspendCancellableCoroutine { continuation ->
-        addOnSuccessListener { value -> if (continuation.isActive) continuation.resume(value) }
-        addOnFailureListener { error -> if (continuation.isActive) continuation.resumeWithException(error) }
+        addOnSuccessListener { value ->
+            if (continuation.isActive) continuation.resume(value)
+        }
+        addOnFailureListener { error ->
+            if (continuation.isActive) continuation.resumeWithException(error)
+        }
         addOnCanceledListener { continuation.cancel() }
     }
 
@@ -816,7 +986,7 @@ internal class RussianDubbingController(
             .trim()
 
     private fun formatClock(ms: Long): String {
-        val total = ms.coerceAtLeast(0L) / 1000L
+        val total = ms.coerceAtLeast(0L) / 1_000L
         val minutes = total / 60L
         val seconds = total % 60L
         return "%d:%02d".format(minutes, seconds)
@@ -829,7 +999,7 @@ internal class RussianDubbingController(
         const val DUB_IDLE_ORIGINAL_VOLUME = 0.32f
         const val CHUNK_MS = 20_000L
         const val INITIAL_RENDER_AHEAD_MS = 8_000L
-        const val PREFETCH_BEFORE_END_MS = 7_000L
+        const val PREFETCH_BEFORE_END_MS = 15_000L
         const val SCHEDULER_TICK_MS = 120L
         const val SEEK_RESET_THRESHOLD_MS = 2_500L
         const val SEGMENT_EARLY_WINDOW_MS = 140L
@@ -842,6 +1012,8 @@ internal class RussianDubbingController(
         const val MIN_RENDER_SPEECH_RATE = 0.72f
         const val MAX_RENDER_SPEECH_RATE = 1.80f
         const val MIN_RERENDER_RATE_DELTA = 0.06f
+        const val TIMELINE_DRIFT_CORRECTION_MS = 120L
+        const val NO_TIMELINE_CHUNK = Long.MIN_VALUE
         const val MAX_VOICE_CHOICES = 8
     }
 }
