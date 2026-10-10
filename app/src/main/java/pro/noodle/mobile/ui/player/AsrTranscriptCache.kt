@@ -31,7 +31,7 @@ internal class AsrTranscriptCache(context: Context) {
                         )
                     )
                 }
-            }.takeIf { it.isNotEmpty() }
+            }
         }.getOrNull()
     }
 
@@ -42,7 +42,6 @@ internal class AsrTranscriptCache(context: Context) {
         model: String,
         segments: List<AsrSegment>,
     ) {
-        if (segments.isEmpty()) return
         runCatching {
             val array = JSONArray()
             segments.forEach { segment ->
