@@ -7,10 +7,11 @@ import java.security.MessageDigest
 import kotlin.math.roundToInt
 
 /**
- * Builds one clock-aligned PCM WAV timeline for a speech-first dubbing chunk.
+ * Builds clock-aligned PCM WAV timeline chunks for speech-first Russian dubbing.
  *
- * Each prepared TTS file is placed at the ASR segment's absolute media time. Silence is retained
- * between phrases, overlaps are mixed with saturation, and short fades prevent hard PCM clicks.
+ * Every output chunk uses one canonical PCM format (24 kHz, mono, 16-bit). Prepared TTS files are
+ * resampled/downmixed into that format, which lets Media3 queue adjacent chunks without decoder
+ * reconfiguration at every boundary. Empty speech windows are valid and become pure-silence chunks.
  */
 internal class DubbingTimelineAssembler private constructor(
     private val directory: File,
@@ -35,26 +36,17 @@ internal class DubbingTimelineAssembler private constructor(
         speech: List<SpeechFile>,
     ): File {
         require(chunkEndMs > chunkStartMs) { "RU_TIMELINE_INVALID_RANGE" }
-        require(speech.isNotEmpty()) { "RU_TIMELINE_EMPTY" }
 
         val ordered = speech
             .filter { it.file.isFile }
             .sortedBy { it.segment.startMs }
-        require(ordered.isNotEmpty()) { "RU_TIMELINE_NO_AUDIO" }
-
         val target = targetFile(mediaKey, chunkStartMs, chunkEndMs, ordered)
         existing(target)?.let { return it }
 
         val sources = ordered.map { item -> item to readWave(item.file) }
-        val format = sources.first().second.format
-        require(format.audioFormat == PCM_FORMAT) { "RU_TIMELINE_PCM_REQUIRED" }
-        require(format.bitsPerSample == 16) { "RU_TIMELINE_16BIT_REQUIRED" }
-        require(format.channels in 1..2) { "RU_TIMELINE_CHANNELS_UNSUPPORTED" }
-        require(format.sampleRate in 8_000..96_000) { "RU_TIMELINE_RATE_UNSUPPORTED" }
-        sources.forEach { (_, wave) ->
-            require(wave.format == format) { "RU_TIMELINE_FORMAT_MISMATCH" }
-        }
+        sources.forEach { (_, wave) -> validateSourceFormat(wave.format) }
 
+        val format = OUTPUT_FORMAT
         val durationMs = chunkEndMs - chunkStartMs
         val totalFrames = ((durationMs * format.sampleRate) / 1_000L)
             .coerceAtLeast(1L)
@@ -67,7 +59,7 @@ internal class DubbingTimelineAssembler private constructor(
             mixSource(
                 mix = mix,
                 outputFrames = totalFrames,
-                format = format,
+                outputFormat = format,
                 chunkStartMs = chunkStartMs,
                 chunkEndMs = chunkEndMs,
                 segment = item.segment,
@@ -92,10 +84,17 @@ internal class DubbingTimelineAssembler private constructor(
         }
     }
 
+    private fun validateSourceFormat(format: WaveFormat) {
+        require(format.audioFormat == PCM_FORMAT) { "RU_TIMELINE_PCM_REQUIRED" }
+        require(format.bitsPerSample == 16) { "RU_TIMELINE_16BIT_REQUIRED" }
+        require(format.channels in 1..2) { "RU_TIMELINE_CHANNELS_UNSUPPORTED" }
+        require(format.sampleRate in 8_000..96_000) { "RU_TIMELINE_RATE_UNSUPPORTED" }
+    }
+
     private fun mixSource(
         mix: IntArray,
         outputFrames: Int,
-        format: WaveFormat,
+        outputFormat: WaveFormat,
         chunkStartMs: Long,
         chunkEndMs: Long,
         segment: AsrSegment,
@@ -105,37 +104,65 @@ internal class DubbingTimelineAssembler private constructor(
         val visibleEndMs = minOf(segment.endMs, chunkEndMs)
         if (visibleEndMs <= visibleStartMs) return
 
+        val sourceFormat = wave.format
+        val sourceFrames = wave.pcm.size / sourceFormat.blockAlign
+        if (sourceFrames <= 0) return
+
         val sourceSkipMs = (visibleStartMs - segment.startMs).coerceAtLeast(0L)
         val outputOffsetMs = visibleStartMs - chunkStartMs
-        val sourceStartFrame = ((sourceSkipMs * format.sampleRate) / 1_000L).toInt()
-        val outputStartFrame = ((outputOffsetMs * format.sampleRate) / 1_000L).toInt()
-        val segmentFrames = (((visibleEndMs - visibleStartMs) * format.sampleRate) / 1_000L).toInt()
-        val sourceFrames = wave.pcm.size / format.blockAlign
+        val sourceStartFrame = ((sourceSkipMs * sourceFormat.sampleRate) / 1_000L).toInt()
+        val outputStartFrame = ((outputOffsetMs * outputFormat.sampleRate) / 1_000L).toInt()
+        val segmentOutputFrames = (((visibleEndMs - visibleStartMs) * outputFormat.sampleRate) / 1_000L)
+            .toInt()
+        val sourceFramesRemaining = (sourceFrames - sourceStartFrame).coerceAtLeast(0)
+        val maxOutputFramesFromSource = (
+            sourceFramesRemaining.toLong() * outputFormat.sampleRate / sourceFormat.sampleRate
+            ).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         val frames = minOf(
-            segmentFrames,
-            sourceFrames - sourceStartFrame,
+            segmentOutputFrames,
+            maxOutputFramesFromSource,
             outputFrames - outputStartFrame,
         )
         if (frames <= 0) return
 
-        val fadeFrames = minOf((format.sampleRate * FADE_MS / 1_000), frames / 2)
+        val fadeFrames = minOf((outputFormat.sampleRate * FADE_MS / 1_000), frames / 2)
+        val sourceStep = sourceFormat.sampleRate.toDouble() / outputFormat.sampleRate.toDouble()
         for (frame in 0 until frames) {
             val gain = when {
                 fadeFrames <= 0 -> 1f
                 frame < fadeFrames -> frame.toFloat() / fadeFrames.toFloat()
-                frame >= frames - fadeFrames -> (frames - 1 - frame).coerceAtLeast(0).toFloat() / fadeFrames.toFloat()
+                frame >= frames - fadeFrames ->
+                    (frames - 1 - frame).coerceAtLeast(0).toFloat() / fadeFrames.toFloat()
                 else -> 1f
             }
-            val sourceFrame = sourceStartFrame + frame
-            val outputFrame = outputStartFrame + frame
-            for (channel in 0 until format.channels) {
-                val sourceByte = sourceFrame * format.blockAlign + channel * 2
-                val sample = littleEndianShort(wave.pcm, sourceByte)
-                val sampleIndex = outputFrame * format.channels + channel
-                val mixed = mix[sampleIndex] + (sample * gain).roundToInt()
-                mix[sampleIndex] = mixed.coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
-            }
+
+            val sourcePosition = sourceStartFrame.toDouble() + frame.toDouble() * sourceStep
+            val sample = interpolatedMonoSample(wave, sourcePosition)
+            val sampleIndex = outputStartFrame + frame
+            val mixed = mix[sampleIndex] + (sample * gain).roundToInt()
+            mix[sampleIndex] = mixed.coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
         }
+    }
+
+    private fun interpolatedMonoSample(wave: WaveData, position: Double): Float {
+        val sourceFrames = wave.pcm.size / wave.format.blockAlign
+        if (sourceFrames <= 0) return 0f
+        val left = position.toInt().coerceIn(0, sourceFrames - 1)
+        val right = (left + 1).coerceAtMost(sourceFrames - 1)
+        val fraction = (position - left.toDouble()).coerceIn(0.0, 1.0).toFloat()
+        val leftSample = monoSampleAt(wave, left)
+        val rightSample = monoSampleAt(wave, right)
+        return leftSample + (rightSample - leftSample) * fraction
+    }
+
+    private fun monoSampleAt(wave: WaveData, frame: Int): Float {
+        val format = wave.format
+        var sum = 0
+        for (channel in 0 until format.channels) {
+            val sourceByte = frame * format.blockAlign + channel * 2
+            sum += littleEndianShort(wave.pcm, sourceByte)
+        }
+        return sum.toFloat() / format.channels.toFloat()
     }
 
     private fun readWave(file: File): WaveData {
@@ -157,11 +184,17 @@ internal class DubbingTimelineAssembler private constructor(
                         val audioFormat = readLeShort(input)
                         val channels = readLeShort(input)
                         val sampleRate = readLeInt(input)
-                        input.skipBytes(6) // byteRate + blockAlign are recomputed and validated below.
+                        input.skipBytes(6)
                         val bitsPerSample = readLeShort(input)
                         val blockAlign = channels * (bitsPerSample / 8)
                         require(blockAlign > 0) { "RU_TIMELINE_BLOCK_ALIGN_INVALID" }
-                        format = WaveFormat(audioFormat, channels, sampleRate, bitsPerSample, blockAlign)
+                        format = WaveFormat(
+                            audioFormat = audioFormat,
+                            channels = channels,
+                            sampleRate = sampleRate,
+                            bitsPerSample = bitsPerSample,
+                            blockAlign = blockAlign,
+                        )
                     }
                     "data" -> {
                         require(chunkSize <= MAX_SOURCE_BYTES) { "RU_TIMELINE_WAV_TOO_LARGE" }
@@ -198,7 +231,10 @@ internal class DubbingTimelineAssembler private constructor(
             output.writeBytes("data")
             writeLeInt(output, dataBytes)
             for (sample in samples) {
-                writeLeShort(output, sample.coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()))
+                writeLeShort(
+                    output,
+                    sample.coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()),
+                )
             }
         }
     }
@@ -212,6 +248,7 @@ internal class DubbingTimelineAssembler private constructor(
         val raw = buildString {
             append(CACHE_VERSION).append('|')
             append(mediaKey).append('|').append(chunkStartMs).append('|').append(chunkEndMs)
+            append('|').append(OUTPUT_SAMPLE_RATE).append('|').append(OUTPUT_CHANNELS)
             speech.forEach { item ->
                 append('|').append(item.segment.startMs)
                 append(':').append(item.segment.endMs)
@@ -274,15 +311,11 @@ internal class DubbingTimelineAssembler private constructor(
     }
 
     private fun littleEndianShort(bytes: ByteArray, offset: Int): Int {
-        val lo = bytes[offset].toInt() and 0xff
-        val hi = bytes[offset + 1].toInt()
-        return ((hi shl 8) or lo).toShort().toInt()
+        if (offset < 0 || offset + 1 >= bytes.size) return 0
+        val low = bytes[offset].toInt() and 0xff
+        val high = bytes[offset + 1].toInt()
+        return ((high shl 8) or low).toShort().toInt()
     }
-
-    private data class WaveData(
-        val format: WaveFormat,
-        val pcm: ByteArray,
-    )
 
     private data class WaveFormat(
         val audioFormat: Int,
@@ -292,15 +325,30 @@ internal class DubbingTimelineAssembler private constructor(
         val blockAlign: Int,
     )
 
+    private data class WaveData(
+        val format: WaveFormat,
+        val pcm: ByteArray,
+    )
+
     private companion object {
         const val DIRECTORY = "ru-dubbing-timeline"
-        const val CACHE_VERSION = "v1"
+        const val CACHE_VERSION = "v2-gapless-24k-mono"
         const val PCM_FORMAT = 1
-        const val FADE_MS = 8
+        const val OUTPUT_SAMPLE_RATE = 24_000
+        const val OUTPUT_CHANNELS = 1
+        const val OUTPUT_BITS_PER_SAMPLE = 16
+        val OUTPUT_FORMAT = WaveFormat(
+            audioFormat = PCM_FORMAT,
+            channels = OUTPUT_CHANNELS,
+            sampleRate = OUTPUT_SAMPLE_RATE,
+            bitsPerSample = OUTPUT_BITS_PER_SAMPLE,
+            blockAlign = OUTPUT_CHANNELS * (OUTPUT_BITS_PER_SAMPLE / 8),
+        )
+        const val FADE_MS = 12
         const val MIN_VALID_BYTES = 256L
-        const val MAX_SOURCE_BYTES = 32L * 1024L * 1024L
-        const val MAX_TIMELINE_FRAMES = 96_000 * 30
+        const val MAX_SOURCE_BYTES = 16L * 1024L * 1024L
+        const val MAX_TIMELINE_FRAMES = 96_000 * 90
         const val MAX_CACHE_BYTES = 256L * 1024L * 1024L
-        const val TARGET_CACHE_BYTES = 160L * 1024L * 1024L
+        const val TARGET_CACHE_BYTES = 192L * 1024L * 1024L
     }
 }
