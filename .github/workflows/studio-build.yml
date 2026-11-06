@@ -59,7 +59,12 @@ jobs:
           OUT=$(mktemp -d)
           mkdir -p "$OUT/run"
           cp -r build-certification/. "$OUT/run/" 2>/dev/null || true
-          find app/build/outputs/apk -name '*.apk' -exec cp {} "$OUT/run/" \; 2>/dev/null || true
+          APK=$(find app/build/outputs/apk/debug -name '*.apk' | head -1)
+          if [ -n "$APK" ]; then
+            mkdir -p "$OUT/run/apk"
+            sha256sum "$APK" | awk '{print $1}' > "$OUT/run/apk/SHA256.txt"
+            split -b 45m -d -a 2 "$APK" "$OUT/run/apk/NoodleMobile-debug.apk.part-"
+          fi
           find app/build/test-results -name '*.xml' -exec cp {} "$OUT/run/" \; 2>/dev/null || true
           find app/build/reports/lint-results* -maxdepth 0 -exec cp -r {} "$OUT/run/" \; 2>/dev/null || true
           echo "sha=${GITHUB_SHA} build=${{ steps.build.outcome }} run=${GITHUB_RUN_ID}" > "$OUT/run/STATUS.txt"
