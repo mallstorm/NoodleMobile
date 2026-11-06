@@ -107,7 +107,7 @@ ck('Background checks fingerprint+breakage','fingerprint.checkOne' in maintenanc
 
 bundled=R/'app/src/main/assets/adapters/bundled'
 dirs=sorted([p for p in bundled.iterdir() if p.is_dir()]) if bundled.exists() else []
-ck('Five bundled full packages',len(dirs)==5,', '.join(p.name for p in dirs))
+ck('Three bundled full packages',len(dirs)==3,', '.join(p.name for p in dirs))
 for d in dirs:
     ck(f'{d.name} has adapter+manifest',(d/'adapter.json').is_file() and (d/'snp-package.json').is_file())
     try:

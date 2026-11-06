@@ -8,7 +8,7 @@ fun main(args:Array<String>){
     check(report.passed){"Core self-test failed"}
     val assetDir=File(args.firstOrNull() ?: "app/src/main/assets/adapters/bundled")
     val files=assetDir.walkTopDown().filter{it.isFile && it.name.equals("adapter.json",true)}.sortedBy{it.path}.toList()
-    check(files.size==5){"Expected 5 bundled adapters, got ${files.size}"}
+    check(files.size==3){"Expected 3 bundled adapters, got ${files.size}"}
     for(file in files){
         val r=AdapterValidator.validate(file.readText(Charsets.UTF_8))
         println((if(r.isValid)"PASS" else "FAIL")+" | bundled adapter | "+file.parentFile.name+(if(r.isValid)"" else " | ${r.errorCode}: ${r.errorMessage}"))

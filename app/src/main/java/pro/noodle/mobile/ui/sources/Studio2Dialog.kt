@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.AddLink
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.ErrorOutline
@@ -84,6 +85,7 @@ internal fun Studio2Dialog(
     onSaved: () -> Unit,
 ) {
     var advanced by remember { mutableStateOf(false) }
+    var help by remember { mutableStateOf(false) }
     var modelMenu by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
@@ -95,12 +97,18 @@ internal fun Studio2Dialog(
                         Text("SNP Studio", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                         Text("Подключение нового сайта", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    IconButton(onClick = { help = true }) { Icon(Icons.AutoMirrored.Outlined.HelpOutline, "Справка") }
                 }
                 Column(
                     Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     StudioHero()
+                    TextButton(onClick = { help = true }) {
+                        Icon(Icons.AutoMirrored.Outlined.HelpOutline, null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Справка: как создать адаптер")
+                    }
                     OutlinedTextField(
                         value = state.studioUrl,
                         onValueChange = vm::setStudioUrl,
@@ -154,6 +162,8 @@ internal fun Studio2Dialog(
             }
         }
     }
+
+    if (help) StudioHelpDialog(onDismiss = { help = false })
 
     if (modelMenu) {
         StudioModelPickerDialog(

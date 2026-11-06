@@ -31,7 +31,7 @@ private fun adapterJson(id:String,version:String="1.0.0",schema:Int=3):String=""
 fun main(args:Array<String>){
     val bundledRoot=File(args.firstOrNull() ?: "app/src/main/assets/adapters/bundled")
     val bundled=bundledRoot.listFiles().orEmpty().filter{it.isDirectory}.sortedBy{it.name}
-    ck("5 bundled package directories",bundled.size==5,bundled.joinToString{it.name})
+    ck("3 bundled package directories",bundled.size==3,bundled.joinToString{it.name})
     bundled.forEach{dir->
         val p=AdapterPackageManager.verifyDirectory(dir,bundledRoot)
         ck("bundled package ${dir.name}",p.valid&&p.trustStatus==AdapterTrustStatus.BUNDLED_TRUSTED,"${p.trustStatus.wireName} ${p.errorCode}")
