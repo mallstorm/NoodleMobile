@@ -96,6 +96,9 @@ object AutoCards {
         return out
     }
 
+    /** True when the text of a card window contains a video duration like 12:34 or 1:02:11. */
+    fun hasDuration(block: String): Boolean = durationRe.containsMatchIn(EngineParsing.stripTags(block))
+
     fun firstImage(block: String, baseUrl: String): String {
         for (m in imgRe.findAll(block)) {
             val tag = m.value

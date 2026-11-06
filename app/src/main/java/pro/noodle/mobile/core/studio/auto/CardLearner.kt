@@ -10,11 +10,11 @@ import pro.noodle.mobile.core.engine.impl.AutoCards
  * anchored path regex for the auto_catalog engine.
  */
 object CardLearner {
-    data class Learned(val pattern: String, val shape: String, val distinct: Int, val withImages: Int, val score: Int)
+    data class Learned(val pattern: String, val shape: String, val distinct: Int, val withImages: Int, val withDuration: Int, val score: Int, val examples: List<String> = emptyList())
 
     private val mediaWords = setOf(
         "video", "videos", "watch", "view", "v", "vid", "vids", "embed", "movie", "movies", "clip", "clips",
-        "play", "player", "film", "films", "post", "porn", "xxx", "tube", "stream", "episode", "media", "item",
+        "play", "player", "film", "films", "post", "stream", "episode", "media", "item", "ролик", "videos-online",
     )
     private val navWords = setOf(
         "tag", "tags", "category", "categories", "cat", "cats", "channel", "channels", "model", "models", "pornstar",
@@ -27,13 +27,16 @@ object CardLearner {
     )
     private val fileExt = Regex("\\.(?:jpe?g|png|gif|webp|svg|css|js|ico|xml|json|txt|zip|rar|pdf)$", RegexOption.IGNORE_CASE)
 
-    fun learn(html: String, pageUrl: String, query: String = ""): Learned? {
+    fun learn(html: String, pageUrl: String, query: String = ""): Learned? = learnAll(html, pageUrl, query).firstOrNull()
+
+    /** All plausible card groups, best first. Alternatives are tried when the best one does not play. */
+    fun learnAll(html: String, pageUrl: String, query: String = ""): List<Learned> {
         val base = SnpAutoBuilder.originOf(pageUrl)
         val baseHost = SnpAutoBuilder.registrable(SnpAutoBuilder.hostOf(base))
         val anchors = AutoCards.anchors(html, base).filter { a ->
             AutoCards.sameSite(AutoCards.hostOf(a.href), baseHost) && a.path.length > 1 && !fileExt.containsMatchIn(a.path) && a.path.length < 260
         }
-        if (anchors.isEmpty()) return null
+        if (anchors.isEmpty()) return emptyList()
         val groups = linkedMapOf<String, MutableList<AutoCards.Anchor>>()
         anchors.forEach { a -> shape(a.path)?.let { groups.getOrPut(it) { mutableListOf() }.add(a) } }
         val tokens = SnpAutoBuilder.queryTokens(query)
@@ -47,8 +50,14 @@ object CardLearner {
             val withImages = byHref.count { (_, same) ->
                 same.any { a -> AutoCards.firstImage(html.substring(a.start, minOf(html.length, maxOf(a.end, a.start + 1200))), base).isNotBlank() }
             }
+            val withDuration = byHref.count { (_, same) ->
+                val a = same.first()
+                AutoCards.hasDuration(html.substring(a.start, minOf(html.length, maxOf(same.maxOf { it.end }, a.start + 1500))))
+            }
             val relevant = if (tokens.isEmpty()) 0 else distinct.count { h -> tokens.any { h.lowercase().contains(it) } }
-            var score = distinct.size.coerceAtMost(60) * 3 + withImages * 5 + relevant * 2
+            var score = distinct.size.coerceAtMost(60) * 3 + withImages * 5 + relevant * 2 + withDuration * 6
+            // Video cards almost always show a duration; category/model tiles show counters instead.
+            if (withDuration.toDouble() / distinct.size < 0.2) score -= 50
             if (firstSeg in mediaWords) score += 40
             if (shape.contains('#')) score += 15
             if (shape.count { it == '/' } >= 2) score += 5
@@ -59,9 +68,9 @@ object CardLearner {
                 if (imageRatio < 0.6) score -= 40
                 score -= 10
             }
-            Learned(toRegex(shape), shape, distinct.size, withImages, score)
+            Learned(toRegex(shape), shape, distinct.size, withImages, withDuration, score, distinct.take(3))
         }
-        return ranked.filter { it.score > 0 }.maxByOrNull { it.score }
+        return ranked.filter { it.score > 0 }.sortedByDescending { it.score }
     }
 
     /**

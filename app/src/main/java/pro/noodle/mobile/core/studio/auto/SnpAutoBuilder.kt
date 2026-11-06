@@ -33,6 +33,9 @@ data class AutoSearchCandidate(
     val score: Int = -1000,
     val pattern: String = "",
     val error: String = "",
+    val withDuration: Int = 0,
+    val alternatives: List<String> = emptyList(),
+    val groups: String = "",
 )
 
 data class AutoPlaybackCheck(val pageUrl: String, val ok: Boolean, val sources: Int, val detail: String)
@@ -70,7 +73,10 @@ data class AutoBuildResult(
         samples.take(5).forEach { appendLine("  • ${it.title.take(70)} | ${it.watchPath} | thumb=${it.thumbnailUrl.isNotBlank()} | ${it.durationText}") }
         playback.forEach { appendLine("  ▶ ${if (it.ok) "OK" else "FAIL"} ${it.pageUrl} — ${it.detail}") }
         appendLine("candidates:")
-        candidates.sortedByDescending { it.score }.take(10).forEach { appendLine("  - ${it.label} score=${it.score} http=${it.status} items=${it.items} rel=${it.relevant} thumbs=${it.withThumbs} ${it.error} ${it.url}") }
+        candidates.sortedByDescending { it.score }.take(10).forEach {
+            appendLine("  - ${it.label} score=${it.score} http=${it.status} items=${it.items} rel=${it.relevant} thumbs=${it.withThumbs} dur=${it.withDuration} ${it.error} ${it.url}")
+            if (it.groups.isNotBlank()) appendLine("      groups: ${it.groups}")
+        }
         appendLine("log:")
         log.forEach { appendLine("  $it") }
     }
@@ -124,8 +130,8 @@ class SnpAutoBuilder(private val http: SecureHttpClient = SecureHttpClient()) {
             }
         }.awaitAll()
 
-        val best = probes.filter { it.loaded && it.items >= MIN_CARDS && it.pattern.isNotBlank() }.maxByOrNull { it.score }
-        if (best == null) {
+        val ranked = probes.filter { it.loaded && it.items >= MIN_CARDS && it.pattern.isNotBlank() }.sortedByDescending { it.score }
+        if (ranked.isEmpty()) {
             val loaded = probes.count { it.loaded }
             return@coroutineScope AutoBuildResult(
                 false, siteName = siteName, baseUrl = base, candidates = probes, log = log,
@@ -134,23 +140,47 @@ class SnpAutoBuilder(private val http: SecureHttpClient = SecureHttpClient()) {
                 else "Страницы поиска открываются, но карточки видео не распознаны. Попробуйте другой запрос или включите режим браузера.",
             )
         }
-        step("Поиск найден: ${best.template} • карточек ${best.items}")
 
-        val bestPage = http.fetchText(best.url, policy(siteHosts), SOURCE_KEY)
-        val html = bestPage.text
+        // Try the strongest (search page, card pattern) pairs until one actually plays. This rejects
+        // category/model tiles and "search" pages that only show a catalogue.
+        val attempts = buildList {
+            ranked.take(3).forEach { c ->
+                add(c to c.pattern)
+                c.alternatives.forEach { alt -> add(c to alt) }
+            }
+        }.distinctBy { (c, p) -> c.url + "|" + p }.take(MAX_ATTEMPTS)
+        val mediaHosts = linkedSetOf<String>()
+        val pages = mutableMapOf<String, String>()
+        var chosen: Triple<AutoSearchCandidate, String, List<EngineSearchItem>>? = null
+        var chosenChecks: List<AutoPlaybackCheck> = emptyList()
+        var firstTry: Triple<AutoSearchCandidate, String, List<EngineSearchItem>>? = null
+        var firstChecks: List<AutoPlaybackCheck> = emptyList()
+        for ((index, attempt) in attempts.withIndex()) {
+            val (cand, pat) = attempt
+            val html = pages.getOrPut(cand.url) { http.fetchText(cand.url, policy(siteHosts), SOURCE_KEY).text }
+            val found = AutoCards.extract(html, base, Regex(pat, RegexOption.IGNORE_CASE), 40)
+            if (found.size < MIN_CARDS) continue
+            step(if (index == 0) "Поиск найден: ${cand.template} • карточек ${found.size}" else "Пробую другой вариант: ${cand.template} • карточек ${found.size}")
+            step("Проверяю воспроизведение на карточках…")
+            val hosts = linkedSetOf<String>()
+            val checks = spread(found, PLAYBACK_SAMPLES).map { item -> async { verifyPlayback(item.watchPath, siteHosts, hosts) } }.awaitAll()
+            val ok = checks.count { it.ok }
+            step("Видео: открыто $ok из ${checks.size}")
+            if (firstTry == null) { firstTry = Triple(cand, pat, found); firstChecks = checks }
+            if (ok > 0) { chosen = Triple(cand, pat, found); chosenChecks = checks; mediaHosts += hosts; break }
+        }
+        val pick = chosen ?: firstTry ?: return@coroutineScope AutoBuildResult(false, siteName = siteName, baseUrl = base, candidates = probes, log = log, errorCode = "AUTO_NO_CARDS", message = "Карточки видео не распознаны.")
+        val best = pick.first.copy(pattern = pick.second)
+        val items = pick.third
+        val checks = if (chosen != null) chosenChecks else firstChecks
+        val okCount = checks.count { it.ok }
+        val needsJs = okCount == 0
         val pattern = Regex(best.pattern, RegexOption.IGNORE_CASE)
-        val items = AutoCards.extract(html, base, pattern, 40)
+        val html = pages[best.url].orEmpty()
 
         step("Ищу постраничную навигацию…")
         val pageTemplate = findPageTemplate(html, best, base, siteHosts, query, pattern, items)
         if (pageTemplate.isNotBlank()) step("Страницы: $pageTemplate") else step("Пагинация не подтверждена — будет только первая страница")
-
-        step("Проверяю воспроизведение на карточках…")
-        val mediaHosts = linkedSetOf<String>()
-        val checks = spread(items, PLAYBACK_SAMPLES).map { item -> async { verifyPlayback(item.watchPath, siteHosts, mediaHosts) } }.awaitAll()
-        val okCount = checks.count { it.ok }
-        step("Видео: открыто $okCount из ${checks.size}")
-        val needsJs = okCount == 0
 
         val allowed = linkedSetOf<String>().apply { addAll(siteHosts); addAll(mediaHosts.filter { !AutoCards.sameSite(it, root) }.take(12)) }
         val adapterId = root.replace(Regex("[^a-z0-9._-]"), "-").trim('-').take(120)
@@ -186,21 +216,26 @@ class SnpAutoBuilder(private val http: SecureHttpClient = SecureHttpClient()) {
         val url = render(template, base, query, 1)
         val net = http.fetchText(url, policy(hosts), SOURCE_KEY)
         if (!net.success) return AutoSearchCandidate(label, template, url, net.statusCode, error = net.errorCode)
-        val learned = CardLearner.learn(net.text, net.finalUrl.ifBlank { url }, query)
+        val all = CardLearner.learnAll(net.text, net.finalUrl.ifBlank { url }, query)
+        val learned = all.firstOrNull()
             ?: return AutoSearchCandidate(label, template, url, net.statusCode, loaded = true, error = "no_cards")
+        val groups = all.take(4).joinToString(" | ") { g -> "${g.shape} n=${g.distinct} img=${g.withImages} dur=${g.withDuration} s=${g.score} e.g. ${g.examples.firstOrNull().orEmpty()}" }
         val items = AutoCards.extract(net.text, base, Regex(learned.pattern, RegexOption.IGNORE_CASE), 60)
         val tokens = queryTokens(query)
         val relevant = items.count { item -> val slug = AutoCards.pathOf(item.watchPath).trimEnd('/').substringAfterLast('/').lowercase(); tokens.any { t -> item.title.lowercase().contains(t) || slug.contains(t) } }
         val thumbs = items.count { it.thumbnailUrl.isNotBlank() }
+        val durations = items.count { it.durationText.isNotBlank() }
         val overlapWithHome = if (items.isEmpty()) 0.0 else items.count { it.watchPath in homeHrefs }.toDouble() / items.size
-        var score = minOf(items.size, 40) * 2 + relevant * 4 + thumbs + learned.score / 4
+        var score = minOf(items.size, 40) * 2 + relevant * 4 + thumbs + durations * 2 + learned.score / 4
+        if (items.isNotEmpty() && durations.toDouble() / items.size < 0.25) score -= 60
         if (declared) score += 12
         if (overlapWithHome > 0.8) score -= 200 // the "search" just returned the home page
         if (items.size < MIN_CARDS) score -= 100
         if (relevant == 0 && tokens.isNotEmpty()) score -= 15
         val finalPath = AutoCards.pathOf(net.finalUrl)
         if (finalPath == "/" && AutoCards.pathOf(url) != "/") score -= 25
-        return AutoSearchCandidate(label, template, net.finalUrl.ifBlank { url }, net.statusCode, true, items.size, relevant, thumbs, score, learned.pattern)
+        return AutoSearchCandidate(label, template, net.finalUrl.ifBlank { url }, net.statusCode, true, items.size, relevant, thumbs, score, learned.pattern,
+            withDuration = durations, alternatives = all.drop(1).take(2).map { it.pattern }, groups = groups)
     }
 
     private suspend fun findPageTemplate(html: String, best: AutoSearchCandidate, base: String, hosts: Set<String>, query: String, pattern: Regex, firstItems: List<EngineSearchItem>): String {
@@ -382,6 +417,7 @@ class SnpAutoBuilder(private val http: SecureHttpClient = SecureHttpClient()) {
         private const val VIEW_MAX_BYTES = 6 * 1024 * 1024
         private const val MIN_CARDS = 3
         private const val PLAYBACK_SAMPLES = 3
+        private const val MAX_ATTEMPTS = 5
         val VIEW_STRATEGIES = listOf("primary", "jwplayer", "videojs", "player_config", "generic_html5", "oembed", "iframe", "hls", "dash")
         private val SEARCH_FIELD_NAMES = setOf("q", "s", "k", "query", "search", "search_query", "searchtext", "search_text", "keyword", "keywords", "term", "text", "story", "searchword", "find", "w")
 

@@ -256,6 +256,14 @@ private fun StudioAutoResultCard(state: SourceToolsUiState, onInstall: () -> Uni
                     FilledTonalButton(onClick = onAdvanced) { Text("Расширенный режим") }
                 }
             }
+            if (state.studioTestDetails.isNotBlank()) {
+                val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+                var copied by remember { mutableStateOf(false) }
+                TextButton(onClick = {
+                    clipboard.setText(androidx.compose.ui.text.AnnotatedString(state.studioTestDetails))
+                    copied = true
+                }) { Text(if (copied) "Отчёт скопирован" else "Скопировать подробный отчёт") }
+            }
         }
     }
 }
