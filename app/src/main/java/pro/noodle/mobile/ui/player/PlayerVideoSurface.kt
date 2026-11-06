@@ -1,5 +1,11 @@
 package pro.noodle.mobile.ui.player
 
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import android.app.PictureInPictureParams
 import android.content.res.Configuration
 import android.os.Build
@@ -127,15 +133,99 @@ internal fun PlayerVideoSurface(
             modifier = Modifier.fillMaxSize(),
         )
 
+        // Gestures: tap = controls, double tap left/right = ∓10 s, horizontal swipe = seek with preview,
+        // vertical swipe left = brightness, right = volume.
+        val audio = remember { context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager }
+        var gestureLabel by remember { mutableStateOf("") }
+        var gestureTick by remember { mutableIntStateOf(0) }
         Box(
             Modifier
                 .fillMaxSize()
-                .clickable(
-                    interactionSource = interaction,
-                    indication = null,
-                    onClick = { controlsVisible = !controlsVisible },
-                ),
+                .pointerInput(player) {
+                    detectTapGestures(
+                        onTap = { controlsVisible = !controlsVisible },
+                        onDoubleTap = { o ->
+                            val forward = o.x > size.width / 2f
+                            val target = if (forward) player.currentPosition + 10_000L else player.currentPosition - 10_000L
+                            val dur = player.duration.takeIf { it != C.TIME_UNSET && it > 0L }
+                            player.seekTo(target.coerceIn(0L, dur ?: Long.MAX_VALUE))
+                            gestureLabel = if (forward) "+10 с" else "−10 с"
+                            gestureTick++
+                        },
+                    )
+                }
+                .pointerInput(player) {
+                    var mode = 0 // 0 undecided, 1 seek, 2 brightness, 3 volume
+                    var dx = 0f; var dy = 0f; var startX = 0f
+                    var seekFrom = 0L; var seekTo = 0L
+                    var brightFrom = 0.5f; var volFrom = 0; val volMax = audio.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+                    detectDragGestures(
+                        onDragStart = { o -> mode = 0; dx = 0f; dy = 0f; startX = o.x },
+                        onDragEnd = {
+                            if (mode == 1) player.seekTo(seekTo)
+                            mode = 0; gestureTick++
+                        },
+                        onDragCancel = { mode = 0; gestureTick++ },
+                        onDrag = { change, amount ->
+                            change.consume()
+                            dx += amount.x; dy += amount.y
+                            val dur = player.duration.takeIf { it != C.TIME_UNSET && it > 0L } ?: 0L
+                            if (mode == 0 && (kotlin.math.abs(dx) > 24f || kotlin.math.abs(dy) > 24f)) {
+                                mode = when {
+                                    kotlin.math.abs(dx) > kotlin.math.abs(dy) -> if (dur > 0L && player.isCurrentMediaItemSeekable) 1 else -1
+                                    startX < size.width / 2f -> 2
+                                    else -> 3
+                                }
+                                seekFrom = player.currentPosition.coerceAtLeast(0L)
+                                brightFrom = activity?.window?.attributes?.screenBrightness?.takeIf { it >= 0f } ?: 0.5f
+                                volFrom = audio.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
+                            }
+                            when (mode) {
+                                1 -> {
+                                    // Full width ≈ 3 minutes (or the whole clip if shorter).
+                                    val range = dur.coerceAtMost(180_000L).coerceAtLeast(30_000L)
+                                    val delta = (dx / size.width * range).toLong()
+                                    seekTo = (seekFrom + delta).coerceIn(0L, dur)
+                                    gestureLabel = "${if (delta >= 0) "+" else "−"}${formatTime(kotlin.math.abs(delta))}\n${formatTime(seekTo)} / ${formatTime(dur)}"
+                                }
+                                2 -> activity?.window?.let { w ->
+                                    val v = (brightFrom - dy / size.height).coerceIn(0.02f, 1f)
+                                    w.attributes = w.attributes.apply { screenBrightness = v }
+                                    gestureLabel = "Яркость ${(v * 100).toInt()}%"
+                                }
+                                3 -> {
+                                    val v = (volFrom - dy / size.height * volMax * 1.3f).toInt().coerceIn(0, volMax)
+                                    audio.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, v, 0)
+                                    gestureLabel = "Громкость ${v * 100 / volMax}%"
+                                }
+                            }
+                        },
+                    )
+                },
         )
+        LaunchedEffect(gestureTick) {
+            if (gestureLabel.isNotBlank()) { delay(700); gestureLabel = "" }
+        }
+        DisposableEffect(activity) {
+            onDispose {
+                activity?.window?.let { w -> w.attributes = w.attributes.apply { screenBrightness = android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE } }
+            }
+        }
+        if (gestureLabel.isNotBlank()) {
+            Surface(
+                modifier = Modifier.align(Alignment.Center),
+                color = Color.Black.copy(alpha = .62f),
+                contentColor = Color.White,
+                shape = MaterialTheme.shapes.medium,
+            ) {
+                Text(
+                    gestureLabel,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    style = MaterialTheme.typography.titleMedium,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+            }
+        }
 
         if (controlsVisible) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .18f)))

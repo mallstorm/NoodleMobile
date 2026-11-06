@@ -53,8 +53,26 @@ class MainActivity : ComponentActivity() {
         relockCallback?.invoke()
     }
 
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        consumeStudioIntent(intent)
+    }
+
+    private fun consumeStudioIntent(intent: android.content.Intent?) {
+        val url = intent?.getStringExtra(pro.noodle.mobile.core.maintenance.SourceAlerts.EXTRA_STUDIO_URL).orEmpty()
+        if (url.isBlank()) return
+        pro.noodle.mobile.ui.sources.StudioRequest.pending = pro.noodle.mobile.ui.sources.StudioRequest.Pending(
+            url, intent?.getStringExtra(pro.noodle.mobile.core.maintenance.SourceAlerts.EXTRA_STUDIO_QUERY).orEmpty(),
+        )
+        intent?.removeExtra(pro.noodle.mobile.core.maintenance.SourceAlerts.EXTRA_STUDIO_URL)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        consumeStudioIntent(intent)
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 701)
         setContent {
             val vm: SettingsViewModel = viewModel()
             val settings by vm.settings.collectAsState()
@@ -114,6 +132,8 @@ enum class Section(val title: String) {
 @Composable
 private fun NoodleApp(settingsVm: SettingsViewModel) {
     var section by rememberSaveable { mutableStateOf(Section.SEARCH) }
+    val studioRequest = pro.noodle.mobile.ui.sources.StudioRequest.pending
+    LaunchedEffect(studioRequest) { if (studioRequest != null) section = Section.MORE }
     val searchVm: SearchViewModel = viewModel()
     val favoritesVm: FavoritesViewModel = viewModel()
     val downloadsVm: DownloadsViewModel = viewModel()
@@ -395,6 +415,8 @@ private enum class MorePage { MENU, SOURCES, STUDIO, SETTINGS }
 @Composable
 private fun MoreScreen(settingsVm: SettingsViewModel) {
     var page by rememberSaveable { mutableStateOf(MorePage.MENU) }
+    val studioRequest = pro.noodle.mobile.ui.sources.StudioRequest.pending
+    LaunchedEffect(studioRequest) { if (studioRequest != null) page = MorePage.STUDIO }
     BackHandler(enabled = page != MorePage.MENU) { page = MorePage.MENU }
     when (page) {
         MorePage.SOURCES, MorePage.STUDIO -> Column(Modifier.fillMaxSize()) {

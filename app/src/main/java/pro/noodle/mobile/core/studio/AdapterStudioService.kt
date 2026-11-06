@@ -96,11 +96,16 @@ class AdapterStudioService(context: Context) {
 
     /** Saves the adapter and immediately enables it as a regular (non-SOLO) source. */
     suspend fun installAndEnable(json: String): StudioSaveResult {
-        val saved = saveJson(json)
+        val parsedId = AdapterValidator.validate(json).definition?.id.orEmpty()
+        val bundled = withContext(Dispatchers.IO) { repo.listAll().firstOrNull { it.bundled && it.definition.id.equals(parsedId, true) } }
+        val finalJson = if (bundled != null) json.replaceFirst("\"id\": \"$parsedId\"", "\"id\": \"$parsedId-auto\"") else json
+        val saved = saveJson(finalJson)
         if (!saved.success) return saved
         runCatching {
             overrides.setEnabled(saved.adapterId, true)
             overrides.setSoloSource(null)
+            // A recreated site replaces its broken built-in adapter instead of duplicating results.
+            if (bundled != null) overrides.setEnabled(bundled.definition.id, false)
         }.onFailure { return StudioSaveResult(false, saved.adapterId, "STUDIO_ENABLE_FAILED", "SNP сохранён, но не включён: ${it.message}") }
         return saved.copy(message = "Сайт добавлен и включён в общий поиск.")
     }

@@ -1,5 +1,14 @@
 package pro.noodle.mobile.ui.search
 
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.InputChip
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material.icons.outlined.Close
@@ -57,6 +66,7 @@ fun NoodleSearchScreen(
     onOpenSettings: () -> Unit = {},
 ) {
     val state by vm.state.collectAsState()
+    val recent by vm.recentQueries.collectAsState()
     state.playback?.let { session ->
         val client = remember(session.sourceKey, session.video.id) { vm.streamingClient(session) }
         PlayerScreen(session, client, vm::closePlayer)
@@ -285,6 +295,9 @@ fun NoodleSearchScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     )
+                    if (state.query.isBlank() || recent.isNotEmpty()) {
+                        RecentQueries(recent, onPick = vm::searchFor, onRemove = vm::removeRecent, onClear = vm::clearRecent)
+                    }
                     FilledTonalButton(onClick = onOpenSettings) { Text("Добавить сайт") }
                 }
             }
@@ -723,4 +736,33 @@ private fun parseViewsScore(raw: String): Double {
         else -> 1.0
     }
     return number * multiplier
+}
+
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun RecentQueries(items: List<String>, onPick: (String) -> Unit, onRemove: (String) -> Unit, onClear: () -> Unit) {
+    if (items.isEmpty()) return
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Недавние запросы", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick = onClear) { Text("Очистить") }
+        }
+        androidx.compose.foundation.layout.FlowRow(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            items.forEach { q ->
+                InputChip(
+                    selected = false,
+                    onClick = { onPick(q) },
+                    label = { Text(q, maxLines = 1) },
+                    leadingIcon = { Icon(Icons.Outlined.History, null, Modifier.size(16.dp)) },
+                    trailingIcon = {
+                        Icon(Icons.Outlined.Close, "Удалить", Modifier.size(16.dp).clickable { onRemove(q) })
+                    },
+                )
+            }
+        }
+    }
 }

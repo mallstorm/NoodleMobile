@@ -12,7 +12,7 @@ data class AppSettings(
     val theme: String = "noodle_neon",
     val uiScalePercent: Int = 100,
     val parallelDownloads: Int = 2,
-    val backgroundMonitoring: Boolean = false,
+    val backgroundMonitoring: Boolean = true,
     val monitoringIntervalHours: Int = 24,
     val rememberPlaybackPosition: Boolean = true,
     val relatedVideosColumns: Int = 2,
@@ -48,7 +48,7 @@ class AppSettingsRepository(private val context: Context) {
                 }
             },
             parallelDownloads = (p[Keys.parallelDownloads] ?: 2).coerceIn(1, 3),
-            backgroundMonitoring = p[Keys.backgroundMonitoring] ?: false,
+            backgroundMonitoring = p[Keys.backgroundMonitoring] ?: true,
             monitoringIntervalHours = (p[Keys.monitoringIntervalHours] ?: 24).coerceIn(6, 168),
             rememberPlaybackPosition = p[Keys.rememberPlaybackPosition] ?: true,
             relatedVideosColumns = (p[Keys.relatedVideosColumns] ?: 2).let { if (it == 1) 1 else 2 },

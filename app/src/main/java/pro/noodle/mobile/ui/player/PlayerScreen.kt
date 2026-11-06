@@ -1,5 +1,8 @@
 package pro.noodle.mobile.ui.player
 
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.material3.FilterChip
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
@@ -142,10 +145,27 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
     }
 
     var restoredPosition by remember(video.id) { mutableLongStateOf(0L) }
+    // The saved position is read BEFORE the first prepare(), so the stream is loaded once and
+    // starts exactly where the user left off (previously it loaded from 0 and then re-prepared).
+    var positionReady by remember(video.id) { mutableStateOf(false) }
     LaunchedEffect(video.id, appSettings.rememberPlaybackPosition) {
         restoredPosition = if (appSettings.rememberPlaybackPosition) {
             withContext(Dispatchers.IO) { userRepo.playbackPosition(key)?.positionMs ?: 0L }
         } else 0L
+        positionReady = true
+        if (restoredPosition > 5_000L) message = "Продолжаем с ${formatClock(restoredPosition)}"
+    }
+
+    // Persist progress periodically so it survives process death, and keep History progress bars real.
+    LaunchedEffect(player, appSettings.rememberPlaybackPosition) {
+        if (!appSettings.rememberPlaybackPosition) return@LaunchedEffect
+        while (true) {
+            kotlinx.coroutines.delay(10_000)
+            if (!player.isPlaying) continue
+            val pos = player.currentPosition.coerceAtLeast(0)
+            val dur = player.duration.takeIf { it > 0 && it != C.TIME_UNSET } ?: 0L
+            ioScope.launch { runCatching { userRepo.savePlaybackPosition(key, pos, dur); userRepo.saveHistory(video, pos, dur) } }
+        }
     }
 
     fun mediaItemFor(s: MediaSource): MediaItem {
@@ -165,14 +185,16 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
         return builder.build()
     }
 
-    LaunchedEffect(player, source.url, restoredPosition) {
+    LaunchedEffect(player, source.url, positionReady) {
+        if (!positionReady) return@LaunchedEffect
+        val firstLoad = player.mediaItemCount == 0
         val old = handoffPositionMs.takeIf { it > 0L }
             ?: player.currentPosition.takeIf { it > 0 }
             ?: restoredPosition
         val wasPlaying = player.playWhenReady
         player.setMediaItem(mediaItemFor(source), old.coerceAtLeast(0))
         player.prepare()
-        player.playWhenReady = wasPlaying || old == 0L
+        player.playWhenReady = firstLoad || wasPlaying || old == 0L
         handoffPositionMs = 0L
     }
 
@@ -256,7 +278,7 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
             val dur = player.duration.takeIf { it > 0 && it != C.TIME_UNSET } ?: 0L
             player.release()
             if (appSettings.rememberPlaybackPosition) {
-                ioScope.launch { runCatching { userRepo.savePlaybackPosition(key, pos, dur) } }
+                ioScope.launch { runCatching { userRepo.savePlaybackPosition(key, pos, dur); userRepo.saveHistory(video, pos, dur) } }
             }
         }
     }
@@ -637,11 +659,16 @@ private fun PlayerSettingsSheet(
             }
 
             Text("Скорость", fontWeight = FontWeight.SemiBold)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(0.5f, 1f, 1.5f, 2f).forEach { speed ->
-                    AssistChip(
-                        onClick = { player.setPlaybackSpeed(speed) },
-                        label = { Text(if (speed == 1f) "1×" else "${speed}×") },
+            var currentSpeed by remember { mutableFloatStateOf(player.playbackParameters.speed) }
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f).forEach { speed ->
+                    FilterChip(
+                        selected = kotlin.math.abs(currentSpeed - speed) < 0.01f,
+                        onClick = { player.setPlaybackSpeed(speed); currentSpeed = speed },
+                        label = { Text(if (speed == 1f) "1×" else "${speed.toString().trimEnd('0').trimEnd('.')}×") },
                     )
                 }
             }
@@ -716,4 +743,10 @@ private fun AdaptiveDownloadDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
     )
+}
+
+private fun formatClock(ms: Long): String {
+    val total = ms / 1000
+    val h = total / 3600; val m = (total % 3600) / 60; val sec = total % 60
+    return if (h > 0) "%d:%02d:%02d".format(h, m, sec) else "%d:%02d".format(m, sec)
 }

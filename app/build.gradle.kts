@@ -14,8 +14,21 @@ android {
         minSdk = 28
         targetSdk = 37
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 100010
-        versionName = "0.10.0-alpha10"
+        versionCode = 110000
+        versionName = "0.11.0"
+        ndk { abiFilters += listOf("arm64-v8a") }
+    }
+
+    // One stable key for every build (CI and local), so new versions install over old ones and
+    // user data (custom SNP, history, downloads) survives updates.
+    signingConfigs {
+        create("noodle") {
+            storeFile = file("signing/noodle-release.p12")
+            storeType = "pkcs12"
+            storePassword = "noodlemobile-mallstorm"
+            keyAlias = "noodle"
+            keyPassword = "noodlemobile-mallstorm"
+        }
     }
 
     buildFeatures { compose = true }
@@ -29,6 +42,7 @@ android {
         abortOnError = true
         checkDependencies = true
         warningsAsErrors = false
+        checkReleaseBuilds = false
     }
 
     compileOptions {
@@ -37,7 +51,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("noodle")
+        }
         release {
+            signingConfig = signingConfigs.getByName("noodle")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

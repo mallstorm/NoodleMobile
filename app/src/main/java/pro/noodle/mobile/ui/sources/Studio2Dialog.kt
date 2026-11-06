@@ -86,6 +86,15 @@ internal fun Studio2Dialog(
 ) {
     var advanced by remember { mutableStateOf(false) }
     var help by remember { mutableStateOf(false) }
+    val request = StudioRequest.pending
+    androidx.compose.runtime.LaunchedEffect(request) {
+        if (request != null) {
+            StudioRequest.pending = null
+            vm.setStudioUrl(request.url)
+            vm.setStudioQuery(request.query)
+            if (request.autoStart) vm.autoCreate()
+        }
+    }
     var modelMenu by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
