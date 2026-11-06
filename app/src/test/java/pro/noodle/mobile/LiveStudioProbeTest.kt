@@ -69,7 +69,19 @@ class LiveStudioProbeTest {
             if (r == null) { report.appendLine("$site: TIMEOUT"); return@forEach }
             report.appendLine("\n--- $site ---")
             report.append(r.report())
-            if (r.adapterJson.isNotBlank()) File(out, "${r.adapterId.ifBlank { site.replace(Regex("[^a-z0-9.]"), "_") }}.adapter.json").writeText(r.adapterJson)
+            val slug = site.replace(Regex("[^A-Za-z0-9.]"), "_")
+            if (r.adapterJson.isNotBlank()) File(out, "$slug.adapter.json").writeText(r.adapterJson)
+            if (site in extra) {
+                // Raw HTML of the pages Studio looked at, for offline diagnosis.
+                val dumps = linkedMapOf("home" to (SnpAutoBuilder.normalizeInput(site) ?: site))
+                r.candidates.filter { it.loaded }.sortedByDescending { it.score }.take(4).forEachIndexed { i, c -> dumps["search$i"] = c.url }
+                r.samples.take(2).forEachIndexed { i, it -> dumps["view$i"] = it.watchPath }
+                System.getenv("NOODLE_LIVE_URLS").orEmpty().split(' ').filter { it.startsWith("http") }.forEachIndexed { i, u -> dumps["extra$i"] = u }
+                dumps.forEach { (name, url) ->
+                    val net = http.fetchText(url, NetworkPolicy(emptyList(), allowCookies = true, maxResponseBytes = 6 * 1024 * 1024), "live-dump")
+                    File(out, "$slug.$name.html").writeText("<!-- ${net.statusCode} ${net.finalUrl} -->\n" + net.text)
+                }
+            }
         }
         File(out, "REPORT.txt").writeText(report.toString())
         println(report)

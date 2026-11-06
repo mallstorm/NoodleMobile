@@ -47,8 +47,8 @@ jobs:
         env:
           NOODLE_LIVE_STUDIO: "1"
           NOODLE_LIVE_OUT: ${{ github.workspace }}/build-certification/live-studio
-          NOODLE_LIVE_QUERY: ${{ vars.NOODLE_LIVE_QUERY }}
-          NOODLE_LIVE_SITES: ${{ vars.NOODLE_LIVE_SITES }}
+          NOODLE_LIVE_QUERY: ${{ vars.NOODLE_LIVE_QUERY || 'aziatki' }}
+          NOODLE_LIVE_SITES: ${{ vars.NOODLE_LIVE_SITES || 'm.porno-666.me' }}
         run: |
           ./gradlew --no-daemon :app:testDebugUnitTest --tests 'pro.noodle.mobile.LiveStudioProbeTest' -i 2>&1 | tail -400 > build-certification/live-probe-gradle.log || true
 
