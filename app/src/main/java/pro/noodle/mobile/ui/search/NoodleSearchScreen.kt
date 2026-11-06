@@ -1,5 +1,8 @@
 package pro.noodle.mobile.ui.search
 
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material.icons.outlined.Search
 import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -147,7 +150,7 @@ fun NoodleSearchScreen(
                             Icon(
                                 Icons.Outlined.GridView,
                                 "Сетка",
-                                tint = if (gridMode) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                tint = if (gridMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         IconButton(onClick = { gridMode = false }) {
@@ -264,7 +267,25 @@ fun NoodleSearchScreen(
             )
         }
 
-        if (visibleItems.isEmpty() && state.items.isNotEmpty()) {
+        if (state.items.isEmpty() && !state.loading) {
+            Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Icon(Icons.Outlined.Search, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
+                    Text(
+                        if (state.query.isBlank()) "Что будем смотреть?" else "Ничего не найдено",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        if (state.query.isBlank()) "Поиск идёт сразу по всем включённым сайтам. Нужен новый сайт — добавьте его через SNP Studio."
+                        else "Попробуйте другой запрос или проверьте источники.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    )
+                    FilledTonalButton(onClick = onOpenSettings) { Text("Источники и SNP Studio") }
+                }
+            }
+        } else if (visibleItems.isEmpty() && state.items.isNotEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("По выбранным фильтрам ничего нет", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

@@ -72,6 +72,7 @@ internal fun PlayerVideoSurface(
     var isPlaying by remember { mutableStateOf(false) }
     var scrubbing by remember { mutableStateOf(false) }
     var scrubPosition by remember { mutableLongStateOf(0L) }
+    var lastPreviewSeek by remember { mutableLongStateOf(-1L) }
 
     // Keep the root Scaffold informed about true player fullscreen. This is deliberately
     // separate from device orientation: portrait manual fullscreen must hide app navigation too.
@@ -305,7 +306,7 @@ internal fun PlayerVideoSurface(
                 }
 
                 // Compact YouTube-like timeline at the very bottom edge of the video.
-                Box(Modifier.fillMaxWidth().height(20.dp)) {
+                Box(Modifier.fillMaxWidth().height(28.dp)) {
                     if (durationMs > 0L && bufferedMs > 0L) {
                         LinearProgressIndicator(
                             progress = { (bufferedMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) },
@@ -314,20 +315,33 @@ internal fun PlayerVideoSurface(
                             trackColor = Color.White.copy(alpha = .14f),
                         )
                     }
+                    val seekable = durationMs > 0L && player.isCurrentMediaItemSeekable
                     Slider(
-                        value = (if (scrubbing) scrubPosition else positionMs).toFloat().coerceAtLeast(0f),
+                        value = (if (scrubbing) scrubPosition else positionMs).coerceIn(0L, durationMs.coerceAtLeast(1L)).toFloat(),
                         onValueChange = { value ->
+                            if (!scrubbing) {
+                                // Keyframe seeks while dragging give an instant live preview of the frame.
+                                (player as? androidx.media3.exoplayer.ExoPlayer)?.setSeekParameters(androidx.media3.exoplayer.SeekParameters.CLOSEST_SYNC)
+                                lastPreviewSeek = -1L
+                            }
                             scrubbing = true
                             scrubPosition = value.toLong()
                             controlsVisible = true
+                            val step = (durationMs / 60L).coerceAtLeast(1_500L)
+                            if (lastPreviewSeek < 0L || kotlin.math.abs(scrubPosition - lastPreviewSeek) >= step) {
+                                lastPreviewSeek = scrubPosition
+                                player.seekTo(scrubPosition)
+                            }
                         },
                         onValueChangeFinished = {
+                            (player as? androidx.media3.exoplayer.ExoPlayer)?.setSeekParameters(androidx.media3.exoplayer.SeekParameters.EXACT)
                             player.seekTo(scrubPosition.coerceAtLeast(0L))
                             positionMs = scrubPosition
                             scrubbing = false
                         },
+                        enabled = seekable,
                         valueRange = 0f..durationMs.coerceAtLeast(1L).toFloat(),
-                        modifier = Modifier.fillMaxWidth().height(20.dp).align(Alignment.BottomCenter),
+                        modifier = Modifier.fillMaxWidth().height(28.dp).align(Alignment.BottomCenter),
                     )
                 }
             }
