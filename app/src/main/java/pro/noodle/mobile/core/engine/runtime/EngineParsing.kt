@@ -41,6 +41,11 @@ object EngineParsing {
         }
     }
 
+    private val previewClip = Regex("(?:/videopreview/|/previews?/|[_./-](?:preview|trailer|teaser|sprite|thumbs?)(?:\\d*s|_\\d+)?[_./-][^/]*\\.(?:webm|mp4)|preview\\d*s?\\.(?:webm|mp4))", RegexOption.IGNORE_CASE)
+
+    /** Hover/preview clips (a few seconds long) are not the video itself. */
+    fun isPreviewClip(url: String): Boolean = previewClip.containsMatchIn(url.substringBefore('?'))
+
     fun encodedQuery(value: String): String = URLEncoder.encode(value.trim(), StandardCharsets.UTF_8.name()).replace("+", "%20")
     fun urlDecode(value: String): String = try { URLDecoder.decode(value, StandardCharsets.UTF_8.name()) } catch (_: Exception) { value }
 

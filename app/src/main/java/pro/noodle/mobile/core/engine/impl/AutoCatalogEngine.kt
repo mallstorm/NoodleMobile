@@ -116,17 +116,26 @@ object AutoCards {
     }
 
     private fun titleOf(group: List<Anchor>, window: String, html: String): String {
-        group.forEach { a -> EngineParsing.attr("<a ${a.attrs}>", "title").takeIf { it.length >= 3 }?.let { return it } }
-        group.forEach { a -> EngineParsing.attr("<a ${a.attrs}>", "aria-label").takeIf { it.length >= 3 }?.let { return it } }
+        group.forEach { a -> EngineParsing.attr("<a ${a.attrs}>", "title").takeIf { looksLikeTitle(it) }?.let { return it } }
+        group.forEach { a -> EngineParsing.attr("<a ${a.attrs}>", "aria-label").takeIf { looksLikeTitle(it) }?.let { return it } }
         Regex("<(?:h[1-6]|strong|span|div|p)[^>]*class=[\"'][^\"']*(?:title|name|caption)[^\"']*[\"'][^>]*>([\\s\\S]{1,400}?)</(?:h[1-6]|strong|span|div|p)>", RegexOption.IGNORE_CASE)
-            .find(window)?.groupValues?.getOrNull(1)?.let(EngineParsing::stripTags)?.takeIf { it.length >= 3 }?.let { return it }
+            .find(window)?.groupValues?.getOrNull(1)?.let(EngineParsing::stripTags)?.let(::cleanTitle)?.takeIf { looksLikeTitle(it) }?.let { return it }
+        imgRe.findAll(window).forEach { m -> EngineParsing.attr(m.value, "alt").takeIf { looksLikeTitle(it) }?.let { return it } }
         group.forEach { a ->
-            val inner = EngineParsing.stripTags(html.substring(a.start, a.end.coerceAtMost(html.length)))
-            if (inner.length >= 6 && durationRe.matchEntire(inner.trim()) == null) return inner.take(200)
+            val inner = cleanTitle(EngineParsing.stripTags(html.substring(a.start, a.end.coerceAtMost(html.length))))
+            if (looksLikeTitle(inner)) return inner.take(200)
         }
-        imgRe.findAll(window).forEach { m -> EngineParsing.attr(m.value, "alt").takeIf { it.length >= 3 }?.let { return it } }
+        imgRe.findAll(window).forEach { m -> EngineParsing.attr(m.value, "title").takeIf { looksLikeTitle(it) }?.let { return it } }
         return ""
     }
+
+    /** Drops durations, view counters and stray numbers that skins put inside the card link. */
+    private fun cleanTitle(v: String): String = v.replace(durationRe, " ")
+        .replace(Regex("(?:^|\\s)\\d[\\d\\s.,]*[KkMmКкМм%]?(?=\\s|$)"), " ")
+        .replace(Regex("\\b(?:HD|4K|VR|NEW)\\b"), " ")
+        .replace(Regex("\\s+"), " ").trim()
+
+    private fun looksLikeTitle(v: String): Boolean = v.count { it.isLetter() } >= 3
 
     private fun placeholder(v: String): Boolean {
         val l = v.lowercase()

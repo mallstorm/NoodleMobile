@@ -41,7 +41,7 @@ class GenericPlayerConfigEngine : SourceEngine {
                 .trim()
                 .trim('"', '\'', ' ')
             val absolute = EngineParsing.absolute(decoded, pageUrl)
-            if (absolute.isBlank() || !absolute.startsWith("http", true) || !looksLikeMedia(absolute)) return
+            if (absolute.isBlank() || !absolute.startsWith("http", true) || !looksLikeMedia(absolute) || EngineParsing.isPreviewClip(absolute)) return
             if (!seen.add(absolute.lowercase())) return
             val protocol = EngineParsing.protocol(absolute)
             val mime = when (protocol) {

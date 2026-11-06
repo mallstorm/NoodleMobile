@@ -11,7 +11,7 @@ import pro.noodle.mobile.core.version.SemanticVersion
 import java.net.InetAddress
 
 class CoreParityTest {
-    @Test fun registryHasDesktopParity(){ assertEquals(16,EngineRegistry.knownEngineIds.size); assertEquals("kvs_view",EngineRegistry.normalizeId("fapaxi")); assertEquals("novideo_embed",EngineRegistry.normalizeId("iframe_flashvars")) }
+    @Test fun registryHasDesktopParity(){ assertEquals(17,EngineRegistry.knownEngineIds.size); assertEquals("kvs_view",EngineRegistry.normalizeId("fapaxi")); assertEquals("novideo_embed",EngineRegistry.normalizeId("iframe_flashvars")) }
     @Test fun iframeRequiresGeneric(){ assertTrue(EngineDependencies.validate("iframe_chain", listOf("generic_html5")).success); assertEquals("ENGINE_DEP_REQUIRED_MISSING",EngineDependencies.validate("iframe_chain", emptyList()).errorCode) }
     @Test fun rejectsTransitiveMissing(){ assertEquals("ENGINE_DEP_TRANSITIVE_REQUIRED_MISSING",EngineDependencies.validate("kvs_videos", listOf("iframe_chain")).errorCode) }
     @Test fun semverParity(){ assertTrue(SemanticVersion.parseOrNull("1.2.3-alpha.1")!! < SemanticVersion.parseOrNull("1.2.3")!!); assertNull(SemanticVersion.parseOrNull("01.2.3")) }

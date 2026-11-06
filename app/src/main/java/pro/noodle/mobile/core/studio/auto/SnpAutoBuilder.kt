@@ -190,12 +190,12 @@ class SnpAutoBuilder(private val http: SecureHttpClient = SecureHttpClient()) {
             ?: return AutoSearchCandidate(label, template, url, net.statusCode, loaded = true, error = "no_cards")
         val items = AutoCards.extract(net.text, base, Regex(learned.pattern, RegexOption.IGNORE_CASE), 60)
         val tokens = queryTokens(query)
-        val relevant = items.count { item -> tokens.any { t -> item.title.lowercase().contains(t) || item.watchPath.lowercase().contains(t) } }
+        val relevant = items.count { item -> val slug = AutoCards.pathOf(item.watchPath).trimEnd('/').substringAfterLast('/').lowercase(); tokens.any { t -> item.title.lowercase().contains(t) || slug.contains(t) } }
         val thumbs = items.count { it.thumbnailUrl.isNotBlank() }
         val overlapWithHome = if (items.isEmpty()) 0.0 else items.count { it.watchPath in homeHrefs }.toDouble() / items.size
         var score = minOf(items.size, 40) * 2 + relevant * 4 + thumbs + learned.score / 4
         if (declared) score += 12
-        if (overlapWithHome > 0.8) score -= 40 // the "search" just returned the home page
+        if (overlapWithHome > 0.8) score -= 200 // the "search" just returned the home page
         if (items.size < MIN_CARDS) score -= 100
         if (relevant == 0 && tokens.isNotEmpty()) score -= 15
         val finalPath = AutoCards.pathOf(net.finalUrl)
@@ -222,9 +222,14 @@ class SnpAutoBuilder(private val http: SecureHttpClient = SecureHttpClient()) {
             val variant = encodedVariants.firstOrNull { it.isNotBlank() && hrefLower.contains(it) } ?: encodedVariants.firstOrNull { it.isNotBlank() && lower.contains(it) } ?: continue
             for (token in pageTokens) {
                 val m = token.find(hrefLower) ?: continue
+                val origin = Regex("^https?://[^/]+").find(hrefLower)?.value.orEmpty()
                 var t = hrefLower.substring(0, m.range.first) + m.groupValues[1] + "{page}" + hrefLower.substring(m.range.last + 1)
-                t = t.replaceFirst(variant, "{query}")
-                if (!t.contains("{query}")) continue
+                // Replace the query only where it is a whole path segment or parameter value, never in the host.
+                val rest = t.removePrefix(origin)
+                val bounded = Regex("(?<=[=/])" + Regex.escape(variant) + "(?=$|[&/?#.])")
+                val replaced = bounded.replace(rest, "{query}")
+                if (!replaced.contains("{query}")) continue
+                t = origin + replaced
                 guesses += relative(t, base)
                 break
             }
