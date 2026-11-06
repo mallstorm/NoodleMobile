@@ -48,7 +48,22 @@ data class SourceToolsUiState(
     val studioTestStatus: String = "",
     val studioTestDetails: String = "",
     val studioAttempts: Int = 0,
+    // Simple «site + query» Studio
+    val studioQuery: String = "",
+    val autoBusy: Boolean = false,
+    val autoSteps: List<String> = emptyList(),
+    val autoDone: Boolean = false,
+    val autoHealthy: Boolean = false,
+    val autoSiteName: String = "",
+    val autoAdapterId: String = "",
+    val autoSamples: List<StudioSample> = emptyList(),
+    val autoSearchCount: Int = 0,
+    val autoPlaybackReady: Int = 0,
+    val autoInstalled: Boolean = false,
+    val autoError: String = "",
 )
+
+data class StudioSample(val title: String, val thumbnailUrl: String, val duration: String)
 
 class SourceToolsViewModel(app: Application) : AndroidViewModel(app) {
     private val market = MarketplaceRepository(app)
@@ -158,6 +173,57 @@ class SourceToolsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setStudioUrl(value: String) = _state.update { it.copy(studioUrl = value) }
+    fun setStudioQuery(value: String) = _state.update { it.copy(studioQuery = value) }
+
+    fun resetAuto() = _state.update {
+        it.copy(autoBusy = false, autoSteps = emptyList(), autoDone = false, autoHealthy = false, autoSiteName = "", autoAdapterId = "", autoSamples = emptyList(), autoSearchCount = 0, autoPlaybackReady = 0, autoInstalled = false, autoError = "")
+    }
+
+    /** One-button flow: discover → learn → live test → (optionally) install and enable. */
+    fun autoCreate() = viewModelScope.launch {
+        val st = _state.value
+        if (st.autoBusy || st.studioUrl.isBlank()) return@launch
+        resetAuto()
+        _state.update { it.copy(autoBusy = true, error = "") }
+        val result = studio.autoCreate(st.studioUrl, st.studioQuery) { step ->
+            _state.update { it.copy(autoSteps = (it.autoSteps + step).takeLast(12)) }
+        }
+        val build = result.build
+        _state.update {
+            it.copy(
+                autoBusy = false,
+                autoDone = true,
+                autoHealthy = result.healthy,
+                autoSiteName = build?.siteName.orEmpty(),
+                autoAdapterId = result.adapterId,
+                autoSamples = build?.samples.orEmpty().take(6).map { s -> StudioSample(s.title, s.thumbnailUrl, s.durationText) },
+                autoSearchCount = result.searchCount,
+                autoPlaybackReady = result.playbackReady,
+                autoError = if (result.success && result.healthy) "" else result.message.ifBlank { result.errorCode },
+                studioJson = result.json.ifBlank { it.studioJson },
+                studioTestStatus = result.testStatus,
+                studioTestDetails = result.testDetails,
+                studioMessage = result.message,
+            )
+        }
+    }
+
+    fun installAuto(onDone: () -> Unit = {}) = viewModelScope.launch {
+        val json = _state.value.studioJson
+        if (json.isBlank()) return@launch
+        _state.update { it.copy(autoBusy = true) }
+        val saved = studio.installAndEnable(json)
+        if (saved.success && saved.adapterId.isNotBlank()) runCatching { studioBackup.backup(saved.adapterId) }
+        _state.update {
+            it.copy(
+                autoBusy = false,
+                autoInstalled = saved.success,
+                autoError = if (saved.success) "" else "${saved.errorCode}: ${saved.message}",
+                studioMessage = saved.message,
+            )
+        }
+        if (saved.success) onDone()
+    }
     fun setStudioInstruction(value: String) = _state.update { it.copy(studioInstruction = value) }
     fun setStudioJson(value: String) = _state.update { it.copy(studioJson = value) }
 
@@ -312,7 +378,7 @@ class SourceToolsViewModel(app: Application) : AndroidViewModel(app) {
                 error = "",
             )
         }
-        val result = studio.analyze(_state.value.studioUrl)
+        val result = studio.analyze(_state.value.studioUrl, _state.value.studioQuery)
         applyStudioResult(result)
     }
 
@@ -336,12 +402,13 @@ class SourceToolsViewModel(app: Application) : AndroidViewModel(app) {
             instruction = state.studioInstruction,
             provider = StudioAiProvider.LOCAL,
             model = "",
+            probeQuery = state.studioQuery,
         )
         var repairSeed = result
 
         if (result.testStatus != "healthy" && state.studioUrl.isNotBlank()) {
             _state.update { it.copy(studioMessage = "Adapter Studio: Browser Discovery, выполняю JavaScript и проверяю post-JS DOM…") }
-            val browserResult = runCatching { studioBrowser.recover(state.studioUrl) }.getOrNull()
+            val browserResult = runCatching { studioBrowser.recover(state.studioUrl, state.studioQuery) }.getOrNull()
             if (browserResult != null) {
                 // Even if Browser Discovery is not yet healthy, its JSON/evidence is the strongest
                 // repair seed because it already contains known-route and post-JS observations.

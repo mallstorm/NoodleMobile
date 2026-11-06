@@ -1,5 +1,8 @@
 package pro.noodle.mobile.ui.sources
 
+import androidx.compose.material3.Button
+import androidx.compose.material.icons.outlined.FactCheck
+import androidx.compose.material.icons.outlined.AddLink
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -24,12 +27,14 @@ import pro.noodle.mobile.core.source.SourceDetails
 fun SourceCenterScreen(
     vm: SourcesViewModel = viewModel(),
     tools: SourceToolsViewModel = viewModel(),
+    openStudio: Boolean = false,
+    onStudioClosed: () -> Unit = {},
 ) {
     val state by vm.state.collectAsState()
     val toolState by tools.state.collectAsState()
     var exportId by remember { mutableStateOf("") }
     var showMarketplace by remember { mutableStateOf(false) }
-    var showStudio by remember { mutableStateOf(false) }
+    var showStudio by remember(openStudio) { mutableStateOf(openStudio) }
     var showKeys by remember { mutableStateOf(false) }
 
     val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -58,12 +63,15 @@ fun SourceCenterScreen(
                 Spacer(Modifier.width(5.dp))
                 Text("Маркет")
             }
-            FilledTonalButton(onClick = { showStudio = true }) {
-                Icon(Icons.Outlined.Build, null)
+            Button(onClick = { showStudio = true }) {
+                Icon(Icons.Outlined.AddLink, null)
                 Spacer(Modifier.width(5.dp))
-                Text("Studio")
+                Text("Добавить сайт")
             }
             Spacer(Modifier.weight(1f))
+            IconButton(onClick = vm::checkAll, enabled = state.busyId.isBlank() && state.adapters.isNotEmpty()) {
+                Icon(Icons.Outlined.FactCheck, "Проверить все включённые")
+            }
             IconButton(
                 onClick = { importer.launch(arrayOf("application/zip", "application/octet-stream")) },
                 enabled = state.busyId.isBlank(),
@@ -132,7 +140,7 @@ fun SourceCenterScreen(
         )
     }
     if (showStudio) {
-        Studio2Dialog(toolState, tools, onDismiss = { showStudio = false }, onSaved = vm::reload)
+        Studio2Dialog(toolState, tools, onDismiss = { showStudio = false; onStudioClosed() }, onSaved = vm::reload)
     }
     if (showKeys) {
         TrustedKeysDialog(
@@ -196,11 +204,13 @@ private fun SourceCard(
                 }
             }
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-            StatusLine("health", item.healthStatus)
-            StatusLine("semantic", item.semanticStatus + if (item.pendingValidation) " • pending validation" else "")
-            StatusLine("fingerprint", item.fingerprintStatus)
-            StatusLine("breakage", item.breakageStatus)
-            StatusLine("update", item.updateStatus + item.latestVersion.takeIf { it.isNotBlank() }?.let { " → $it" }.orEmpty())
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                StatusPill("Сайт", item.healthStatus)
+                StatusPill("Поиск и видео", item.semanticStatus + if (item.pendingValidation) " • pending" else "")
+            }
+            if (item.updateStatus.isNotBlank() && item.latestVersion.isNotBlank()) {
+                StatusLine("Обновление", item.updateStatus + " → " + item.latestVersion)
+            }
             if (!item.compatible) Text("Несовместимая версия приложения: ${item.compatibilityStatus}", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             if (item.packageError.isNotBlank()) Text("Package: ${item.packageError}", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             if (item.historyCount > 0) Text("Snapshots: ${item.historyCount}", style = MaterialTheme.typography.labelSmall)
@@ -385,6 +395,24 @@ private fun HistoryDialog(
             }
         },
     )
+}
+
+@Composable
+private fun StatusPill(label: String, value: String) {
+    val v = value.lowercase()
+    val (color, text) = when {
+        v.isBlank() || v.startsWith("unknown") || v.startsWith("not_") || v == "—" -> MaterialTheme.colorScheme.outline to "не проверено"
+        v.startsWith("healthy") || v.startsWith("ok") || v.startsWith("reachable") || v.startsWith("unchanged") -> MaterialTheme.colorScheme.secondary to "работает"
+        v.contains("fail") || v.contains("error") || v.contains("unavailable") || v.contains("no_results") || v.contains("broken") -> MaterialTheme.colorScheme.error to "ошибка"
+        else -> MaterialTheme.colorScheme.tertiary to value.take(22)
+    }
+    androidx.compose.material3.Surface(
+        color = color.copy(alpha = 0.14f),
+        contentColor = color,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(50),
+    ) {
+        Text("$label: $text", Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium)
+    }
 }
 
 @Composable

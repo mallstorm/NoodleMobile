@@ -1,5 +1,10 @@
 package pro.noodle.mobile
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.runtime.saveable.rememberSaveable
 import android.content.res.Configuration
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -108,7 +113,7 @@ enum class Section(val title: String) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NoodleApp(settingsVm: SettingsViewModel) {
-    var section by remember { mutableStateOf(Section.SEARCH) }
+    var section by rememberSaveable { mutableStateOf(Section.SEARCH) }
     val searchVm: SearchViewModel = viewModel()
     val favoritesVm: FavoritesViewModel = viewModel()
     val downloadsVm: DownloadsViewModel = viewModel()
@@ -385,13 +390,14 @@ private fun bytes(v: Long): String = when {
     else -> "$v Б"
 }
 
-private enum class MorePage { MENU, SOURCES, SETTINGS }
+private enum class MorePage { MENU, SOURCES, STUDIO, SETTINGS }
 
 @Composable
 private fun MoreScreen(settingsVm: SettingsViewModel) {
-    var page by remember { mutableStateOf(MorePage.MENU) }
+    var page by rememberSaveable { mutableStateOf(MorePage.MENU) }
+    BackHandler(enabled = page != MorePage.MENU) { page = MorePage.MENU }
     when (page) {
-        MorePage.SOURCES -> Column(Modifier.fillMaxSize()) {
+        MorePage.SOURCES, MorePage.STUDIO -> Column(Modifier.fillMaxSize()) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -399,7 +405,7 @@ private fun MoreScreen(settingsVm: SettingsViewModel) {
                 IconButton(onClick = { page = MorePage.MENU }) { Icon(Icons.Outlined.ArrowBack, "Назад") }
                 Text("Источники (SNP)", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             }
-            Box(Modifier.weight(1f)) { SourceCenterScreen() }
+            Box(Modifier.weight(1f)) { SourceCenterScreen(openStudio = page == MorePage.STUDIO, onStudioClosed = { if (page == MorePage.STUDIO) page = MorePage.SOURCES }) }
         }
         MorePage.SETTINGS -> Column(Modifier.fillMaxSize()) {
             Row(
@@ -423,6 +429,21 @@ private fun MoreScreen(settingsVm: SettingsViewModel) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+            item {
+                ElevatedCard(
+                    onClick = { page = MorePage.STUDIO },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                ) {
+                    ListItem(
+                        headlineContent = { Text("Добавить сайт", fontWeight = FontWeight.SemiBold) },
+                        supportingContent = { Text("SNP Studio: адрес + запрос → готовый источник") },
+                        leadingContent = { Icon(Icons.Outlined.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary) },
+                        trailingContent = { Icon(Icons.Outlined.ChevronRight, null) },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    )
+                }
             }
             item {
                 ElevatedCard(onClick = { page = MorePage.SOURCES }, modifier = Modifier.fillMaxWidth()) {

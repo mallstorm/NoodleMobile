@@ -20,6 +20,7 @@ object EngineRegistry {
         EngineDescriptor("iframe_chain", setOf("iframe", "iframes"), setOf(EngineCapability.PLAYBACK, EngineCapability.IFRAME, EngineCapability.HTML5)),
         EngineDescriptor("hls_manifest", setOf("hls", "m3u8"), setOf(EngineCapability.PLAYBACK, EngineCapability.HLS, EngineCapability.SUBTITLES, EngineCapability.AUDIO_TRACKS, EngineCapability.ADAPTIVE_QUALITY)),
         EngineDescriptor("dash_manifest", setOf("dash", "mpd"), setOf(EngineCapability.PLAYBACK, EngineCapability.DASH, EngineCapability.SUBTITLES, EngineCapability.AUDIO_TRACKS, EngineCapability.ADAPTIVE_QUALITY)),
+        EngineDescriptor("auto_catalog", setOf("auto", "smart_catalog", "universal_catalog"), setOf(EngineCapability.SEARCH, EngineCapability.PAGINATION, EngineCapability.DIRECT_URL, EngineCapability.PLAYBACK, EngineCapability.CATEGORIES)),
         EngineDescriptor("declarative_catalog", setOf("declarative", "declarative_html"), setOf(EngineCapability.SEARCH, EngineCapability.PAGINATION, EngineCapability.DIRECT_URL, EngineCapability.PLAYBACK)),
         EngineDescriptor("json_api_catalog", setOf("json_api", "api_json"), setOf(EngineCapability.SEARCH, EngineCapability.PAGINATION, EngineCapability.DIRECT_URL, EngineCapability.PLAYBACK)),
         EngineDescriptor("oembed_provider", setOf("oembed"), setOf(EngineCapability.PLAYBACK, EngineCapability.HTML5, EngineCapability.IFRAME)),

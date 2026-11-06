@@ -16,7 +16,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 import pro.noodle.mobile.core.adapter.AdapterDefinition
 import pro.noodle.mobile.core.download.MediaDownloadRuntime
 import pro.noodle.mobile.core.engine.runtime.EngineParsing
-import pro.noodle.mobile.core.engine.runtime.EngineSearchRequest
+import pro.noodle.mobile.core.engine.runtime.SearchUrls
+import pro.noodle.mobile.core.engine.runtime.searchRequest
 import pro.noodle.mobile.core.engine.runtime.RuntimeEngineRegistry
 import pro.noodle.mobile.core.model.VideoItem
 import pro.noodle.mobile.core.network.NetworkPolicy
@@ -112,40 +113,30 @@ class AdapterProbeService(
         items: List<VideoItem>,
     ): AdapterSemanticResult {
         val samples = spreadSamples(items, PLAYBACK_SAMPLE_COUNT)
+        // Real catalogues always contain a few removed/premium cards. A source is healthy when a
+        // clear majority of the spread samples resolves AND reaches Media3 STATE_READY.
+        val required = kotlin.math.ceil(samples.size * PLAYBACK_REQUIRED_RATIO).toInt().coerceAtLeast(1)
         var readyCount = 0
+        var firstError: Pair<String, String>? = null
         for ((index, item) in samples.withIndex()) {
+            if (readyCount >= required) break
+            if (samples.size - index + readyCount < required) break
             val resolved = playback.resolve(item, d)
             if (!resolved.success || resolved.session == null) {
-                return result(
-                    d.id,
-                    d.name,
-                    d.adapterVersion,
-                    SemanticStatus.PLAYBACK_FAILED,
-                    query,
-                    items.size,
-                    readyCount,
-                    errorCode = resolved.errorCode.ifBlank { "SNP_SEMANTIC_PLAYBACK_ERROR" },
-                    message = "Карточка ${index + 1}/${samples.size}: ${resolved.errorMessage.ifBlank { "Медиапоток не разрешён." }}",
-                )
+                if (firstError == null) firstError = resolved.errorCode.ifBlank { "SNP_SEMANTIC_PLAYBACK_ERROR" } to "Карточка ${index + 1}/${samples.size}: ${resolved.errorMessage.ifBlank { "Медиапоток не разрешён." }}"
+                continue
             }
-
             val media3 = probeMedia3Ready(resolved.session)
             if (!media3.success) {
-                return result(
-                    d.id,
-                    d.name,
-                    d.adapterVersion,
-                    SemanticStatus.PLAYBACK_FAILED,
-                    query,
-                    items.size,
-                    readyCount,
-                    errorCode = media3.errorCode.ifBlank { "SNP_MEDIA3_NOT_READY" },
-                    message = "Карточка ${index + 1}/${samples.size}: реальная загрузка видео не прошла. ${media3.message}",
-                )
+                if (firstError == null) firstError = media3.errorCode.ifBlank { "SNP_MEDIA3_NOT_READY" } to "Карточка ${index + 1}/${samples.size}: реальная загрузка видео не прошла. ${media3.message}"
+                continue
             }
             readyCount++
         }
-
+        if (readyCount < required) {
+            val (code, message) = firstError ?: ("SNP_SEMANTIC_PLAYBACK_ERROR" to "Медиапоток не разрешён.")
+            return result(d.id, d.name, d.adapterVersion, SemanticStatus.PLAYBACK_FAILED, query, items.size, readyCount, errorCode = code, message = "$message (готово $readyCount, нужно $required)")
+        }
         return result(
             d.id,
             d.name,
@@ -262,25 +253,31 @@ class AdapterProbeService(
 
     suspend fun searchOne(d: AdapterDefinition, query: String, max: Int): Pair<List<VideoItem>, Pair<String, String>?> {
         val engine = RuntimeEngineRegistry.find(d.engine) ?: return emptyList<VideoItem>() to ("ENGINE_NOT_IMPLEMENTED" to "Runtime engine ${d.engine} отсутствует.")
-        val req = EngineSearchRequest(baseUrl=d.baseUrl,query=query,page=0,maxItems=max,searchUrlTemplate=d.searchUrlTemplate,itemSelector=d.itemSelector,titleSelector=d.titleSelector,urlSelector=d.urlSelector,thumbnailSelector=d.thumbnailSelector,thumbnailAttribute=d.thumbnailAttribute,durationSelector=d.durationSelector,viewsSelector=d.viewsSelector,itemsPath=d.itemsPath,idPath=d.idPath,titlePath=d.titlePath,urlPath=d.urlPath,thumbnailPath=d.thumbnailPath,durationPath=d.durationPath,viewsPath=d.viewsPath)
-        val url = engine.buildSearchUrl(req).ifBlank { templateSearchUrl(req) }
-        if (url.isBlank()) return emptyList<VideoItem>() to ("SNP_SEMANTIC_SEARCH_URL_EMPTY" to "Engine не сформировал search URL.")
-        val net = http.fetchText(url, NetworkPolicy(d.allowedHosts, allowCookies=d.allowCookies, maxResponseBytes=5*1024*1024), d.id)
-        if (!net.success) return emptyList<VideoItem>() to ("SNP_SEMANTIC_SEARCH_ERROR" to "${net.errorCode}: ${net.errorMessage}")
-        val items = engine.parseSearch(net.text, req).mapNotNull { p ->
-            val watch = normalizeAllowed(p.watchPath, d) ?: return@mapNotNull null
-            VideoItem(id="${d.id}|${p.remoteId.ifBlank { watch }}", remoteId=p.remoteId, watchUrl=watch, title=p.title.ifBlank { p.remoteId.ifBlank { "Без названия" } }, thumbnailUrl=normalizeAllowed(p.thumbnailUrl,d,true).orEmpty(), duration=p.durationText, views=p.viewsText, sourceName=d.name, sourceBaseUrl=d.baseUrl, sourceEngine=d.engine, playerPageUrl=watch, favoriteKey="${d.id}|${p.remoteId.ifBlank { watch }}")
-        }.distinctBy { it.watchUrl.lowercase() }.take(max.coerceAtLeast(1))
-        return items to null
+        val req = d.searchRequest(query, page = -1, maxItems = max)
+        val urls = SearchUrls.candidates(engine, req)
+        if (urls.isEmpty()) return emptyList<VideoItem>() to ("SNP_SEMANTIC_SEARCH_URL_EMPTY" to "Engine не сформировал search URL.")
+        var lastError: Pair<String, String>? = null
+        for (url in urls) {
+            val net = http.fetchText(url, NetworkPolicy(d.allowedHosts, allowCookies=d.allowCookies, maxResponseBytes=5*1024*1024), d.id)
+            if (!net.success) { lastError = "SNP_SEMANTIC_SEARCH_ERROR" to "${net.errorCode}: ${net.errorMessage}"; continue }
+            val finalBase = runCatching { URI(net.finalUrl).let { u -> if (u.host.isNullOrBlank()) d.baseUrl else "${u.scheme}://${u.host}${if (u.port >= 0) ":${u.port}" else ""}" } }.getOrDefault(d.baseUrl)
+            val items = engine.parseSearch(net.text, req.copy(baseUrl = finalBase)).mapNotNull { p ->
+                val watch = normalizeAllowed(p.watchPath, d, base = finalBase) ?: return@mapNotNull null
+                VideoItem(id="${d.id}|${p.remoteId.ifBlank { watch }}", remoteId=p.remoteId, watchUrl=watch, title=p.title.ifBlank { p.remoteId.ifBlank { "Без названия" } }, thumbnailUrl=normalizeAllowed(p.thumbnailUrl,d,true,finalBase).orEmpty(), duration=p.durationText, views=p.viewsText, sourceName=d.name, sourceBaseUrl=d.baseUrl, sourceEngine=d.engine, playerPageUrl=watch, favoriteKey="${d.id}|${p.remoteId.ifBlank { watch }}")
+            }.distinctBy { it.watchUrl.lowercase() }.take(max.coerceAtLeast(1))
+            if (items.isNotEmpty()) return items to null
+            lastError = null
+        }
+        return emptyList<VideoItem>() to lastError
     }
 
     private fun result(id:String,name:String,version:String,status:SemanticStatus,query:String,search:Int=0,playback:Int=0,errorCode:String="",message:String="") = AdapterSemanticResult(id,name,version,status,query,search,playback,errorCode,message)
-    private fun templateSearchUrl(r:EngineSearchRequest):String = if(r.searchUrlTemplate.isBlank()) "" else EngineParsing.absolute(r.searchUrlTemplate.replace("{base_url}",r.baseUrl,true).replace("{query}",EngineParsing.encodedQuery(r.query),true).replace("{page}",(r.page+1).toString(),true),r.baseUrl)
-    private fun normalizeAllowed(raw:String,d:AdapterDefinition,allowBlank:Boolean=false):String? { if(raw.isBlank()) return if(allowBlank) "" else null; val url=EngineParsing.absolute(raw,d.baseUrl); val decision=UrlPolicy.evaluateNavigation(url,allowHttp=false,resolveDns=false); if(!decision.allowed)return null; val host=runCatching{URI(decision.normalizedUrl).host.orEmpty()}.getOrDefault(""); if(d.allowedHosts.isNotEmpty()&&!UrlPolicy.isHostAllowed(host,d.allowedHosts))return null;return decision.normalizedUrl }
+    private fun normalizeAllowed(raw:String,d:AdapterDefinition,allowBlank:Boolean=false,base:String=d.baseUrl):String? { if(raw.isBlank()) return if(allowBlank) "" else null; val url=EngineParsing.absolute(raw,base); val decision=UrlPolicy.evaluateNavigation(url,allowHttp=false,resolveDns=false); if(!decision.allowed)return null; val host=runCatching{URI(decision.normalizedUrl).host.orEmpty()}.getOrDefault(""); if(d.allowedHosts.isNotEmpty()&&!UrlPolicy.isHostAllowed(host,d.allowedHosts))return null;return decision.normalizedUrl }
 
     companion object {
         private const val CERTIFICATION_SEARCH_LIMIT = 20
         private const val PLAYBACK_SAMPLE_COUNT = 5
+        private const val PLAYBACK_REQUIRED_RATIO = 0.6
         private const val MAX_MEDIA_SOURCE_FALLBACKS = 4
         private const val MEDIA3_READY_TIMEOUT_MS = 15_000L
     }

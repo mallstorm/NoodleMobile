@@ -19,6 +19,10 @@ data class AdapterDefinition(
     val allowCookies: Boolean = false,
     val viewStrategies: List<String> = emptyList(),
     val searchUrlTemplate: String = "",
+    /** Optional template used for page >= 1; must contain {query} and {page}. */
+    val searchPageTemplate: String = "",
+    /** Path regex for auto_catalog: which links on a search page are video cards. */
+    val linkPattern: String = "",
     val itemSelector: String = "", val titleSelector: String = "", val urlSelector: String = "",
     val thumbnailSelector: String = "", val thumbnailAttribute: String = "", val durationSelector: String = "", val viewsSelector: String = "",
     val itemsPath: String = "", val idPath: String = "", val titlePath: String = "", val urlPath: String = "", val thumbnailPath: String = "", val durationPath: String = "", val viewsPath: String = "",

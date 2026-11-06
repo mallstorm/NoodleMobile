@@ -11,6 +11,8 @@ data class EngineSearchRequest(
     val page: Int = -1,
     val maxItems: Int = 40,
     val searchUrlTemplate: String = "",
+    val searchPageTemplate: String = "",
+    val linkPattern: String = "",
     val itemSelector: String = "",
     val titleSelector: String = "",
     val urlSelector: String = "",

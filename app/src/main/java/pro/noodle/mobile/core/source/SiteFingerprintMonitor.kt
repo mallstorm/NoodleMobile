@@ -1,6 +1,7 @@
 package pro.noodle.mobile.core.source
 
-import pro.noodle.mobile.core.engine.runtime.EngineSearchRequest
+import pro.noodle.mobile.core.engine.runtime.SearchUrls
+import pro.noodle.mobile.core.engine.runtime.searchRequest
 import pro.noodle.mobile.core.engine.runtime.RuntimeEngineRegistry
 import pro.noodle.mobile.core.network.NetworkPolicy
 import pro.noodle.mobile.core.network.SecureHttpClient
@@ -42,8 +43,8 @@ class SiteFingerprintMonitor(
         val runtime = repo.find(adapterId) ?: return FingerprintResult(adapterId, FingerprintStatus.INVALID_ADAPTER, errorCode="SNP_NOT_FOUND", message="SNP не найден.")
         val d = runtime.definition
         val engine = RuntimeEngineRegistry.find(d.engine) ?: return FingerprintResult(d.id, FingerprintStatus.INVALID_ADAPTER, errorCode="FINGERPRINT_ENGINE_UNKNOWN", message="Движок SNP не зарегистрирован.")
-        val req = EngineSearchRequest(baseUrl=d.baseUrl,query=d.healthQuery.ifBlank{"video"},page=0,maxItems=20,searchUrlTemplate=d.searchUrlTemplate,itemSelector=d.itemSelector,titleSelector=d.titleSelector,urlSelector=d.urlSelector,thumbnailSelector=d.thumbnailSelector,thumbnailAttribute=d.thumbnailAttribute,durationSelector=d.durationSelector,viewsSelector=d.viewsSelector,itemsPath=d.itemsPath,idPath=d.idPath,titlePath=d.titlePath,urlPath=d.urlPath,thumbnailPath=d.thumbnailPath,durationPath=d.durationPath,viewsPath=d.viewsPath)
-        val url = engine.buildSearchUrl(req).ifBlank { d.baseUrl }
+        val req = d.searchRequest(d.healthQuery.ifBlank{"video"}, page = -1, maxItems = 20)
+        val url = SearchUrls.primary(engine, req).ifBlank { d.baseUrl }
         val decision = UrlPolicy.evaluateNavigation(url, allowHttp=false, resolveDns=false)
         val host = runCatching { URI(decision.normalizedUrl).host.orEmpty() }.getOrDefault("")
         if (!decision.allowed || (d.allowedHosts.isNotEmpty() && !UrlPolicy.isHostAllowed(host, d.allowedHosts))) return FingerprintResult(d.id, FingerprintStatus.INVALID_ADAPTER, errorCode="FINGERPRINT_URL_RESTRICTED", message="Search endpoint не разрешён политикой SNP.")

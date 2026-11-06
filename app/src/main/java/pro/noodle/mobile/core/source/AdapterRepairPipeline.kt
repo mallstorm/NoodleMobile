@@ -5,6 +5,7 @@ import pro.noodle.mobile.core.adapter.AdapterDefinition
 import pro.noodle.mobile.core.adapter.AdapterSchemaParser
 import pro.noodle.mobile.core.adapter.AdapterValidator
 import pro.noodle.mobile.core.engine.runtime.EngineSearchRequest
+import pro.noodle.mobile.core.engine.runtime.SearchUrls
 import pro.noodle.mobile.core.engine.runtime.RuntimeEngineRegistry
 import pro.noodle.mobile.core.json.*
 import pro.noodle.mobile.core.network.NetworkPolicy
@@ -56,8 +57,8 @@ class AdapterRepairPipeline(
     private suspend fun selectorRelearn(runtime: RuntimeAdapter): AdapterRepairResult {
         val d=runtime.definition
         val engine=RuntimeEngineRegistry.find("declarative_catalog") ?: return fail(d,"selector_relearn","SNP_REPAIR_ENGINE_MISSING","declarative_catalog runtime отсутствует.")
-        val req=EngineSearchRequest(baseUrl=d.baseUrl,query=d.healthQuery.ifBlank{"video"},page=0,maxItems=12,searchUrlTemplate=d.searchUrlTemplate)
-        val url=engine.buildSearchUrl(req)
+        val req=EngineSearchRequest(baseUrl=d.baseUrl,query=d.healthQuery.ifBlank{"video"},page=-1,maxItems=12,searchUrlTemplate=d.searchUrlTemplate)
+        val url=SearchUrls.primary(engine,req)
         if(url.isBlank())return fail(d,"selector_relearn","SNP_REPAIR_SEARCH_URL_EMPTY","Не удалось построить URL контрольного поиска.")
         val net=http.fetchText(url,NetworkPolicy(d.allowedHosts,allowCookies=false,maxResponseBytes=10*1024*1024),"repair:${d.id}")
         if(!net.success)return fail(d,"selector_relearn","SNP_REPAIR_ANALYZE_FAILED","${net.errorCode}: ${net.errorMessage}")

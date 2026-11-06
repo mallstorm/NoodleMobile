@@ -18,6 +18,7 @@ object RuntimeEngineRegistry {
         HlsManifestEngine(),
         DashManifestEngine(),
         OEmbedEngine(),
+        AutoCatalogEngine(),
         DeclarativeHtmlEngine(),
         JsonApiEngine(),
         WordPressRestEngine(),

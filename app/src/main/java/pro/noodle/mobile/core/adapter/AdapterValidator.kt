@@ -52,6 +52,24 @@ object AdapterValidator {
             if (!UrlPolicy.isHostAllowed(searchHost, d.allowedHosts)) return fail("ADAPTER_SEARCH_HOST_NOT_ALLOWED", "Домен search.url_template должен присутствовать в permissions.allowed_hosts.")
         }
 
+        if (d.searchPageTemplate.isNotBlank()) {
+            if (!d.searchPageTemplate.contains("{page}", true) || !d.searchPageTemplate.contains("{query}", true)) return fail("ADAPTER_PAGE_TEMPLATE_INVALID", "search.page_template должен содержать {query} и {page}.")
+            if (d.searchPageTemplate.startsWith("https://", true) || d.searchPageTemplate.startsWith("http://", true)) {
+                val u = d.searchPageTemplate.replace("{base_url}", d.baseUrl, true).replace("{query}", "test", true).replace("{page}", "2", true)
+                val decision = UrlPolicy.evaluateNavigation(u)
+                if (!decision.allowed) return fail("ADAPTER_PAGE_TEMPLATE_UNSAFE", "${decision.errorCode}: ${decision.reason}")
+                val pageHost = runCatching { URI(decision.normalizedUrl).host.orEmpty().lowercase() }.getOrDefault("")
+                if (!UrlPolicy.isHostAllowed(pageHost, d.allowedHosts)) return fail("ADAPTER_PAGE_TEMPLATE_HOST_NOT_ALLOWED", "Домен search.page_template должен присутствовать в permissions.allowed_hosts.")
+            }
+        }
+        if (d.linkPattern.isNotBlank()) {
+            if (d.linkPattern.length > 300) return fail("ADAPTER_LINK_PATTERN_TOO_LONG", "search.link_pattern превышает 300 символов.")
+            if (runCatching { Regex(d.linkPattern) }.isFailure) return fail("ADAPTER_LINK_PATTERN_INVALID", "search.link_pattern не является корректным регулярным выражением.")
+        }
+        if (d.engine == "auto_catalog") {
+            if (d.searchUrlTemplate.isBlank()) return fail("ADAPTER_AUTO_URL_MISSING", "Для auto_catalog требуется search.url_template.")
+            if (d.linkPattern.isBlank()) return fail("ADAPTER_AUTO_LINK_PATTERN_MISSING", "Для auto_catalog требуется search.link_pattern.")
+        }
         if (d.engine == "declarative_catalog") {
             if (d.searchUrlTemplate.isBlank()) return fail("ADAPTER_DECLARATIVE_URL_MISSING", "Для declarative_catalog требуется search.url_template.")
             if (d.itemSelector.isBlank() || d.titleSelector.isBlank() || d.urlSelector.isBlank()) return fail("ADAPTER_DECLARATIVE_SELECTORS_MISSING", "Для declarative_catalog требуются item_selector, title_selector и url_selector.")

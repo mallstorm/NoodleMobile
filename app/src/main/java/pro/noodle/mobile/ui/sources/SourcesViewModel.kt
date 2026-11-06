@@ -44,6 +44,27 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
     fun setEnabled(id: String, enabled: Boolean) = action(id) { service.setEnabled(id, enabled) }
     fun health(id: String) = action(id) { service.health(id) }
     fun semantic(id: String) = action(id) { service.semantic(id) }
+
+    /** Live check of every enabled source: search + real playback, one after another. */
+    fun checkAll() = viewModelScope.launch {
+        val targets = _state.value.adapters.filter { it.enabled }
+        if (targets.isEmpty()) { _state.update { it.copy(message = "Нет включённых источников.", error = "") }; return@launch }
+        var ok = 0
+        val failed = mutableListOf<String>()
+        for (t in targets) {
+            _state.update { it.copy(busyId = t.adapterId, message = "Проверяю ${t.name}…", error = "") }
+            val r = runCatching { service.semantic(t.adapterId) }.getOrElse { SourceActionResult(false, errorCode = "SOURCE_CENTER_EXCEPTION", message = it.message.orEmpty()) }
+            if (r.success) ok++ else failed += t.name
+            val items = runCatching { service.enumerate() }.getOrDefault(_state.value.adapters)
+            _state.update { it.copy(adapters = items) }
+        }
+        _state.update {
+            it.copy(
+                busyId = "",
+                message = "Проверено ${targets.size}: работает $ok" + if (failed.isEmpty()) "." else ", с ошибками: ${failed.joinToString()}.",
+            )
+        }
+    }
     fun fingerprint(id: String) = action(id) { service.fingerprint(id) }
     fun breakage(id: String) = action(id) { service.breakage(id) }
     fun repair(id: String) = action(id) { service.repair(id) }

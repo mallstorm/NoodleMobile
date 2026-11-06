@@ -35,6 +35,20 @@ data class StudioSaveResult(
     val message: String = "",
 )
 
+data class StudioAutoResult(
+    val success: Boolean,
+    val healthy: Boolean = false,
+    val build: pro.noodle.mobile.core.studio.auto.AutoBuildResult? = null,
+    val json: String = "",
+    val adapterId: String = "",
+    val testStatus: String = "",
+    val testDetails: String = "",
+    val searchCount: Int = 0,
+    val playbackReady: Int = 0,
+    val errorCode: String = "",
+    val message: String = "",
+)
+
 class AdapterStudioService(context: Context) {
     private val app = context.applicationContext
     private val repo = RuntimeAdapterRepository(app)
@@ -43,6 +57,53 @@ class AdapterStudioService(context: Context) {
     private val probe = AdapterProbeService(app)
     private val ai = StudioAiRouter(app)
     private val discovery = StudioDiscovery(http)
+
+    private val autoBuilder = pro.noodle.mobile.core.studio.auto.SnpAutoBuilder(http)
+
+    /**
+     * Simple Studio: site + query → learned SNP → real Media3 live test. When static resolving
+     * fails the adapter is retried with the sandboxed browser player enabled.
+     */
+    suspend fun autoCreate(url: String, query: String, onProgress: (String) -> Unit = {}): StudioAutoResult = withContext(Dispatchers.IO) {
+        val build = runCatching { autoBuilder.build(url, query, onProgress) }.getOrElse { e ->
+            return@withContext StudioAutoResult(false, errorCode = "AUTO_BUILD_CRASH", message = "${e.javaClass.simpleName}: ${e.message}")
+        }
+        if (!build.success) return@withContext StudioAutoResult(false, build = build, json = build.adapterJson, errorCode = build.errorCode, message = build.message, testDetails = build.report())
+        var json = build.adapterJson
+        onProgress("Финальная проверка в плеере (Media3)…")
+        var test = testJson(json)
+        if (test.testStatus == SemanticStatus.PLAYBACK_FAILED.wireName && !build.needsJavaScript) {
+            onProgress("Плеер не открыл поток напрямую — пробую через встроенный браузер…")
+            val withJs = json.replace("\"allow_javascript\": false", "\"allow_javascript\": true").replace("\"allow_javascript\":false", "\"allow_javascript\":true")
+            val retry = testJson(withJs)
+            if (retry.testStatus == SemanticStatus.HEALTHY.wireName) { json = withJs; test = retry }
+        }
+        val counts = Regex("search=(\\d+) • playback=(\\d+)").find(test.testDetails)
+        val healthy = test.testStatus == SemanticStatus.HEALTHY.wireName
+        StudioAutoResult(
+            success = true,
+            healthy = healthy,
+            build = build,
+            json = json,
+            adapterId = build.adapterId,
+            testStatus = test.testStatus,
+            testDetails = test.testDetails + "\n\n" + build.report(),
+            searchCount = counts?.groupValues?.get(1)?.toIntOrNull() ?: build.samples.size,
+            playbackReady = counts?.groupValues?.get(2)?.toIntOrNull() ?: 0,
+            message = if (healthy) "Готово: сайт подключён, поиск и видео работают." else "Адаптер собран, но проверка в плеере не пройдена: ${test.testDetails.substringBefore('\n')}",
+        )
+    }
+
+    /** Saves the adapter and immediately enables it as a regular (non-SOLO) source. */
+    suspend fun installAndEnable(json: String): StudioSaveResult {
+        val saved = saveJson(json)
+        if (!saved.success) return saved
+        runCatching {
+            overrides.setEnabled(saved.adapterId, true)
+            overrides.setSoloSource(null)
+        }.onFailure { return StudioSaveResult(false, saved.adapterId, "STUDIO_ENABLE_FAILED", "SNP сохранён, но не включён: ${it.message}") }
+        return saved.copy(message = "Сайт добавлен и включён в общий поиск.")
+    }
 
     suspend fun analyze(url: String, probeQuery: String = ""): StudioAnalyzeResult {
         val d = discovery.discover(url, probeQuery)

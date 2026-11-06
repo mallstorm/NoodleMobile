@@ -22,7 +22,35 @@ import androidx.compose.material.icons.outlined.Login
 import androidx.compose.material.icons.outlined.OpenInBrowser
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Science
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.AddLink
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.PlayCircle
+import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material3.Button
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilterChip
@@ -55,236 +83,77 @@ internal fun Studio2Dialog(
     onDismiss: () -> Unit,
     onSaved: () -> Unit,
 ) {
-    val context = LocalContext.current
+    var advanced by remember { mutableStateOf(false) }
     var modelMenu by remember { mutableStateOf(false) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } },
-        title = { Text("Adapter Studio 2.0") },
-        text = {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 690.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Text(
-                    "URL + задание → локальный анализ → AI → Schema v3 → live test. Установка выполняется только после вашего подтверждения.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                OutlinedTextField(
-                    value = state.studioUrl,
-                    onValueChange = vm::setStudioUrl,
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("HTTPS URL сайта") },
-                    singleLine = true,
-                )
-
-                OutlinedTextField(
-                    value = state.studioInstruction,
-                    onValueChange = vm::setStudioInstruction,
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Что должен делать адаптер") },
-                    placeholder = {
-                        Text("Например: найди поиск, карточки видео, превью, длительность, просмотры и основной HLS/MP4-поток.")
-                    },
-                    minLines = 4,
-                    maxLines = 7,
-                )
-
-                Text("Обработка", fontWeight = FontWeight.SemiBold)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    StudioAiProvider.entries.forEach { provider ->
-                        FilterChip(
-                            selected = state.studioProvider == provider,
-                            onClick = { vm.setStudioProvider(provider) },
-                            label = { Text(provider.title) },
-                        )
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Назад") }
+                    Column(Modifier.weight(1f)) {
+                        Text("SNP Studio", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text("Подключение нового сайта", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-
-                if (state.studioProvider != StudioAiProvider.LOCAL) {
-                    ElevatedCard(Modifier.fillMaxWidth()) {
-                        Column(
-                            Modifier.padding(10.dp),
-                            verticalArrangement = Arrangement.spacedBy(7.dp),
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    if (state.studioConnected) Icons.Outlined.CheckCircle else Icons.Outlined.CloudOff,
-                                    contentDescription = null,
-                                )
-                                Spacer(Modifier.width(7.dp))
-                                Column(Modifier.weight(1f)) {
-                                    Text(
-                                        if (state.studioConnected) "${state.studioProvider.title} подключён" else "${state.studioProvider.title} не подключён",
-                                        fontWeight = FontWeight.SemiBold,
-                                    )
-                                    if (state.studioAccount.isNotBlank()) {
-                                        Text(state.studioAccount, style = MaterialTheme.typography.bodySmall)
-                                    }
-                                }
-                                if (state.studioConnected) {
-                                    TextButton(onClick = vm::disconnectStudioAi, enabled = !state.studioAuthBusy) {
-                                        Text("Выйти")
-                                    }
-                                } else {
-                                    Button(onClick = vm::beginStudioLogin, enabled = !state.studioAuthBusy) {
-                                        Icon(Icons.Outlined.Login, null)
-                                        Spacer(Modifier.width(5.dp))
-                                        Text("Войти")
-                                    }
-                                }
-                            }
-
-                            if (state.studioLoginUrl.isNotBlank()) {
-                                if (state.studioLoginCode.isNotBlank()) {
-                                    Text("Код: ${state.studioLoginCode}", fontWeight = FontWeight.SemiBold)
-                                }
-                                OutlinedButton(
-                                    onClick = {
-                                        runCatching {
-                                            context.startActivity(
-                                                Intent(Intent.ACTION_VIEW, Uri.parse(state.studioLoginUrl)),
-                                            )
-                                        }
-                                    },
-                                ) {
-                                    Icon(Icons.Outlined.OpenInBrowser, null)
-                                    Spacer(Modifier.width(5.dp))
-                                    Text("Открыть страницу входа")
-                                }
-                            }
-
-                            if (state.studioConnected) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("Модель", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
-                                    TextButton(onClick = vm::refreshStudioModels, enabled = !state.studioAuthBusy) {
-                                        Icon(Icons.Outlined.Refresh, null)
-                                        Spacer(Modifier.width(4.dp))
-                                        Text("Обновить")
-                                    }
-                                }
-                                if (state.studioModelCatalog.isNotEmpty()) {
-                                    val freeCount = state.studioModelCatalog.count { it.isFree }
-                                    val autoCount = state.studioModelCatalog.count { it.isAuto }
-                                    Text(
-                                        "Всего ${state.studioModelCatalog.size} • Free $freeCount${if (autoCount > 0) " • Auto $autoCount" else ""}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                OutlinedButton(
-                                    onClick = { modelMenu = true },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    enabled = state.studioModelCatalog.isNotEmpty() && !state.studioAuthBusy,
-                                ) {
-                                    Text(
-                                        state.studioModel.ifBlank {
-                                            if (state.studioAuthBusy) "Загрузка моделей…" else "Модель не выбрана"
-                                        },
-                                        maxLines = 1,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = vm::analyzeStudio,
-                        enabled = !state.studioBusy && state.studioUrl.isNotBlank(),
-                    ) {
-                        Text("Локальный черновик")
-                    }
-                    Button(
-                        onClick = vm::generateStudio,
-                        enabled = !state.studioBusy &&
-                            !state.studioAuthBusy &&
-                            state.studioUrl.isNotBlank() &&
-                            (state.studioProvider == StudioAiProvider.LOCAL ||
-                                (state.studioConnected && state.studioModel.isNotBlank() && state.studioInstruction.isNotBlank())),
-                    ) {
-                        Icon(Icons.Outlined.Science, null)
-                        Spacer(Modifier.width(5.dp))
-                        Text("Создать адаптер")
-                    }
-                }
-
-                if (state.studioBusy || state.studioAuthBusy) {
-                    LinearProgressIndicator(Modifier.fillMaxWidth())
-                }
-                if (state.studioMessage.isNotBlank()) {
-                    Text(
-                        state.studioMessage,
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                if (state.error.isNotBlank()) {
-                    Text(
-                        state.error,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-
-                if (state.studioTestStatus.isNotBlank()) {
-                    ElevatedCard(Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                "Live test: ${state.studioTestStatus}",
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (state.studioTestStatus == "healthy") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                            )
-                            if (state.studioAttempts > 0) {
-                                Text("AI-попыток: ${state.studioAttempts}", style = MaterialTheme.typography.labelSmall)
-                            }
-                            if (state.studioTestDetails.isNotBlank()) {
-                                Text(state.studioTestDetails, style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
-                    }
-                }
-
-                if (state.studioJson.isNotBlank()) {
-                    Text(
-                        "Schema v3 preview — результат можно проверить и отредактировать до установки",
-                        fontWeight = FontWeight.SemiBold,
+                Column(
+                    Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    StudioHero()
+                    OutlinedTextField(
+                        value = state.studioUrl,
+                        onValueChange = vm::setStudioUrl,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Адрес сайта") },
+                        placeholder = { Text("example.com") },
+                        leadingIcon = { Icon(Icons.Outlined.AddLink, null) },
+                        singleLine = true,
+                        enabled = !state.autoBusy,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
                     )
                     OutlinedTextField(
-                        value = state.studioJson,
-                        onValueChange = vm::setStudioJson,
-                        modifier = Modifier.fillMaxWidth().height(300.dp),
-                        textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace),
-                        label = { Text("adapter.json") },
+                        value = state.studioQuery,
+                        onValueChange = vm::setStudioQuery,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Проверочный запрос") },
+                        placeholder = { Text("слово, по которому на сайте точно есть видео") },
+                        supportingText = { Text("По нему Studio найдёт поиск, карточки и проверит воспроизведение") },
+                        singleLine = true,
+                        enabled = !state.autoBusy,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = vm::testStudio, enabled = !state.studioBusy) {
-                            Text("Live test")
-                        }
-                        Button(
-                            onClick = { vm.saveStudio(onSaved) },
-                            enabled = !state.studioBusy,
-                        ) {
-                            Text("Сохранить custom SNP")
+                    Button(
+                        onClick = vm::autoCreate,
+                        enabled = !state.autoBusy && state.studioUrl.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        shape = RoundedCornerShape(16.dp),
+                    ) {
+                        if (state.autoBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                        else Icon(Icons.Outlined.AutoAwesome, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (state.autoBusy) "Studio работает…" else "Найти адаптер автоматически", fontWeight = FontWeight.SemiBold)
+                    }
+
+                    if (state.autoSteps.isNotEmpty()) StudioSteps(state.autoSteps, state.autoBusy)
+                    if (state.autoDone) StudioAutoResultCard(state, onInstall = { vm.installAuto(onSaved) }, onAdvanced = { advanced = true })
+
+                    HorizontalDivider()
+                    TextButton(onClick = { advanced = !advanced }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(if (advanced) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null)
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (advanced) "Скрыть расширенный режим" else "Расширенный режим: AI, JSON, ручная проверка")
+                    }
+                    AnimatedVisibility(advanced) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            StudioAdvancedSection(state, vm, onSaved, onModelMenu = { modelMenu = true })
                         }
                     }
-                    Text(
-                        "Новый SNP сохраняется выключенным. AI не может самостоятельно включить или установить источник без этой кнопки.",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Spacer(Modifier.height(24.dp))
                 }
-                Spacer(Modifier.height(2.dp))
             }
-        },
-    )
+        }
+    }
 
     if (modelMenu) {
         StudioModelPickerDialog(
@@ -298,6 +167,286 @@ internal fun Studio2Dialog(
             },
         )
     }
+}
+
+@Composable
+private fun StudioHero() {
+    ElevatedCard(Modifier.fillMaxWidth(), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(44.dp).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
+                Icon(Icons.Outlined.PlayCircle, null, tint = MaterialTheme.colorScheme.onPrimary)
+            }
+            Spacer(Modifier.width(12.dp))
+            Text(
+                "Укажите сайт и запрос — Studio сама найдёт поиск, распознает карточки видео, страницы и плеер, проверит воспроизведение и подключит сайт.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+        }
+    }
+}
+
+@Composable
+private fun StudioSteps(steps: List<String>, busy: Boolean) {
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            steps.forEachIndexed { index, step ->
+                val running = busy && index == steps.lastIndex
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (running) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    else Icon(Icons.Outlined.TaskAlt, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.secondary)
+                    Spacer(Modifier.width(8.dp))
+                    Text(step, style = MaterialTheme.typography.bodySmall, color = if (running) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StudioAutoResultCard(state: SourceToolsUiState, onInstall: () -> Unit, onAdvanced: () -> Unit) {
+    val ok = state.autoHealthy
+    val accent = if (ok) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(if (ok) Icons.Outlined.CheckCircle else Icons.Outlined.ErrorOutline, null, tint = accent)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    when {
+                        state.autoInstalled -> "${state.autoSiteName.ifBlank { "Сайт" }} подключён"
+                        ok -> "Адаптер для ${state.autoSiteName.ifBlank { "сайта" }} готов"
+                        else -> "Не удалось собрать рабочий адаптер"
+                    },
+                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            }
+            if (state.autoSearchCount > 0 || state.autoSamples.isNotEmpty()) {
+                Text(
+                    "Найдено видео: ${maxOf(state.autoSearchCount, state.autoSamples.size)} • воспроизведение подтверждено: ${state.autoPlaybackReady}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            state.autoSamples.forEach { sample ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.PlayCircle, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(6.dp))
+                    Text(sample.title, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (sample.duration.isNotBlank()) Text(sample.duration, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (state.autoError.isNotBlank()) Text(state.autoError, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            when {
+                state.autoInstalled -> Text("Сайт уже участвует в общем поиске. Его можно отключить в списке источников.", style = MaterialTheme.typography.bodySmall)
+                ok -> Button(onClick = onInstall, enabled = !state.autoBusy, modifier = Modifier.fillMaxWidth()) { Text("Добавить сайт в поиск") }
+                else -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (state.studioJson.isNotBlank()) OutlinedButton(onClick = onInstall, enabled = !state.autoBusy) { Text("Всё равно добавить") }
+                    FilledTonalButton(onClick = onAdvanced) { Text("Расширенный режим") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StudioAdvancedSection(state: SourceToolsUiState, vm: SourceToolsViewModel, onSaved: () -> Unit, onModelMenu: () -> Unit) {
+    val context = LocalContext.current
+    OutlinedTextField(
+        value = state.studioInstruction,
+        onValueChange = vm::setStudioInstruction,
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text("Задание для AI (необязательно)") },
+        placeholder = { Text("Например: найди поиск, карточки видео, превью, длительность и основной HLS/MP4-поток.") },
+        minLines = 3,
+        maxLines = 6,
+    )
+        Text("Обработка", fontWeight = FontWeight.SemiBold)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            StudioAiProvider.entries.forEach { provider ->
+                FilterChip(
+                    selected = state.studioProvider == provider,
+                    onClick = { vm.setStudioProvider(provider) },
+                    label = { Text(provider.title) },
+                )
+            }
+        }
+
+        if (state.studioProvider != StudioAiProvider.LOCAL) {
+            ElevatedCard(Modifier.fillMaxWidth()) {
+                Column(
+                    Modifier.padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            if (state.studioConnected) Icons.Outlined.CheckCircle else Icons.Outlined.CloudOff,
+                            contentDescription = null,
+                        )
+                        Spacer(Modifier.width(7.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                if (state.studioConnected) "${state.studioProvider.title} подключён" else "${state.studioProvider.title} не подключён",
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            if (state.studioAccount.isNotBlank()) {
+                                Text(state.studioAccount, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                        if (state.studioConnected) {
+                            TextButton(onClick = vm::disconnectStudioAi, enabled = !state.studioAuthBusy) {
+                                Text("Выйти")
+                            }
+                        } else {
+                            Button(onClick = vm::beginStudioLogin, enabled = !state.studioAuthBusy) {
+                                Icon(Icons.Outlined.Login, null)
+                                Spacer(Modifier.width(5.dp))
+                                Text("Войти")
+                            }
+                        }
+                    }
+
+                    if (state.studioLoginUrl.isNotBlank()) {
+                        if (state.studioLoginCode.isNotBlank()) {
+                            Text("Код: ${state.studioLoginCode}", fontWeight = FontWeight.SemiBold)
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(Intent.ACTION_VIEW, Uri.parse(state.studioLoginUrl)),
+                                    )
+                                }
+                            },
+                        ) {
+                            Icon(Icons.Outlined.OpenInBrowser, null)
+                            Spacer(Modifier.width(5.dp))
+                            Text("Открыть страницу входа")
+                        }
+                    }
+
+                    if (state.studioConnected) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Модель", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+                            TextButton(onClick = vm::refreshStudioModels, enabled = !state.studioAuthBusy) {
+                                Icon(Icons.Outlined.Refresh, null)
+                                Spacer(Modifier.width(4.dp))
+                                Text("Обновить")
+                            }
+                        }
+                        if (state.studioModelCatalog.isNotEmpty()) {
+                            val freeCount = state.studioModelCatalog.count { it.isFree }
+                            val autoCount = state.studioModelCatalog.count { it.isAuto }
+                            Text(
+                                "Всего ${state.studioModelCatalog.size} • Free $freeCount${if (autoCount > 0) " • Auto $autoCount" else ""}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = onModelMenu,
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = state.studioModelCatalog.isNotEmpty() && !state.studioAuthBusy,
+                        ) {
+                            Text(
+                                state.studioModel.ifBlank {
+                                    if (state.studioAuthBusy) "Загрузка моделей…" else "Модель не выбрана"
+                                },
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = vm::analyzeStudio,
+                enabled = !state.studioBusy && state.studioUrl.isNotBlank(),
+            ) {
+                Text("Локальный черновик")
+            }
+            Button(
+                onClick = vm::generateStudio,
+                enabled = !state.studioBusy &&
+                    !state.studioAuthBusy &&
+                    state.studioUrl.isNotBlank() &&
+                    (state.studioProvider == StudioAiProvider.LOCAL ||
+                        (state.studioConnected && state.studioModel.isNotBlank() && state.studioInstruction.isNotBlank())),
+            ) {
+                Icon(Icons.Outlined.Science, null)
+                Spacer(Modifier.width(5.dp))
+                Text("Создать адаптер")
+            }
+        }
+
+        if (state.studioBusy || state.studioAuthBusy) {
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+        }
+        if (state.studioMessage.isNotBlank()) {
+            Text(
+                state.studioMessage,
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        if (state.error.isNotBlank()) {
+            Text(
+                state.error,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+
+        if (state.studioTestStatus.isNotBlank()) {
+            ElevatedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        "Live test: ${state.studioTestStatus}",
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (state.studioTestStatus == "healthy") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    )
+                    if (state.studioAttempts > 0) {
+                        Text("AI-попыток: ${state.studioAttempts}", style = MaterialTheme.typography.labelSmall)
+                    }
+                    if (state.studioTestDetails.isNotBlank()) {
+                        Text(state.studioTestDetails, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        }
+
+        if (state.studioJson.isNotBlank()) {
+            Text(
+                "Schema v3 preview — результат можно проверить и отредактировать до установки",
+                fontWeight = FontWeight.SemiBold,
+            )
+            OutlinedTextField(
+                value = state.studioJson,
+                onValueChange = vm::setStudioJson,
+                modifier = Modifier.fillMaxWidth().height(300.dp),
+                textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace),
+                label = { Text("adapter.json") },
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = vm::testStudio, enabled = !state.studioBusy) {
+                    Text("Live test")
+                }
+                Button(
+                    onClick = { vm.saveStudio(onSaved) },
+                    enabled = !state.studioBusy,
+                ) {
+                    Text("Сохранить custom SNP")
+                }
+            }
+            Text(
+                "Новый SNP сохраняется выключенным. AI не может самостоятельно включить или установить источник без этой кнопки.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 }
 
 private enum class StudioModelFilter {

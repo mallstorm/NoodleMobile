@@ -17,8 +17,8 @@ object EngineDependencies {
         "generic_html5", "jwplayer_config", "videojs_config" -> listOf("hls_manifest", "dash_manifest")
         "iframe_chain" -> listOf("jwplayer_config", "videojs_config", "oembed_provider", "hls_manifest", "dash_manifest")
         "wordpress_rest" -> listOf("oembed_provider", "generic_html5", "hls_manifest", "dash_manifest")
-        "kvs_view", "kvs_videos", "noodle_watch_playlist", "novideo_embed", "sosalkino_catalog", "declarative_catalog", "json_api_catalog" ->
-            listOf("jwplayer_config", "videojs_config", "generic_html5", "oembed_provider", "iframe_chain", "hls_manifest", "dash_manifest")
+        "kvs_view", "kvs_videos", "noodle_watch_playlist", "novideo_embed", "sosalkino_catalog", "declarative_catalog", "json_api_catalog", "auto_catalog" ->
+            listOf("jwplayer_config", "videojs_config", "generic_player_config", "generic_html5", "oembed_provider", "iframe_chain", "hls_manifest", "dash_manifest")
         else -> emptyList()
     }
 

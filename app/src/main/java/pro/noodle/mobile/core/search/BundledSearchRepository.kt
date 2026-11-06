@@ -10,7 +10,8 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeoutOrNull
 import pro.noodle.mobile.core.adapter.AdapterDefinition
-import pro.noodle.mobile.core.engine.runtime.EngineSearchRequest
+import pro.noodle.mobile.core.engine.runtime.SearchUrls
+import pro.noodle.mobile.core.engine.runtime.searchRequest
 import pro.noodle.mobile.core.engine.runtime.RuntimeEngineRegistry
 import pro.noodle.mobile.core.model.VideoItem
 import pro.noodle.mobile.core.network.NetworkPolicy
@@ -190,28 +191,8 @@ class BundledSearchRepository(
     ): Pair<List<VideoItem>, SourceSearchError?> {
         val engine = RuntimeEngineRegistry.find(a.engine)
             ?: return emptyList<VideoItem>() to SourceSearchError(a.id, a.name, "ENGINE_NOT_IMPLEMENTED", "Runtime engine ${a.engine} отсутствует.")
-        val req = EngineSearchRequest(
-            baseUrl = a.baseUrl,
-            query = q,
-            page = page,
-            maxItems = max,
-            searchUrlTemplate = a.searchUrlTemplate,
-            itemSelector = a.itemSelector,
-            titleSelector = a.titleSelector,
-            urlSelector = a.urlSelector,
-            thumbnailSelector = a.thumbnailSelector,
-            thumbnailAttribute = a.thumbnailAttribute,
-            durationSelector = a.durationSelector,
-            viewsSelector = a.viewsSelector,
-            itemsPath = a.itemsPath,
-            idPath = a.idPath,
-            titlePath = a.titlePath,
-            urlPath = a.urlPath,
-            thumbnailPath = a.thumbnailPath,
-            durationPath = a.durationPath,
-            viewsPath = a.viewsPath,
-        )
-        val candidates = searchCandidates(engine.buildSearchUrl(req), templateSearchUrl(req), a.baseUrl, q, page)
+        val req = a.searchRequest(q, page, max)
+        val candidates = searchCandidates(SearchUrls.candidates(engine, req), a.baseUrl, q, page, legacyFallbacks = a.engine != "auto_catalog")
         if (candidates.isEmpty()) return emptyList<VideoItem>() to SourceSearchError(a.id, a.name, "SEARCH_URL_EMPTY", "Engine не сформировал search URL.")
         var lastError: SourceSearchError? = null
         var hadSuccessfulResponse = false
@@ -258,12 +239,12 @@ class BundledSearchRepository(
      * conventions used by KVS, WordPress, DLE and simple catalogs. This lets infinite scroll move
      * beyond page one even when the old SNP did not encode an explicit {page} placeholder.
      */
-    private fun searchCandidates(primary: String, template: String, baseUrl: String, query: String, page: Int): List<String> {
+    private fun searchCandidates(primary: List<String>, baseUrl: String, query: String, page: Int, legacyFallbacks: Boolean): List<String> {
         val b = baseUrl.trimEnd('/')
         val q = pro.noodle.mobile.core.engine.runtime.EngineParsing.encodedQuery(query)
         val out = linkedSetOf<String>()
-        listOf(primary, template).filter { it.isNotBlank() }.forEach { out += it }
-        if (b.isNotBlank() && q.isNotBlank()) {
+        primary.filter { it.isNotBlank() }.forEach { out += it }
+        if (legacyFallbacks && b.isNotBlank() && q.isNotBlank()) {
             if (page < 0) {
                 out += "$b/search/?q=$q"
                 out += "$b/search/$q/"
@@ -288,17 +269,6 @@ class BundledSearchRepository(
         if (u.scheme.isNullOrBlank() || u.host.isNullOrBlank()) fallback
         else "${u.scheme}://${u.host}${if (u.port >= 0) ":${u.port}" else ""}"
     }.getOrDefault(fallback)
-
-    private fun templateSearchUrl(r: EngineSearchRequest): String {
-        if (r.searchUrlTemplate.isBlank()) return ""
-        return pro.noodle.mobile.core.engine.runtime.EngineParsing.absolute(
-            r.searchUrlTemplate
-                .replace("{base_url}", r.baseUrl, true)
-                .replace("{query}", pro.noodle.mobile.core.engine.runtime.EngineParsing.encodedQuery(r.query), true)
-                .replace("{page}", (r.page + 1).coerceAtLeast(1).toString(), true),
-            r.baseUrl,
-        )
-    }
 
     private fun normalizeAllowed(raw: String, a: AdapterDefinition, allowBlank: Boolean = false, baseUrl: String = a.baseUrl): String? {
         if (raw.isBlank()) return if (allowBlank) "" else null
