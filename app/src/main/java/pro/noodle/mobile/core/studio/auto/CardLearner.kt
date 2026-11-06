@@ -5,7 +5,7 @@ import pro.noodle.mobile.core.engine.impl.AutoCards
 /**
  * Learns which links on a listing page are video cards.
  *
- * Links are clustered by "path shape" (`/video/123/some-slug/` → `/video/#/*`). The cluster with the
+ * Links are clustered by "path shape" (`/video/123/some-slug/` → `/video/#/<slug>/`). The cluster with the
  * most distinct links that carry previews and look like media pages wins, and is turned into an
  * anchored path regex for the auto_catalog engine.
  */
@@ -65,7 +65,8 @@ object CardLearner {
     }
 
     /**
-     * `/video/12345/nice-title/` → `/video/#/*` ; `/12345.html` → `/#.html` ; `/watch/-1939_4562` → `/watch/*`.
+     * `/video/12345/nice-title/` → `/video/#/<slug>/` ; `/12345.html` → `/#.html` ; `/watch/-1939_4562` → `/watch/<slug>`.
+     * (`<slug>` is stored as the token "*" in the shape string.)
      * Returns null for paths that obviously aren't item pages.
      */
     fun shape(path: String): String? {
