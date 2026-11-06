@@ -166,10 +166,15 @@ class SnpAutoBuilder(private val http: SecureHttpClient = SecureHttpClient()) {
             val checks = spread(found, PLAYBACK_SAMPLES).map { item -> async { verifyPlayback(item.watchPath, siteHosts, hosts) } }.awaitAll()
             val ok = checks.count { it.ok }
             step("Видео: открыто $ok из ${checks.size}")
-            if (firstTry == null) { firstTry = Triple(cand, pat, found); firstChecks = checks }
+            // Without playback, only accept a fallback that clearly looks like video cards (durations).
+            val videoLike = found.count { it.durationText.isNotBlank() } >= maxOf(MIN_CARDS, found.size / 4)
+            if (firstTry == null && videoLike) { firstTry = Triple(cand, pat, found); firstChecks = checks }
             if (ok > 0) { chosen = Triple(cand, pat, found); chosenChecks = checks; mediaHosts += hosts; break }
         }
-        val pick = chosen ?: firstTry ?: return@coroutineScope AutoBuildResult(false, siteName = siteName, baseUrl = base, candidates = probes, log = log, errorCode = "AUTO_NO_CARDS", message = "Карточки видео не распознаны.")
+        val pick = chosen ?: firstTry ?: return@coroutineScope AutoBuildResult(
+            false, siteName = siteName, baseUrl = base, candidates = probes, log = log, errorCode = "AUTO_NO_VIDEO_CARDS",
+            message = "По запросу «$query» на сайте нашлись только разделы/категории, а не ролики. Попробуйте другое слово — например, по-русски или как его пишут в поиске самого сайта.",
+        )
         val best = pick.first.copy(pattern = pick.second)
         val items = pick.third
         val checks = if (chosen != null) chosenChecks else firstChecks
