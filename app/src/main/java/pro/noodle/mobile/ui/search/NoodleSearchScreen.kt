@@ -1,5 +1,9 @@
 package pro.noodle.mobile.ui.search
 
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
+import androidx.compose.material.icons.automirrored.outlined.ArrowForward
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material.icons.outlined.Search
@@ -276,13 +280,13 @@ fun NoodleSearchScreen(
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Text(
-                        if (state.query.isBlank()) "Поиск идёт сразу по всем включённым сайтам. Нужен новый сайт — добавьте его через SNP Studio."
+                        if (state.query.isBlank()) "Введите запрос в строку сверху и нажмите кнопку → или «Поиск» на клавиатуре. Поиск идёт сразу по всем включённым сайтам."
                         else "Попробуйте другой запрос или проверьте источники.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     )
-                    FilledTonalButton(onClick = onOpenSettings) { Text("Источники и SNP Studio") }
+                    FilledTonalButton(onClick = onOpenSettings) { Text("Добавить сайт") }
                 }
             }
         } else if (visibleItems.isEmpty() && state.items.isNotEmpty()) {
@@ -414,14 +418,24 @@ private fun SearchField(
         onValueChange = onValueChange,
         modifier = modifier,
         placeholder = { Text("Поиск по всем источникам") },
-        leadingIcon = {
-            IconButton(onClick = onSearch, enabled = enabled && value.isNotBlank()) {
-                Icon(Icons.Outlined.Search, "Найти")
-            }
-        },
+        leadingIcon = { Icon(Icons.Outlined.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
         trailingIcon = {
-            IconButton(onClick = onFilters) {
-                Icon(Icons.Outlined.Tune, "Фильтры", tint = MaterialTheme.colorScheme.secondary)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (value.isNotEmpty()) {
+                    IconButton(onClick = { onValueChange("") }) {
+                        Icon(Icons.Outlined.Close, "Очистить", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                IconButton(onClick = onFilters) {
+                    Icon(Icons.Outlined.Tune, "Фильтры", tint = MaterialTheme.colorScheme.secondary)
+                }
+                androidx.compose.material3.FilledIconButton(
+                    onClick = onSearch,
+                    enabled = enabled && value.isNotBlank(),
+                    modifier = Modifier.padding(end = 6.dp),
+                ) {
+                    Icon(Icons.AutoMirrored.Outlined.ArrowForward, "Найти")
+                }
             }
         },
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
