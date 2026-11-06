@@ -23,7 +23,7 @@ ck('stage8+ app coordinates',('versionCode = 80008' in app and 'versionName = "0
 ck('Build identity name','VERSION_NAME = "0.8.0-alpha8"' in identity or 'VERSION_NAME = "0.10.0-alpha10"' in identity)
 ck('Build identity code','VERSION_CODE = 80008' in identity or 'VERSION_CODE = 100010' in identity)
 ck('Build identity SNP level','SNP_COMPATIBILITY_VERSION = "1.9.0"' in identity)
-ck('Build identity user agent','USER_AGENT = "NoodleMobile/0.8 Android"' in identity or 'USER_AGENT = "NoodleMobile/0.10 Android"' in identity)
+ck('Build identity user agent','const val USER_AGENT = "Mozilla/5.0' in identity)
 ck('Main UI uses identity label','BuildIdentity.STAGE_LABEL' in main)
 ck('Compatibility uses identity','BuildIdentity.SNP_COMPATIBILITY_VERSION' in compat)
 ck('Studio uses identity','BuildIdentity.SNP_COMPATIBILITY_VERSION' in studio)
