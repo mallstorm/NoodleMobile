@@ -75,7 +75,8 @@ class SecureHttpClient {
             }
             val request = Request.Builder().url(current)
                 .header("User-Agent", BuildIdentity.USER_AGENT)
-                .header("Accept", "text/html,application/json,application/vnd.apple.mpegurl,application/dash+xml,text/plain,*/*;q=0.5")
+                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,application/json,application/vnd.apple.mpegurl,application/dash+xml,*/*;q=0.8")
+                .header("Accept-Language", BuildIdentity.ACCEPT_LANGUAGE)
                 .build()
             val response = try { client.newCall(request).execute() } catch (e: Exception) {
                 return@withContext TextFetchResult(false, current, errorCode = "HTTP_IO_ERROR", errorMessage = e.message ?: e.javaClass.simpleName)
@@ -131,6 +132,7 @@ class SecureHttpClient {
             val requestBuilder = Request.Builder().url(current)
                 .header("User-Agent", BuildIdentity.USER_AGENT)
                 .header("Accept", accept)
+                .header("Accept-Language", BuildIdentity.ACCEPT_LANGUAGE)
             if (referer.isNotBlank()) requestBuilder.header("Referer", referer)
             val request = requestBuilder.build()
             val response = try { client.newCall(request).execute() } catch (e: Exception) {

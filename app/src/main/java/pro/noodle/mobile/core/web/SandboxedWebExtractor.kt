@@ -154,7 +154,7 @@ class SandboxedWebExtractor(private val context: Context) {
                     }
                 }
             }
-            web.loadUrl(url, mapOf("User-Agent" to "${BuildIdentity.USER_AGENT} WebExtractor"))
+            web.loadUrl(url)
         }
     }
 
