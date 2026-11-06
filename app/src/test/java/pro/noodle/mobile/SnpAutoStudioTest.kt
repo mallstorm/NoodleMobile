@@ -93,6 +93,16 @@ class SnpAutoStudioTest {
     }
 
     @Test
+    fun rootSlugPatternDoesNotMatchMenuLinks() {
+        val re = Regex(CardLearner.toRegex("/*/"), RegexOption.IGNORE_CASE)
+        assertTrue(re.containsMatchIn("/hot-summer-trip-4512/"))
+        assertTrue(re.containsMatchIn("/my-long-video-title/"))
+        assertFalse(re.containsMatchIn("/new/"))
+        assertFalse(re.containsMatchIn("/babushki/"))
+        assertFalse(re.containsMatchIn("/anal-molodye/"))
+    }
+
+    @Test
     fun inputNormalizationAcceptsBareDomains() {
         assertEquals("https://example.com/", SnpAutoBuilder.normalizeInput("example.com"))
         assertEquals("https://www.example.com/", SnpAutoBuilder.normalizeInput("http://www.example.com/some/page?x=1"))

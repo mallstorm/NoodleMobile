@@ -103,12 +103,15 @@ object CardLearner {
     }
 
     fun toRegex(shape: String): String {
+        val single = shape.trim('/').split('/').size == 1
         val body = shape.trim('/').split('/').joinToString("/") { seg ->
             val ext = Regex("\\.(html?|php)$").find(seg)?.value.orEmpty()
             val core = seg.removeSuffix(ext)
             val part = when (core) {
                 "#" -> "\\d+"
-                "*" -> "[^/]+"
+                // A lone root slug must keep the "item-like" constraint used by shape(): contain a digit
+                // or at least two separators, so menu links such as /new/ or /babushki/ never match.
+                "*" -> if (single) "[^/]*(?:\\d|[-_][^/]*[-_])[^/]*" else "[^/]+"
                 else -> Regex.escape(core).let { if (it.startsWith("\\Q")) core.replace("-", "\\-") else it }
             }
             part + if (ext.isNotEmpty()) "\\" + ext else ""
