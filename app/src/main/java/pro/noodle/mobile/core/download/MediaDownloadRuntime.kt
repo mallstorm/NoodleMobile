@@ -40,8 +40,6 @@ object MediaDownloadRuntime {
 
     /**
      * Streaming playback: cache hit first, otherwise network through the exact SNP policy.
-     * The active factory is also exposed to the RU-ASR Transformer so audio extraction uses the
-     * same cache, cookies, headers, redirects and host sandbox as the visible player.
      */
     fun cacheDataSourceFactory(context: Context, policy: NetworkPolicy, sourceKey: String): DataSource.Factory =
         holder(context).cacheFactory(policy, sourceKey, readOnly = true).also {

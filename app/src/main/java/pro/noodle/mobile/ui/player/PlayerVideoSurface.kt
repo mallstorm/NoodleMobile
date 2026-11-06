@@ -44,27 +44,6 @@ internal fun PlayerVideoSurface(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    val dubbingController = remember(player) {
-        RussianDubbingController(context.applicationContext, player)
-    }
-    val dubbingState by dubbingController.state.collectAsState()
-    var showDubbingSettings by remember { mutableStateOf(false) }
-
-    DisposableEffect(dubbingController) {
-        onDispose { dubbingController.close() }
-    }
-
-    LaunchedEffect(dubbingState.requiresSetup) {
-        if (dubbingState.requiresSetup) showDubbingSettings = true
-    }
-
-    if (showDubbingSettings) {
-        DubbingSettingsDialog(
-            controller = dubbingController,
-            onDismiss = { showDubbingSettings = false },
-        )
-    }
-
     var controlsVisible by remember { mutableStateOf(true) }
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
@@ -172,32 +151,6 @@ internal fun PlayerVideoSurface(
                     Icon(Icons.Outlined.ArrowBack, "Назад", tint = Color.White)
                 }
                 Spacer(Modifier.weight(1f))
-                FilledTonalButton(
-                    onClick = {
-                        dubbingController.toggle()
-                        controlsVisible = true
-                    },
-                    modifier = Modifier.height(40.dp),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = if (dubbingState.enabled) {
-                            Color.White.copy(alpha = .92f)
-                        } else {
-                            Color.Black.copy(alpha = .55f)
-                        },
-                        contentColor = if (dubbingState.enabled) Color.Black else Color.White,
-                    ),
-                ) {
-                    Icon(Icons.Outlined.Translate, "Русская AI-озвучка", modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(5.dp))
-                    Text(if (dubbingState.enabled) "RU AI" else "RU", style = MaterialTheme.typography.labelMedium)
-                }
-                IconButton(
-                    onClick = { showDubbingSettings = true },
-                    modifier = Modifier.size(40.dp),
-                ) {
-                    Icon(Icons.Outlined.Tune, "Настройки RU AI", tint = Color.White)
-                }
                 IconButton(onClick = onOpenSettings) {
                     Icon(Icons.Outlined.Settings, "Настройки воспроизведения", tint = Color.White)
                 }
@@ -259,20 +212,6 @@ internal fun PlayerVideoSurface(
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter),
             ) {
-                if (dubbingState.phase != DubbingPhase.OFF) {
-                    Surface(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
-                        color = Color.Black.copy(alpha = .62f),
-                        contentColor = Color.White,
-                        shape = MaterialTheme.shapes.small,
-                    ) {
-                        Text(
-                            dubbingState.message,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            style = MaterialTheme.typography.labelSmall,
-                        )
-                    }
-                }
                 Row(
                     Modifier
                         .fillMaxWidth()
@@ -347,127 +286,6 @@ internal fun PlayerVideoSurface(
             }
         }
     }
-}
-
-@Composable
-private fun DubbingSettingsDialog(
-    controller: RussianDubbingController,
-    onDismiss: () -> Unit,
-) {
-    val initial = remember { controller.configuration() }
-    var endpoint by remember { mutableStateOf(initial.endpoint) }
-    var model by remember { mutableStateOf(initial.model) }
-    var mode by remember { mutableStateOf(initial.mode) }
-    var voiceName by remember { mutableStateOf(initial.voiceName) }
-    var apiKey by remember { mutableStateOf("") }
-    val storedKey = controller.hasAsrApiKey()
-    val voices = controller.russianVoiceNames()
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Русская AI-озвучка") },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Text(
-                    "RU AI всегда переводит именно речь из аудиодорожки. Субтитры для автодубляжа не требуются и не используются как источник.",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = mode == DubbingMode.VOICE_OVER,
-                        onClick = { mode = DubbingMode.VOICE_OVER },
-                        label = { Text("Закадровый") },
-                    )
-                    FilterChip(
-                        selected = mode == DubbingMode.DUB,
-                        onClick = { mode = DubbingMode.DUB },
-                        label = { Text("Дубляж") },
-                    )
-                }
-
-                Text("Русский голос", style = MaterialTheme.typography.labelLarge)
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    FilterChip(
-                        selected = voiceName.isBlank(),
-                        onClick = { voiceName = "" },
-                        label = { Text("Авто / по спикерам") },
-                    )
-                    voices.forEach { voice ->
-                        FilterChip(
-                            selected = voiceName == voice,
-                            onClick = { voiceName = voice },
-                            label = { Text(voice.substringAfterLast('.').take(22)) },
-                        )
-                    }
-                }
-
-                HorizontalDivider()
-                Text("Распознавание речи и автодубляж", style = MaterialTheme.typography.labelLarge)
-                OutlinedTextField(
-                    value = endpoint,
-                    onValueChange = { endpoint = it },
-                    singleLine = true,
-                    label = { Text("Endpoint") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = model,
-                    onValueChange = { model = it },
-                    singleLine = true,
-                    label = { Text("Модель") },
-                    supportingText = { Text("По умолчанию: speaker-aware diarization") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = apiKey,
-                    onValueChange = { apiKey = it },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    label = { Text(if (storedKey) "API key (уже сохранён)" else "API key") },
-                    supportingText = {
-                        Text(
-                            if (storedKey) {
-                                "Оставьте пустым, чтобы сохранить текущий ключ."
-                            } else {
-                                "Ключ шифруется Android Keystore и не пишется в открытом виде."
-                            }
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Text(
-                    "Аудио распознаётся по речи; облачный ASR может тарифицироваться выбранным провайдером.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    controller.saveConfiguration(
-                        DubbingConfig(
-                            endpoint = endpoint.trim().ifBlank { DubbingConfig.DEFAULT_ENDPOINT },
-                            model = model.trim().ifBlank { DubbingConfig.DEFAULT_MODEL },
-                            mode = mode,
-                            voiceName = voiceName,
-                        ),
-                        newApiKey = apiKey.trim().takeIf { it.isNotBlank() },
-                    )
-                    onDismiss()
-                }
-            ) { Text("Сохранить") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Отмена") }
-        },
-    )
 }
 
 private fun formatTime(ms: Long): String {
