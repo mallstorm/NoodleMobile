@@ -2,7 +2,6 @@ package pro.noodle.mobile.ui.search
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
-import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.FilledTonalButton
@@ -280,7 +279,7 @@ fun NoodleSearchScreen(
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Text(
-                        if (state.query.isBlank()) "Введите запрос в строку сверху и нажмите кнопку → или «Поиск» на клавиатуре. Поиск идёт сразу по всем включённым сайтам."
+                        if (state.query.isBlank()) "Введите запрос в строку сверху и нажмите лупу или «Поиск» на клавиатуре. Поиск идёт сразу по всем включённым сайтам."
                         else "Попробуйте другой запрос или проверьте источники.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -418,7 +417,15 @@ private fun SearchField(
         onValueChange = onValueChange,
         modifier = modifier,
         placeholder = { Text("Поиск по всем источникам") },
-        leadingIcon = { Icon(Icons.Outlined.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+        leadingIcon = {
+            IconButton(onClick = onSearch, enabled = enabled && value.isNotBlank()) {
+                Icon(
+                    Icons.Outlined.Search,
+                    "Найти",
+                    tint = if (value.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
         trailingIcon = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (value.isNotEmpty()) {
@@ -428,13 +435,6 @@ private fun SearchField(
                 }
                 IconButton(onClick = onFilters) {
                     Icon(Icons.Outlined.Tune, "Фильтры", tint = MaterialTheme.colorScheme.secondary)
-                }
-                androidx.compose.material3.FilledIconButton(
-                    onClick = onSearch,
-                    enabled = enabled && value.isNotBlank(),
-                    modifier = Modifier.padding(end = 6.dp),
-                ) {
-                    Icon(Icons.AutoMirrored.Outlined.ArrowForward, "Найти")
                 }
             }
         },
