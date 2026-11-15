@@ -25,23 +25,25 @@ class RelatedVideosRepository(
         val cacheKey = current.watchUrl.ifBlank { current.id }.lowercase()
         relatedCache[cacheKey]?.let { return it.take(limit.coerceIn(4, 12)) }
 
-        val query = relatedQuery(current)
-        if (query.isBlank()) return emptyList()
-
-        // Watch page must not repeat a heavy search across every enabled SNP. The current
-        // source is the closest equivalent to the site's own related/recommended section.
-        val batch = search.searchSameSource(
-            video = current,
-            query = query,
-            maxPerSource = limit.coerceIn(4, 12),
-        )
+        val count = limit.coerceIn(4, 12)
         val currentKey = current.watchUrl.lowercase()
-        val result = batch.items
-            .asSequence()
+        val collected = mutableListOf<VideoItem>()
+
+        // The watch page often contains recommendations. Use them before additional search.
+        collected += runCatching { search.relatedFromWatchPage(current, count) }
+            .getOrNull()?.items.orEmpty()
+        for (query in RelatedQueryPlanner.queries(current).take(3)) {
+            val distinct = collected.count { it.watchUrl.isNotBlank() && !it.watchUrl.equals(current.watchUrl, true) }
+            if (distinct >= count) break
+            collected += runCatching {
+                search.searchSameSource(video = current, query = query, maxPerSource = 12)
+            }.getOrNull()?.items.orEmpty()
+        }
+        val result = collected.asSequence()
             .filter { it.watchUrl.isNotBlank() && it.watchUrl.lowercase() != currentKey }
             .distinctBy { "${it.sourceBaseUrl}|${it.remoteId}|${it.watchUrl}".lowercase() }
             .sortedByDescending { relevanceScore(current, it) }
-            .take(limit.coerceIn(4, 12))
+            .take(count)
             .toList()
 
         if (result.isNotEmpty()) relatedCache[cacheKey] = result
@@ -76,27 +78,6 @@ class RelatedVideosRepository(
         }
         thumbnailCache[url] = bitmap
         bitmap
-    }
-
-    private fun relatedQuery(video: VideoItem): String {
-        val tags = video.tags
-            .map { it.trim() }
-            .filter { it.length >= 3 }
-            .distinctBy { it.lowercase() }
-            .take(4)
-        if (tags.isNotEmpty()) return tags.joinToString(" ")
-
-        val stop = setOf(
-            "video", "watch", "online", "the", "and", "with", "для", "как", "это", "что", "или",
-            "про", "при", "без", "его", "ее", "она", "они", "где", "когда", "почему",
-        )
-        return Regex("[\\p{L}\\p{N}]+")
-            .findAll(video.title.lowercase())
-            .map { it.value }
-            .filter { it.length >= 3 && it !in stop }
-            .distinct()
-            .take(4)
-            .joinToString(" ")
     }
 
     private fun relevanceScore(current: VideoItem, candidate: VideoItem): Int {

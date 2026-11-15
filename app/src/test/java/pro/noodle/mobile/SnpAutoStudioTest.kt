@@ -148,4 +148,12 @@ class SnpAutoStudioTest {
         assertFalse(EngineParsing.isPreviewDuration("", 5_000L))
     }
 
+
+    @Test
+    fun relatedSearchUsesShortMeaningfulQueries() {
+        val item = pro.noodle.mobile.core.model.VideoItem(title = "Смотреть Сестра онлайн", tags = listOf("семья"))
+        assertEquals(listOf("сестра", "семья"),
+            pro.noodle.mobile.core.recommendations.RelatedQueryPlanner.queries(item))
+    }
+
 }

@@ -10,6 +10,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeoutOrNull
 import pro.noodle.mobile.core.adapter.AdapterDefinition
+import pro.noodle.mobile.core.engine.impl.AutoCards
 import pro.noodle.mobile.core.engine.runtime.SearchUrls
 import pro.noodle.mobile.core.engine.runtime.searchRequest
 import pro.noodle.mobile.core.engine.runtime.RuntimeEngineRegistry
@@ -142,6 +143,61 @@ class BundledSearchRepository(
             )
         }
         return SearchBatch(result.first, listOfNotNull(result.second))
+    }
+
+
+    /** Fetch related watch-page cards through the current source's validated parser/host policy. */
+    suspend fun relatedFromWatchPage(video: VideoItem, maxPerSource: Int = 12): SearchBatch {
+        val adapter = adapterFor(video) ?: return SearchBatch(emptyList(), emptyList())
+        val watch = normalizeAllowed(video.watchUrl, adapter) ?: return SearchBatch(emptyList(), emptyList())
+        val net = try {
+            withTimeoutOrNull(RELATED_SEARCH_TIMEOUT_MS) {
+                networkSemaphore.withPermit {
+                    http.fetchText(watch, NetworkPolicy(adapter.allowedHosts, allowCookies = adapter.allowCookies), adapter.id)
+                }
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        } ?: return SearchBatch(emptyList(), emptyList())
+        if (!net.success) return SearchBatch(emptyList(), emptyList())
+
+        val engine = RuntimeEngineRegistry.find(adapter.engine) ?: return SearchBatch(emptyList(), emptyList())
+        val finalUrl = net.finalUrl.ifBlank { watch }
+        val finalBase = originOf(finalUrl, adapter.baseUrl)
+        val maximum = maxPerSource.coerceIn(4, 20)
+        val parsed = runCatching {
+            val request = adapter.searchRequest("", -1, maximum)
+            val inferred = engine.parseSearch(net.text, request.copy(baseUrl = finalBase))
+            val learned = adapter.linkPattern.takeIf { it.isNotBlank() }
+                ?.let { Regex(it, RegexOption.IGNORE_CASE) }
+                ?.let { AutoCards.extract(net.text, finalUrl, it, maximum) }
+                .orEmpty()
+            learned + inferred
+        }.getOrDefault(emptyList())
+
+        val items = parsed.mapNotNull { card ->
+            val url = normalizeAllowed(card.watchPath, adapter, baseUrl = finalBase) ?: return@mapNotNull null
+            if (url.equals(watch, true)) return@mapNotNull null
+            val thumb = normalizeAllowed(card.thumbnailUrl, adapter, allowBlank = true, baseUrl = finalBase).orEmpty()
+            val remote = card.remoteId.ifBlank { url }
+            VideoItem(
+                id = adapter.id + "|" + remote,
+                remoteId = card.remoteId,
+                watchUrl = url,
+                title = card.title.ifBlank { remote.substringAfterLast('/') },
+                thumbnailUrl = thumb,
+                duration = card.durationText,
+                views = card.viewsText,
+                sourceName = adapter.name,
+                sourceBaseUrl = adapter.baseUrl,
+                sourceEngine = adapter.engine,
+                playerPageUrl = url,
+                favoriteKey = adapter.id + "|" + remote,
+            )
+        }.distinctBy { it.watchUrl.lowercase() }.take(maximum)
+        return SearchBatch(items, emptyList())
     }
 
     private fun directUrlResult(query: String, adapters: List<AdapterDefinition>): SearchBatch? {
