@@ -205,6 +205,11 @@ class SnpAutoStudioTest {
         assertTrue(resolved.success)
         assertEquals(1, resolved.sources.size)
         assertTrue(resolved.sources.single().url.endsWith("/187316.mp4/?embed=true"))
+        val generic = pro.noodle.mobile.core.engine.impl.GenericPlayerConfigEngine()
+            .resolvePlayback(embed, "https://vwfastdelivery.com/embed/187316")
+        assertTrue(generic.success)
+        assertEquals(1, generic.sources.size)
+        assertEquals(resolved.sources.single().url, generic.sources.single().url)
     }
 
     @Test

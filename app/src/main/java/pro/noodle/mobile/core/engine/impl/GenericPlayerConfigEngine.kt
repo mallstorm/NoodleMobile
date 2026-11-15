@@ -25,6 +25,11 @@ class GenericPlayerConfigEngine : SourceEngine {
 
     override fun resolvePlayback(text: String, pageUrl: String): EngineResolveResult {
         if (text.isBlank()) return EngineResolveResult()
+        // On KVS embed pages, event_reporting2 is a tracking URL that looks like an MP4.
+        // The dedicated flashvars parser is authoritative; generic regexes must not
+        // interpret reporting endpoints or shortened function/0 URLs as the movie.
+        val kvs = KvsPlaybackResolver.resolve(text, pageUrl)
+        if (kvs.success && kvs.sources.isNotEmpty()) return kvs
         // JS configs often escape slashes. Normalize a working copy before fingerprint/media regexes.
         val normalizedText = text.replace("\\/", "/").replace("\\u0026", "&", true)
         val handled = PLAYER_MARKERS.any { normalizedText.contains(it, ignoreCase = true) } ||
