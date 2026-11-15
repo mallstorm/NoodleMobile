@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import pro.noodle.mobile.core.engine.runtime.EngineParsing
 import pro.noodle.mobile.core.adapter.AdapterValidator
 import pro.noodle.mobile.core.engine.impl.AutoCards
 import pro.noodle.mobile.core.engine.impl.AutoCatalogEngine
@@ -124,4 +125,27 @@ class SnpAutoStudioTest {
         val broken = AdapterValidator.validate(json.replace("\"page_template\":\"/search/{query}/{page}/\",", "\"page_template\":\"/search/x/\","))
         assertFalse(broken.isValid)
     }
+
+    @Test
+    fun genericResolverRejectsHoverPreviewEvenWithoutPreviewFilename() {
+        val html = """
+            <div class="related"><video class="hover-preview" muted loop playsinline
+              src="https://cdn.demo.test/media/clip_711.mp4"></video></div>
+            <div data-preview="https://cdn.demo.test/media/clip_712.mp4"></div>
+            <script>new Playerjs({id:"player",file:"https://cdn.demo.test/media/full_1080.mp4"});</script>
+        """.trimIndent()
+        val resolved = pro.noodle.mobile.core.engine.impl.GenericPlayerConfigEngine()
+            .resolvePlayback(html, "https://demo.test/watch/123")
+        assertEquals(listOf("https://cdn.demo.test/media/full_1080.mp4"), resolved.sources.map { it.url })
+    }
+
+    @Test
+    fun media3DurationGuardRejectsShortPreviewOnlyForFullLengthCards() {
+        assertTrue(EngineParsing.isPreviewDuration("12:05", 5_000L))
+        assertTrue(EngineParsing.isPreviewDuration("01:12:05", 5_000L))
+        assertFalse(EngineParsing.isPreviewDuration("00:05", 5_000L))
+        assertFalse(EngineParsing.isPreviewDuration("12:05", 120_000L))
+        assertFalse(EngineParsing.isPreviewDuration("", 5_000L))
+    }
+
 }

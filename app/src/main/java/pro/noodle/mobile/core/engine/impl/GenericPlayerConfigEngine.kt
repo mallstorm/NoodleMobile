@@ -34,7 +34,7 @@ class GenericPlayerConfigEngine : SourceEngine {
 
         val sources = mutableListOf<MediaSource>()
         val seen = linkedSetOf<String>()
-        fun add(raw: String, label: String = "") {
+        fun add(raw: String, label: String = "", markupRange: IntRange? = null) {
             val decoded = EngineParsing.htmlDecode(raw)
                 .replace("\\/", "/")
                 .replace("\\u0026", "&", true)
@@ -42,6 +42,7 @@ class GenericPlayerConfigEngine : SourceEngine {
                 .trim('"', '\'', ' ')
             val absolute = EngineParsing.absolute(decoded, pageUrl)
             if (absolute.isBlank() || !absolute.startsWith("http", true) || !looksLikeMedia(absolute) || EngineParsing.isPreviewClip(absolute)) return
+            if (markupRange != null && EngineParsing.isPreviewMarkup(normalizedText, markupRange)) return
             if (!seen.add(absolute.lowercase())) return
             val protocol = EngineParsing.protocol(absolute)
             val mime = when (protocol) {
@@ -57,17 +58,17 @@ class GenericPlayerConfigEngine : SourceEngine {
                 isDefault = sources.isEmpty(),
             )
         }
-        fun addConfigValue(raw: String) {
+        fun addConfigValue(raw: String, markupRange: IntRange) {
             val decoded = EngineParsing.htmlDecode(raw).replace("\\/", "/").replace("\\u0026", "&", true)
             // PlayerJS and several legacy players allow a single `file` string containing multiple
             // quality URLs. Extract individual media URLs first, then try the whole value.
-            MEDIA_URL_RE.findAll(decoded).forEach { add(it.value) }
-            add(decoded)
+            MEDIA_URL_RE.findAll(decoded).forEach { add(it.value, markupRange = markupRange) }
+            add(decoded, markupRange = markupRange)
         }
 
-        CONFIG_KEY_RE.findAll(normalizedText).forEach { m -> addConfigValue(m.groupValues[2]) }
-        DATA_ATTR_RE.findAll(normalizedText).forEach { m -> addConfigValue(m.groupValues[2]) }
-        MEDIA_URL_RE.findAll(normalizedText).forEach { m -> add(m.value) }
+        CONFIG_KEY_RE.findAll(normalizedText).forEach { m -> addConfigValue(m.groupValues[2], m.range) }
+        DATA_ATTR_RE.findAll(normalizedText).forEach { m -> addConfigValue(m.groupValues[2], m.range) }
+        MEDIA_URL_RE.findAll(normalizedText).forEach { m -> add(m.value, markupRange = m.range) }
 
         // Mux exposes a deterministic HLS URL for a public playback-id.
         Regex("<mux-player\\b[^>]*\\bplayback-id=[\"']([^\"']+)[\"']", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
