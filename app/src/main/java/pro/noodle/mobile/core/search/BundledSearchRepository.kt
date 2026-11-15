@@ -235,8 +235,14 @@ class BundledSearchRepository(
     }
 
     /** Existing favorite/history items may still resolve after the source is disabled for search. */
-    fun adapterFor(video: VideoItem): AdapterDefinition? = allAdapters().firstOrNull {
-        it.baseUrl.equals(video.sourceBaseUrl, true) || it.name.equals(video.sourceName, true)
+    fun adapterFor(video: VideoItem): AdapterDefinition? {
+        val adapters = allAdapters()
+        // Two SNPs may share the same site. The card's ID identifies the actual provider.
+        val sourceId = video.id.substringBefore('|').takeIf { '|' in video.id }.orEmpty()
+        return adapters.firstOrNull { it.id.equals(sourceId, true) }
+            ?: adapters.firstOrNull {
+                it.baseUrl.equals(video.sourceBaseUrl, true) || it.name.equals(video.sourceName, true)
+            }
     }
 
     private suspend fun searchOne(

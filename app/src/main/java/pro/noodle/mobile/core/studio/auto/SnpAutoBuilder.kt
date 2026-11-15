@@ -464,6 +464,9 @@ class SnpAutoBuilder(private val http: SecureHttpClient = SecureHttpClient()) {
             "s_path" to "/s/{query}/",
             "dle" to "/index.php?do=search&subaction=search&story={query}",
             "plus_search" to "/search/{query_plus}/",
+            // Sites with category-like search (including Novideo family) expose /{query}/.
+            "category_direct" to "/{query}/",
+            "category_latest" to "/{query}/latest/",
         )
 
         fun normalizeInput(raw: String): String? {

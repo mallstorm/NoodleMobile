@@ -42,11 +42,11 @@
       "open_graph"
     ]
   },
-  "adapter_version": "1.0.0",
+  "adapter_version": "1.0.1",
   "publisher": "Noodle Desktop bundled",
   "homepage": "https://video-laba.click",
   "health": {
-    "query": "video",
+    "query": "mamki",
     "min_results": 1,
     "require_playback": true,
     "auto_repair": false
@@ -70,5 +70,9 @@
     "strategies": [
       "resolver_refresh"
     ]
+  },
+  "search": {
+    "url_template": "/{query}/",
+    "page_template": "/{query}/{page}/"
   }
 }

@@ -169,4 +169,42 @@ class SnpAutoStudioTest {
             "https://video.test/search?q=sister", "https://video.test/search?q=sister", 0.3, 5))
     }
 
+
+    @Test
+    fun videoLabaCategoryAndEmbedSnapshotRegression() {
+        val engine = RuntimeEngineRegistry.find("novideo_embed")!!
+        val req = EngineSearchRequest(baseUrl = "https://video-laba.click", query = "mamki")
+        assertEquals("https://video-laba.click/mamki/", SearchUrls.primary(engine, req))
+        assertEquals("https://video-laba.click/mamki/2/",
+            SearchUrls.primary(engine, req.copy(page = 1)))
+        val html = """
+            <a class="thumb__link" href="/novideo/434257-1720269893.html">
+              <div class="thumb__preview">
+                <video-preview :preview-url="'https://img.24fastload.net/videopreview/434/257/187316_640preview.mp4'">
+                  <img alt="Example video title" src="https://img.24fastload.net/t640/000/434/257.jpg"/>
+                </video-preview>
+                <em class="thumb__sticky -bl">19:05</em>
+              </div>
+            </a>
+        """.trimIndent()
+        val cards = engine.parseSearch(html, req)
+        assertEquals(1, cards.size)
+        assertEquals("434257-1720269893", cards.first().remoteId)
+        assertEquals("19:05", cards.first().durationText)
+        assertEquals("Example video title", cards.first().title)
+
+        val embed = """
+            <script>var flashvars = {
+                video_url: 'function/0/https://vwfastdelivery.com/get_file/1/1234567890abcdef1234567890abcdef/187000/187316/187316.mp4/?embed=true',
+                preview_url1: 'https://img.vwfastdelivery.com/scr/187000/187316/preview.mp4.jpg',
+                event_reporting2: 'https://vwfastdelivery.com/get_file/1/other/187000/187316/187316.mp4/'
+            };</script>
+        """.trimIndent()
+        val resolved = pro.noodle.mobile.core.engine.impl.KvsPlaybackResolver.resolve(embed,
+            "https://vwfastdelivery.com/embed/187316")
+        assertTrue(resolved.success)
+        assertEquals(1, resolved.sources.size)
+        assertTrue(resolved.sources.single().url.endsWith("/187316.mp4/?embed=true"))
+    }
+
 }
