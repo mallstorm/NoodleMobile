@@ -156,4 +156,17 @@ class SnpAutoStudioTest {
             pro.noodle.mobile.core.recommendations.RelatedQueryPlanner.queries(item))
     }
 
+
+    @Test
+    fun searchGuardRejectsRedirectToHomeAndHomepageCategoryClone() {
+        assertTrue(pro.noodle.mobile.core.studio.auto.SearchResponseGuard.reject(
+            "https://video.test/search?q=sister", "https://video.test/", 0.0, 0))
+        assertTrue(pro.noodle.mobile.core.studio.auto.SearchResponseGuard.reject(
+            "https://video.test/search?q=sister", "https://video.test/search?q=sister", 0.95, 0))
+        assertFalse(pro.noodle.mobile.core.studio.auto.SearchResponseGuard.reject(
+            "https://video.test/?s=sister", "https://video.test/?s=sister", 0.2, 5))
+        assertFalse(pro.noodle.mobile.core.studio.auto.SearchResponseGuard.reject(
+            "https://video.test/search?q=sister", "https://video.test/search?q=sister", 0.3, 5))
+    }
+
 }
