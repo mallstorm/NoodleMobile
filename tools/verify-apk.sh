@@ -13,7 +13,13 @@ BADGING="$($AAPT2 dump badging "$APK")"
 OUT="${APK_BADGING_OUT:-$PWD/build-certification/APK_BADGING.txt}"
 mkdir -p "$(dirname "$OUT")"
 printf '%s\n' "$BADGING" | tee "$OUT"
-printf '%s\n' "$BADGING" | grep -F "package: name='pro.noodle.mobile' versionCode='110000' versionName='0.11.0'" >/dev/null || { echo "ERROR: APK identity mismatch" >&2; exit 5; }
+# Compare the generated APK to the Gradle source of truth, not a stale hard-coded version.
+GRADLE_FILE="${APP_GRADLE_FILE:-app/build.gradle.kts}"
+[[ -f "$GRADLE_FILE" ]] || { echo "ERROR: missing app/build.gradle.kts" >&2; exit 5; }
+EXPECTED_CODE="$(sed -nE 's/^[[:space:]]*versionCode[[:space:]]*=[[:space:]]*([0-9]+).*$/\1/p' "$GRADLE_FILE" | head -1)"
+EXPECTED_NAME="$(sed -nE 's/^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"([^"]+)".*$/\1/p' "$GRADLE_FILE" | head -1)"
+[[ -n "$EXPECTED_CODE" && -n "$EXPECTED_NAME" ]] || { echo "ERROR: Gradle version fields missing" >&2; exit 5; }
+printf '%s\n' "$BADGING" | grep -F "package: name='pro.noodle.mobile' versionCode='${EXPECTED_CODE}' versionName='${EXPECTED_NAME}'" >/dev/null || { echo "ERROR: APK identity mismatch: expected ${EXPECTED_NAME} (${EXPECTED_CODE})" >&2; exit 5; }
 MIN_SDK="$(printf '%s\n' "$BADGING" | sed -n -e "s/^minSdkVersion:'\([^']*\)'.*/\1/p" -e "s/^sdkVersion:'\([^']*\)'.*/\1/p" | head -1)"
 TARGET_SDK="$(printf '%s\n' "$BADGING" | sed -n "s/^targetSdkVersion:'\([^']*\)'.*/\1/p" | head -1)"
 echo "APK_BADGING_MIN_SDK=${MIN_SDK:-<missing>}"
