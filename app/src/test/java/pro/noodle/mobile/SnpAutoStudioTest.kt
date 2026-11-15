@@ -207,4 +207,14 @@ class SnpAutoStudioTest {
         assertTrue(resolved.sources.single().url.endsWith("/187316.mp4/?embed=true"))
     }
 
+    @Test
+    fun relatedQueryPrioritizesSubjectAtStartOfLongTitle() {
+        val video = pro.noodle.mobile.core.model.VideoItem(
+            title = "Сестра фотографировалась на телефон и решила погулять",
+        )
+        val planned = pro.noodle.mobile.core.recommendations.RelatedQueryPlanner.queries(video)
+        assertEquals("сестра", planned.first())
+        assertFalse(planned.first().contains(" "))
+    }
+
 }

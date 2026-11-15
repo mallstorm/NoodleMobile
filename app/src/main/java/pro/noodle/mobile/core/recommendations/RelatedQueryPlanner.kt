@@ -17,7 +17,7 @@ object RelatedQueryPlanner {
             .map { it.value }
             .filter { it.length >= 3 && it !in stop && it.any(Char::isLetter) }
             .toList()
-        val caption = tokens(video.title).asReversed()
+        val caption = tokens(video.title) // Lead with the subject, not incidental words at the title's end
         val tags = video.tags.flatMap(::tokens)
         return (caption + tags).distinct().take(4)
     }
