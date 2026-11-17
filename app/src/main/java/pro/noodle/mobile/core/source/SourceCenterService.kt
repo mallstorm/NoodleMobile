@@ -34,6 +34,9 @@ data class SourceCenterItem(
     val semanticSearchCount:Int = 0,
     val semanticPlaybackCount:Int = 0,
     val semanticElapsedMs:Long = 0L,
+    val semanticMessage:String = "",
+    val semanticErrorCode:String = "",
+    val healthQuery:String = "video",
 )
 
 
@@ -106,7 +109,8 @@ class SourceCenterService(context:Context){
                 if(r.packageInfo.valid)"" else r.packageInfo.errorCode,recovery.enumerate(d.id).size,
                 updateManager.pendingFile(d.id).isFile,healthStore.get(d.id,"status"),semanticDisplay,
                 updateStore.get(d.id,"state"),updateStore.get(d.id,"latest_version"),fingerprintStore.get(d.id,"status"),
-                breakageStore.get(d.id,"status"),quality.status,quality.score,quality.searchCount,quality.playbackCount,quality.elapsedMs
+                breakageStore.get(d.id,"status"),quality.status,quality.score,quality.searchCount,quality.playbackCount,quality.elapsedMs,
+                semanticMessage=semanticStore.get(d.id,"message"),semanticErrorCode=semanticStore.get(d.id,"error_code"),healthQuery=d.healthQuery
             )
         }
     }

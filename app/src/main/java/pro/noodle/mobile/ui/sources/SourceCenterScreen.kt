@@ -101,6 +101,10 @@ fun SourceCenterScreen(
                     onEnabled = { vm.setEnabled(item.adapterId, it) },
                     onAction = { action ->
                         when (action) {
+                            "reconfigure" -> {
+                                StudioRequest.pending = StudioRequest.Pending(item.baseUrl, item.healthQuery.takeIf { it.isNotBlank() && it != "video" } ?: "", autoStart = true)
+                                showStudio = true
+                            }
                             "details" -> vm.showDetails(item.adapterId)
                             "health" -> vm.health(item.adapterId)
                             "semantic" -> vm.semantic(item.adapterId)
@@ -182,6 +186,7 @@ private fun SourceCard(
                 Box {
                     IconButton(onClick = { menu = true }, enabled = !busy) { Icon(Icons.Outlined.MoreVert, "Действия") }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        SourceMenuAction("Перенастроить (Studio)", "reconfigure", { menu = false }, onAction)
                         SourceMenuAction("Подробности", "details", { menu = false }, onAction)
                         HorizontalDivider()
                         SourceMenuAction("Проверить доступность", "health", { menu = false }, onAction)
@@ -207,6 +212,15 @@ private fun SourceCard(
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 StatusPill("Сайт", item.healthStatus)
                 StatusPill("Поиск и видео", item.semanticStatus + if (item.pendingValidation) " • pending" else "")
+            }
+            if (item.semanticMessage.isNotBlank() && item.semanticStatus.lowercase().let { it.contains("fail") || it.contains("error") || it.contains("no_results") || it.contains("invalid") }) {
+                Text(
+                    (if (item.semanticErrorCode.isNotBlank()) item.semanticErrorCode + ": " else "") + item.semanticMessage,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 6,
+                )
+                TextButton(onClick = { onAction("reconfigure") }) { Text("Перенастроить автоматически") }
             }
             if (item.updateStatus.isNotBlank() && item.latestVersion.isNotBlank()) {
                 StatusLine("Обновление", item.updateStatus + " → " + item.latestVersion)

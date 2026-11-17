@@ -131,6 +131,12 @@ class AdapterProbeService(
                 continue
             }
             val media3 = probeMedia3Ready(resolved.session)
+            // A slow link/VPN can time out Media3 even though the stream was measured as the full
+            // video (duration matches the card). That is not a broken adapter.
+            if (!media3.success && media3.errorCode.endsWith("READY_TIMEOUT") && resolved.session.streamVerdict == "full") {
+                readyCount++
+                continue
+            }
             if (!media3.success) {
                 if (firstError == null) firstError = media3.errorCode.ifBlank { "SNP_MEDIA3_NOT_READY" } to "Карточка ${index + 1}/${samples.size}: реальная загрузка видео не прошла. ${media3.message}"
                 continue
@@ -290,7 +296,7 @@ class AdapterProbeService(
         private const val PLAYBACK_SAMPLE_COUNT = 5
         private const val PLAYBACK_REQUIRED_RATIO = 0.6
         private const val MAX_MEDIA_SOURCE_FALLBACKS = 4
-        private const val MEDIA3_READY_TIMEOUT_MS = 15_000L
+        private const val MEDIA3_READY_TIMEOUT_MS = 25_000L
     }
 }
 

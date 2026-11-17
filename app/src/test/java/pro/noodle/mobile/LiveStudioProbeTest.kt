@@ -73,14 +73,17 @@ class LiveStudioProbeTest {
         val query = System.getenv("NOODLE_LIVE_QUERY").orEmpty().ifBlank { "video" }
         val builder = SnpAutoBuilder(http)
         report.appendLine("\n=== SNP STUDIO AUTO-BUILD (query=\"$query\") ===")
-        (hosts + extra).distinct().forEach { site ->
-            val r = withTimeoutOrNull(150_000) { builder.build(site, query) }
+        val extraSites = extra.map { it.substringBefore('|') }
+        val perSiteQuery = extra.filter { '|' in it }.associate { it.substringBefore('|') to it.substringAfter('|') }
+        (hosts + extraSites).distinct().forEach { site ->
+            val siteQuery = perSiteQuery[site] ?: query
+            val r = withTimeoutOrNull(150_000) { builder.build(site, siteQuery) }
             if (r == null) { report.appendLine("$site: TIMEOUT"); return@forEach }
             report.appendLine("\n--- $site ---")
             report.append(r.report())
             val slug = site.replace(Regex("[^A-Za-z0-9.]"), "_")
             if (r.adapterJson.isNotBlank()) File(out, "$slug.adapter.json").writeText(r.adapterJson)
-            if (site in extra) {
+            if (site in extraSites) {
                 // Raw HTML of the pages Studio looked at, for offline diagnosis.
                 val dumps = linkedMapOf("home" to (SnpAutoBuilder.normalizeInput(site) ?: site))
                 r.candidates.filter { it.loaded }.sortedByDescending { it.score }.take(4).forEachIndexed { i, c -> dumps["search$i"] = c.url }
