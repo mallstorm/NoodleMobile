@@ -17,8 +17,10 @@ class MultiSourceHotfix2Test {
         val items=KvsSourceEngine("kvs_view", emptySet(), KvsSourceEngine.Mode.VIEW).parseSearch(html,EngineSearchRequest("https://example.com","q"))
         assertEquals(1,items.size);assertEquals("/view/42/",items[0].watchPath)
     }
-    @Test fun novideoUsesCurrentSearchEndpoint(){
-        val url=NovideoEmbedEngine().buildSearchUrl(EngineSearchRequest("https://video.example","demo"))
-        assertEquals("https://video.example/search/?q=demo",url)
+    @Test fun novideoUsesConfirmedCategoryEndpoint(){
+        val first = NovideoEmbedEngine().buildSearchUrl(EngineSearchRequest("https://video.example", "mamki"))
+        assertEquals("https://video.example/mamki/", first)
+        val second = NovideoEmbedEngine().buildSearchUrl(EngineSearchRequest("https://video.example", "mamki", page = 1))
+        assertEquals("https://video.example/mamki/2/", second)
     }
 }

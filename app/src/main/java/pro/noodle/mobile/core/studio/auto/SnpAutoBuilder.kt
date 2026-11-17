@@ -22,6 +22,19 @@ import pro.noodle.mobile.core.version.BuildIdentity
 import java.net.URI
 import java.net.URLDecoder
 
+
+/** Never mistake a home-page redirect or a category listing for valid search results. */
+internal object SearchResponseGuard {
+    fun reject(requestedUrl: String, finalUrl: String, homeOverlap: Double, relevantCards: Int): Boolean {
+        val requested = runCatching { URI(requestedUrl) }.getOrNull() ?: return true
+        val final = runCatching { URI(finalUrl) }.getOrNull() ?: return true
+        val returnedHome = final.rawPath.orEmpty().ifBlank { "/" } == "/" &&
+            final.rawQuery.isNullOrBlank() &&
+            (requested.rawPath.orEmpty().ifBlank { "/" } != "/" || !requested.rawQuery.isNullOrBlank())
+        return returnedHome || (homeOverlap > 0.80 && relevantCards == 0)
+    }
+}
+
 data class AutoSearchCandidate(
     val label: String,
     val template: String,
@@ -263,8 +276,11 @@ class SnpAutoBuilder(private val http: SecureHttpClient = SecureHttpClient()) {
         if (overlapWithHome > 0.8) score -= 200 // the "search" just returned the home page
         if (items.size < MIN_CARDS) score -= 100
         if (relevant == 0 && tokens.isNotEmpty()) score -= 15
-        val finalPath = AutoCards.pathOf(net.finalUrl)
-        if (finalPath == "/" && AutoCards.pathOf(url) != "/") score -= 25
+        if (SearchResponseGuard.reject(url, net.finalUrl.ifBlank { url }, overlapWithHome, relevant)) {
+            return AutoSearchCandidate(label, template, net.finalUrl.ifBlank { url }, net.statusCode,
+                loaded = true, items = items.size, relevant = relevant, withThumbs = thumbs,
+                score = -1000, error = "SEARCH_HOME_FALLBACK", withDuration = durations, groups = groups)
+        }
         return AutoSearchCandidate(label, template, net.finalUrl.ifBlank { url }, net.statusCode, true, items.size, relevant, thumbs, score, learned.pattern,
             withDuration = durations, alternatives = all.drop(1).take(2).map { it.pattern }, groups = groups)
     }
@@ -329,7 +345,7 @@ class SnpAutoBuilder(private val http: SecureHttpClient = SecureHttpClient()) {
         }
         val resolved = runCatching { ResolverPipeline.resolve(page.text, page.finalUrl.ifBlank { pageUrl }, ENGINE, VIEW_STRATEGIES, fetcher) }.getOrNull()
             ?: return AutoPlaybackCheck(pageUrl, false, 0, "resolver_crash")
-        val media = resolved.sources.filter { it.url.startsWith("https://", true) }
+        val media = resolved.sources.filter { it.url.startsWith("https://", true) && !EngineParsing.isPreviewClip(it.url) }
         synchronized(mediaHosts) {
             seen.forEach { mediaHosts += it }
             media.forEach { s -> hostOf(s.url).takeIf { it.isNotBlank() }?.let { mediaHosts += it } }
@@ -484,6 +500,9 @@ class SnpAutoBuilder(private val http: SecureHttpClient = SecureHttpClient()) {
             "s_path" to "/s/{query}/",
             "dle" to "/index.php?do=search&subaction=search&story={query}",
             "plus_search" to "/search/{query_plus}/",
+            // Sites with category-like search (including Novideo family) expose /{query}/.
+            "category_direct" to "/{query}/",
+            "category_latest" to "/{query}/latest/",
         )
 
         fun normalizeInput(raw: String): String? {

@@ -1,7 +1,7 @@
 {
   "format_version": 1,
   "adapter_id": "video-laba.click",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publisher": "Noodle Desktop bundled",
   "integrity_algorithm": "sha256",
   "files": [
@@ -17,8 +17,8 @@
     },
     {
       "path": "adapter.json",
-      "sha256": "cbe20d4c6ac3791c9748e79621c9ec091027793d1ef78b6a2a6679b09eaefb3c",
-      "size": 1610
+      "sha256": "967b41d24cdeecb9de4a0636db0f8808bde954d3af4d5b91828a1d29acac0f57",
+      "size": 1702
     },
     {
       "path": "analysis.txt",

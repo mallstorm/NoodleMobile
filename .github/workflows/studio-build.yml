@@ -37,15 +37,16 @@ jobs:
 
       - name: Build and certify
         id: build
-        continue-on-error: true
         run: |
           chmod +x gradlew tools/*.sh
           bash tools/ci-android-build.sh
 
       - name: Build release APK (R8)
         id: release
-        continue-on-error: true
-        run: ./gradlew --no-daemon :app:assembleRelease 2>&1 | tail -150 > build-certification/release-build.log
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon :app:assembleRelease 2>&1 | tee build-certification/release-build.log
+          test -n "$(find app/build/outputs/apk/release -name '*.apk' -print -quit)"
 
       - name: Live probe of bundled SNP and Studio auto-builder
         continue-on-error: true
@@ -57,6 +58,37 @@ jobs:
         run: |
           ./gradlew --no-daemon :app:testDebugUnitTest --tests 'pro.noodle.mobile.LiveStudioProbeTest' -i 2>&1 | tail -400 > build-certification/live-probe-gradle.log || true
 
+
+      # Publish a real installable pre-release only after unit tests, lint, APK certification and R8.
+      - name: Publish signed arm64 release APK
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REL=$(find app/build/outputs/apk/release -type f -name '*.apk' | head -1)
+          test -f "$REL"
+          sha256sum "$REL" > build-certification/RELEASE-SHA256.txt
+          TAG="v0.11.1-snpstudio-r${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" \
+            "$REL#NoodleMobile-v0.11.1-SNP-Studio-arm64.apk" \
+            "build-certification/RELEASE-SHA256.txt#SHA256.txt" \
+            --target "$GITHUB_SHA" --prerelease \
+            --title "NoodleMobile 0.11.1 • SNP Studio • Run ${GITHUB_RUN_NUMBER}" \
+            --notes "SNP Studio candidate fixes: Novideo category discovery and durations, exact-ID adapter selection, Media3 preview fallback, recommendation query priority. CI validates builds and synthetic fixtures; live Android playback still requires device verification."
+
+      - name: Upload build outputs
+        if: success()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: NoodleMobile-0.11.1-SNP-Studio-arm64
+          retention-days: 30
+          path: |
+            app/build/outputs/apk/release/*.apk
+            build-certification/RELEASE-SHA256.txt
+            build-certification/BUILD_RESULT.txt
+
       - name: Publish results to ci-out branch
         if: always()
         run: |
@@ -64,13 +96,13 @@ jobs:
           OUT=$(mktemp -d)
           mkdir -p "$OUT/run"
           cp -r build-certification/. "$OUT/run/" 2>/dev/null || true
-          REL=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          REL=$(find app/build/outputs/apk/release -name '*.apk' 2>/dev/null | head -1 || true)
           if [ -n "$REL" ]; then
             mkdir -p "$OUT/run/release"
             sha256sum "$REL" | awk '{print $1}' > "$OUT/run/release/SHA256.txt"
             split -b 45m -d -a 2 "$REL" "$OUT/run/release/NoodleMobile-release.apk.part-"
           fi
-          APK=$(find app/build/outputs/apk/debug -name '*.apk' | head -1)
+          APK=$(find app/build/outputs/apk/debug -name '*.apk' 2>/dev/null | head -1 || true)
           if [ -n "$APK" ]; then
             mkdir -p "$OUT/run/apk"
             sha256sum "$APK" | awk '{print $1}' > "$OUT/run/apk/SHA256.txt"

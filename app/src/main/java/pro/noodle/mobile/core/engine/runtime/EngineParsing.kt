@@ -46,6 +46,52 @@ object EngineParsing {
     /** Hover/preview clips (a few seconds long) are not the video itself. */
     fun isPreviewClip(url: String): Boolean = previewClip.containsMatchIn(url.substringBefore('?'))
 
+
+    /** Detect hover preview URLs by their owning markup, not by broad text proximity. */
+    fun isPreviewMarkup(html: String, urlRange: IntRange): Boolean {
+        val offset = urlRange.first
+        if (offset !in html.indices) return false
+        val prefix = html.substring((offset - 110).coerceAtLeast(0), offset)
+        val previewField = Regex(
+            """(?:data-(?:video-)?(?:preview|trailer|teaser|hover)|(?:preview|trailer|teaser)(?:_?url|_?src)?)\s*[:=]\s*["']?\s*$""",
+            RegexOption.IGNORE_CASE,
+        )
+        if (previewField.containsMatchIn(prefix)) return true
+
+        val open = html.lastIndexOf('<', offset)
+        val end = if (open >= 0) html.indexOf('>', open) else -1
+        if (open >= 0 && end >= offset && offset - open < 900) {
+            val tag = html.substring(open, end + 1)
+            val mediaTag = Regex("""^<(?:video|source|div|a)\b""", RegexOption.IGNORE_CASE)
+            if (mediaTag.containsMatchIn(tag)) {
+                val previewMarker = Regex("""(?:preview|trailer|teaser|hover|thumb)""", RegexOption.IGNORE_CASE)
+                if (previewMarker.containsMatchIn(tag) &&
+                    (tag.contains("data-", true) || tag.startsWith("<video", true) || tag.startsWith("<source", true))
+                ) return true
+                if (tag.startsWith("<video", true) && hasBooleanAttr(tag, "muted") && hasBooleanAttr(tag, "loop")) return true
+            }
+        }
+        val videoOpen = html.lastIndexOf("<video", offset, ignoreCase = true)
+        val videoClose = html.lastIndexOf("</video", offset, ignoreCase = true)
+        if (videoOpen > videoClose && offset - videoOpen < 1600) {
+            val tagEnd = html.indexOf('>', videoOpen)
+            if (tagEnd in videoOpen until offset) {
+                val tag = html.substring(videoOpen, tagEnd + 1)
+                if (hasBooleanAttr(tag, "muted") && hasBooleanAttr(tag, "loop")) return true
+            }
+        }
+        return false
+    }
+
+    /** A five-second stream is a teaser if the search card advertises a full-length video. */
+    fun isPreviewDuration(expectedDuration: String, actualMs: Long): Boolean {
+        if (actualMs <= 0L || actualMs >= 9_000L) return false
+        val numbers = expectedDuration.trim().split(':').map { it.toLongOrNull() ?: return false }
+        if (numbers.size !in 2..3 || numbers[0] < 0L || numbers.drop(1).any { it !in 0..59 }) return false
+        val seconds = numbers.fold(0L) { total, n -> total * 60 + n }
+        return seconds >= 30L
+    }
+
     fun encodedQuery(value: String): String = URLEncoder.encode(value.trim(), StandardCharsets.UTF_8.name()).replace("+", "%20")
     fun urlDecode(value: String): String = try { URLDecoder.decode(value, StandardCharsets.UTF_8.name()) } catch (_: Exception) { value }
 

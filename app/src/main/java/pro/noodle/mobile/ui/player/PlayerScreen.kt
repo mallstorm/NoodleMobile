@@ -40,6 +40,7 @@ import pro.noodle.mobile.core.download.AdaptiveDownloadSelection
 import pro.noodle.mobile.core.download.DownloadRepository
 import pro.noodle.mobile.core.download.MediaDownloadRuntime
 import pro.noodle.mobile.core.model.MediaSource
+import pro.noodle.mobile.core.engine.runtime.EngineParsing
 import pro.noodle.mobile.core.model.VideoItem
 import pro.noodle.mobile.core.network.SecureHttpClient
 import pro.noodle.mobile.core.player.PlaybackRepository
@@ -277,6 +278,26 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
 
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_READY) {
+                    // A valid HTTP stream may still be a five-second hover preview.
+                    // Prefer another candidate instead of declaring playback successful.
+                    if (EngineParsing.isPreviewDuration(video.duration, player.duration)) {
+                        runtimeDiagnostics.recordPlayback(
+                            activeSession.sourceKey, video.watchUrl, source.url,
+                            "media3_preview", "MEDIA3_PREVIEW_ONLY",
+                        )
+                        val rejected = failedSourceUrls + source.url
+                        failedSourceUrls = rejected
+                        val next = video.sources.indices.firstOrNull { index ->
+                            index != selectedIndex && video.sources[index].url !in rejected
+                        }
+                        if (next != null) {
+                            message = "Обнаружено короткое превью. Переключаюсь на основной поток…"
+                            selectedIndex = next
+                        } else {
+                            message = "Найдено только короткое превью. Полный видеопоток не подтверждён."
+                        }
+                        return
+                    }
                     runtimeDiagnostics.recordPlayback(activeSession.sourceKey, video.watchUrl, source.url, "media3_ready")
                 }
             }

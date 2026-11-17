@@ -210,7 +210,13 @@ class AdapterProbeService(
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_READY && !gate.isCompleted) {
-                    gate.complete(Media3ProbeResult(true, message = "Media3 STATE_READY"))
+                    val duration = player.duration
+                    if (EngineParsing.isPreviewDuration(session.video.duration, duration)) {
+                        gate.complete(Media3ProbeResult(false, "SNP_MEDIA3_PREVIEW_ONLY",
+                            "Вместо ролика "+session.video.duration+" открыт короткий preview: "+(duration / 1000)+" с. ("+source.url+")"))
+                    } else {
+                        gate.complete(Media3ProbeResult(true, message = "Media3 STATE_READY; durationMs="+duration+"; source="+source.url))
+                    }
                 }
             }
 
