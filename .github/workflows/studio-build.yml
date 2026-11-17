@@ -54,7 +54,7 @@ jobs:
           NOODLE_LIVE_STUDIO: "1"
           NOODLE_LIVE_OUT: ${{ github.workspace }}/build-certification/live-studio
           NOODLE_LIVE_QUERY: ${{ vars.NOODLE_LIVE_QUERY || 'aziatki' }}
-          NOODLE_LIVE_SITES: ${{ vars.NOODLE_LIVE_SITES || 'm.porno-666.me 24russkoe.best|русское video-laba.click|mamki' }}
+          NOODLE_LIVE_SITES: ${{ vars.NOODLE_LIVE_SITES || 'rusvideos.tube|русское rusvideos.tube|anal' }}
         run: |
           ./gradlew --no-daemon :app:testDebugUnitTest --tests 'pro.noodle.mobile.LiveStudioProbeTest' -i 2>&1 | tail -400 > build-certification/live-probe-gradle.log || true
 
