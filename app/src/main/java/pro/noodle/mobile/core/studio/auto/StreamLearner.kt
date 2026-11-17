@@ -232,7 +232,7 @@ class StreamLearner(private val http: SecureHttpClient, private val strategies: 
     }
 
     private fun learnExtract(evidence: List<VideoEvidence>): List<String> {
-        val minedTruth = evidence.filter { e -> e.candidates.any { it.truth && it.origin == "mined" } && e.candidates.none { it.truth && it.origin == "pipeline" } }
+        val minedTruth = evidence.filter { e -> e.candidates.any { it.truth && it.origin != "pipeline" } && e.candidates.none { it.truth && it.origin == "pipeline" } }
         if (minedTruth.isEmpty()) return emptyList()
         val rules = LinkedHashMap<String, Int>()
         for (e in minedTruth) {

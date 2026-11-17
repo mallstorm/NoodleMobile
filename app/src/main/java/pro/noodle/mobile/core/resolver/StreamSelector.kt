@@ -133,11 +133,24 @@ object DeepMediaMiner {
         return sb.toString()
     }
 
-    fun mine(raw: String, pageUrl: String, extract: List<String> = emptyList(), limit: Int = 24): List<MediaSource> {
+    fun mine(raw: String, pageUrl: String, extract: List<String> = emptyList(), limit: Int = 24): List<MediaSource> =
+        mineTagged(raw, pageUrl, extract, limit).map { it.second }
+
+    private val html5 = Regex("<(?:video|source)\\b[^>]*?\\ssrc\\s*=\\s*[\"']([^\"']+)[\"']", RegexOption.IGNORE_CASE)
+    private val dataAttr = Regex("\\bdata-(?:src|video|video-src|hls|stream|file|url|mp4|source)\\s*=\\s*[\"']([^\"']+)[\"']", RegexOption.IGNORE_CASE)
+    private val kvs = Regex("\\b(?:video_url|video_alt_url\\d*)\\s*:\\s*[\"']([^\"']+)[\"']", RegexOption.IGNORE_CASE)
+    private val jw = Regex("(?:sources\\s*:\\s*\\[[^\\]]{0,1500}?|jwplayer\\([^)]*\\)\\.setup\\(\\s*\\{[\\s\\S]{0,800}?)[\"']?file[\"']?\\s*:\\s*[\"']([^\"']+)[\"']", RegexOption.IGNORE_CASE)
+
+    /**
+     * Every extraction variant the verifier knows, each candidate tagged with the variant that found it:
+     * PlayerJS file, og:video/ya:ovs, JSON-LD contentUrl, KVS flashvars, JW sources, <video>/<source>,
+     * data-* attributes, the site rule, config keys, plain media URLs (also in escaped/%-encoded/atob text).
+     */
+    fun mineTagged(raw: String, pageUrl: String, extract: List<String> = emptyList(), limit: Int = 24): List<Pair<String, MediaSource>> {
         if (raw.isBlank()) return emptyList()
         val text = corpus(raw)
-        val out = linkedMapOf<String, MediaSource>()
-        fun add(candidate: String, strongHit: Boolean = false, label: String = "") {
+        val out = linkedMapOf<String, Pair<String, MediaSource>>()
+        fun add(candidate: String, strongHit: Boolean = false, label: String = "", variant: String = "url в коде") {
             val url = EngineParsing.absolute(candidate.trim().trim('"', '\'', ' '), pageUrl)
             if (!url.startsWith("http", true) || out.size >= limit) return
             val path = url.substringBefore('?').lowercase()
@@ -147,25 +160,31 @@ object DeepMediaMiner {
             if (!(looksMedia || (strongHit && !notMedia))) return
             if (EngineParsing.isPreviewClip(url)) return
             if (path.endsWith(".jpg") || path.endsWith(".png") || path.endsWith(".webp")) return
-            out.putIfAbsent(url.lowercase(), MediaSource(
+            out.putIfAbsent(url.lowercase(), variant to MediaSource(
                 label = label.ifBlank { EngineParsing.inferLabel(url) },
                 url = url,
                 mimeType = when (EngineParsing.protocol(url)) { "hls" -> "application/vnd.apple.mpegurl"; "dash" -> "application/dash+xml"; else -> "video/mp4" },
                 protocol = EngineParsing.protocol(url),
             ))
         }
-        for (re in strong) {
+        val strongNames = listOf("PlayerJS file", "og:video", "og:video", "JSON-LD contentUrl")
+        for ((i, re) in strong.withIndex()) {
             re.findAll(text).take(4).forEach { m ->
                 val value = EngineParsing.htmlDecode(m.groupValues[1])
-                if (re === strong[0]) playerjsFiles(value).forEach { (label, u) -> add(u, strongHit = true, label = label) } else add(value, strongHit = true)
+                if (i == 0) playerjsFiles(value).forEach { (label, u) -> add(u, strongHit = true, label = label, variant = strongNames[0]) }
+                else add(value, strongHit = true, variant = strongNames[i])
             }
         }
         for (pattern in extract) {
             val re = runCatching { Regex(pattern, setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)) }.getOrNull() ?: continue
-            re.findAll(text).take(8).forEach { m -> add(if (m.groupValues.size > 1 && m.groupValues[1].isNotBlank()) m.groupValues[1] else m.value) }
+            re.findAll(text).take(8).forEach { m -> add(if (m.groupValues.size > 1 && m.groupValues[1].isNotBlank()) m.groupValues[1] else m.value, strongHit = true, variant = "правило сайта") }
         }
-        mediaUrl.findAll(text).forEach { add(it.value) }
-        keyed.findAll(text).forEach { add(it.groupValues[1]) }
+        kvs.findAll(text).forEach { add(it.groupValues[1].removePrefix("function/0/"), strongHit = true, variant = "KVS flashvars") }
+        jw.findAll(text).forEach { add(it.groupValues[1], strongHit = true, variant = "JW sources") }
+        html5.findAll(text).forEach { add(it.groupValues[1], strongHit = true, variant = "<video>/<source>") }
+        dataAttr.findAll(text).forEach { add(it.groupValues[1], variant = "data-атрибут") }
+        keyed.findAll(text).forEach { add(it.groupValues[1], variant = "ключ конфига") }
+        mediaUrl.findAll(text).forEach { add(it.value, variant = "url в коде") }
         return out.values.toList()
     }
 }
@@ -226,7 +245,29 @@ data class StreamSelection(
     val minedExtra: Int = 0,
     /** What the deep search did when the obvious candidates were only previews. */
     val notes: List<String> = emptyList(),
+    /** Every measured candidate (previews included), for the verification report. */
+    val allRanked: List<RankedSource> = emptyList(),
+    /** url → extraction variant that found it. */
+    val origins: Map<String, String> = emptyMap(),
 ) {
+    /** Multi-line evidence: which variants found what, and what each candidate really is. */
+    fun details(limit: Int = 8): String = buildString {
+        val rows = allRanked.ifEmpty { ranked }
+        val byVariant = rows.groupBy { origins[it.source.url] ?: "движок" }
+        append("   варианты: ").append(byVariant.entries.joinToString("; ") { (v, list) ->
+            val c = list.groupingBy { it.verdict }.eachCount()
+            v + " → " + listOfNotNull(
+                c[StreamVerdict.FULL]?.let { "полный $it" }, c[StreamVerdict.PREVIEW]?.let { "превью $it" },
+                c[StreamVerdict.UNKNOWN]?.let { "?" + it }, c[StreamVerdict.DEAD]?.let { "мёртвых $it" },
+            ).joinToString(", ")
+        })
+        rows.take(limit).forEach { r ->
+            val mark = when (r.verdict) { StreamVerdict.FULL -> "✔"; StreamVerdict.PREVIEW -> "✘ превью"; StreamVerdict.DEAD -> "✘"; else -> "?" }
+            append("\n     $mark [${origins[r.source.url] ?: "движок"}] ${r.source.url.take(90)} — ${r.facts?.brief().orEmpty().ifBlank { "не проверен" }}")
+        }
+        if (rows.size > limit) append("\n     … ещё ${rows.size - limit}")
+    }
+
     val summary: String get() = ranked.firstOrNull()?.let { r ->
         "${r.verdict.name.lowercase()} • ${r.facts?.brief().orEmpty().ifBlank { "не проверен" }}" + if (expectedSec > 0) " • ожидалось ${DurationText.format(expectedSec.toDouble())}" else "" +
             if (notes.isNotEmpty()) " • глубже: " + notes.joinToString("; ") else ""
@@ -245,23 +286,32 @@ class StreamSelector(private val client: OkHttpClient, private val referer: Stri
         expectedSec: Int,
         hints: StreamHints,
         pages: List<Pair<String, String>> = emptyList(),
+        /** Verification mode: run every variant even after a full stream was found, to report all of them. */
+        exhaustive: Boolean = false,
     ): StreamSelection = withContext(Dispatchers.IO) {
         val facts = linkedMapOf<String, StreamFacts>()
+        val origins = linkedMapOf<String, String>()
+        val maxProbes = if (exhaustive) 16 else MAX_PROBES
+        suspend fun probeAll(list: List<MediaSource>, into: MutableMap<String, StreamFacts>) = probeAllLimited(list, into, maxProbes)
         var all = sources.distinctBy { it.url.lowercase() }
+        all.forEach { origins.putIfAbsent(it.url, "движок") }
         // hints.extract applies to the page itself first: that is the site-specific rule.
         var mined = 0
         val notes = mutableListOf<String>()
         if (hints.extract.isNotEmpty()) {
-            val extra = pages.flatMap { (url, body) -> DeepMediaMiner.mine(body, url, hints.extract, 8) }
-                .filter { c -> all.none { it.url.equals(c.url, true) } }
+            val extra = pages.flatMap { (url, body) -> DeepMediaMiner.mineTagged(body, url, hints.extract, 8) }
+                .filter { (v, c) -> v == "правило сайта" && all.none { it.url.equals(c.url, true) } }
+                .map { (_, c) -> origins.putIfAbsent(c.url, "правило сайта"); c }
             if (extra.isNotEmpty()) { all = (extra.take(6) + all).distinctBy { it.url.lowercase() }; mined += extra.size.coerceAtMost(6) }
         }
         probeAll(all, facts)
         var ranked = StreamScorer.rank(all, facts, expectedSec, hints)
-        if (ranked.none { it.verdict == StreamVerdict.FULL }) {
-            val extra = pages.flatMap { (url, body) -> DeepMediaMiner.mine(body, url) }
-                .filter { c -> all.none { it.url.equals(c.url, true) } }
-                .take(10)
+        if (exhaustive || ranked.none { it.verdict == StreamVerdict.FULL }) {
+            val extra = pages.flatMap { (url, body) -> DeepMediaMiner.mineTagged(body, url) }
+                .filter { (_, c) -> all.none { it.url.equals(c.url, true) } }
+                .distinctBy { it.second.url.lowercase() }
+                .take(if (exhaustive) 14 else 10)
+                .map { (v, c) -> origins.putIfAbsent(c.url, v); c }
             if (extra.isNotEmpty()) notes += "из кода страницы: ${extra.size}"
             if (extra.isNotEmpty()) {
                 mined += extra.size
@@ -270,12 +320,13 @@ class StreamSelector(private val client: OkHttpClient, private val referer: Stri
                 ranked = StreamScorer.rank(all, facts, expectedSec, hints)
             }
         }
-        if (ranked.none { it.verdict == StreamVerdict.FULL }) {
+        if (exhaustive || ranked.none { it.verdict == StreamVerdict.FULL }) {
             // Dig 1: the full file often sits next to the teaser under a predictable name.
             val variants = ranked.filter { it.verdict == StreamVerdict.PREVIEW || EngineParsing.isPreviewClip(it.source.url) }
                 .flatMap { r -> PreviewUrlVariants.of(r.source.url).map { r.source.copy(url = it, label = r.source.label.ifBlank { EngineParsing.inferLabel(it) }, isDefault = false) } }
                 .filter { c -> all.none { it.url.equals(c.url, true) } }
                 .distinctBy { it.url.lowercase() }.take(6)
+            variants.forEach { origins.putIfAbsent(it.url, "имя без preview") }
             if (variants.isNotEmpty()) {
                 all = (all + variants).distinctBy { it.url.lowercase() }
                 probeAll(variants, facts)
@@ -284,25 +335,29 @@ class StreamSelector(private val client: OkHttpClient, private val referer: Stri
                 notes += "варианты без preview: ${variants.size}, полных $ok"
             }
         }
-        if (ranked.none { it.verdict == StreamVerdict.FULL }) {
+        if (exhaustive || ranked.none { it.verdict == StreamVerdict.FULL }) {
             // Dig 2: the real player is behind an iframe / embedUrl / og:video page.
-            val embeds = EmbedFinder.find(pages)
+            val embeds = EmbedFinder.find(pages, if (exhaustive) 3 else 4)
             for (embed in embeds) {
                 val path = embed.substringBefore('?').lowercase()
                 val direct = path.endsWith(".mp4") || path.endsWith(".m3u8") || path.endsWith(".mpd") || path.endsWith(".webm")
+                val tag = "embed ${hostOfUrl(embed)}"
                 val found = if (direct) listOf(MediaSource(label = EngineParsing.inferLabel(embed), url = embed, mimeType = if (path.endsWith(".m3u8")) "application/vnd.apple.mpegurl" else "video/mp4", protocol = EngineParsing.protocol(embed)))
                 else {
                     val body = fetchPage(embed) ?: continue
                     val engine = runCatching { pro.noodle.mobile.core.engine.impl.AutoCatalogEngine().resolvePlayback(body, embed).sources }.getOrDefault(emptyList())
-                    (engine + DeepMediaMiner.mine(body, embed, hints.extract)).filter { !EngineParsing.isPreviewClip(it.url) }
+                    engine.forEach { origins.putIfAbsent(it.url, "$tag • движок") }
+                    val minedEmbed = DeepMediaMiner.mineTagged(body, embed, hints.extract).map { (v, c) -> origins.putIfAbsent(c.url, "$tag • $v"); c }
+                    (engine + minedEmbed).filter { !EngineParsing.isPreviewClip(it.url) }
                 }
+                found.forEach { origins.putIfAbsent(it.url, tag) }
                 val fresh = found.filter { c -> all.none { it.url.equals(c.url, true) } }.distinctBy { it.url.lowercase() }.take(6)
                 notes += "embed ${hostOfUrl(embed)}: кандидатов ${fresh.size}"
                 if (fresh.isEmpty()) continue
                 all = (all + fresh).distinctBy { it.url.lowercase() }
                 probeAll(fresh, facts)
                 ranked = StreamScorer.rank(all, facts, expectedSec, hints)
-                if (ranked.any { it.verdict == StreamVerdict.FULL }) break
+                if (!exhaustive && ranked.any { it.verdict == StreamVerdict.FULL }) break
             }
         }
         val hasGood = ranked.any { it.verdict == StreamVerdict.FULL || it.verdict == StreamVerdict.UNKNOWN }
@@ -318,7 +373,7 @@ class StreamSelector(private val client: OkHttpClient, private val referer: Stri
             }
             s.copy(isDefault = i == 0)
         }
-        StreamSelection(ordered, kept, expectedSec, kept.firstOrNull()?.verdict ?: StreamVerdict.UNKNOWN, mined, notes)
+        StreamSelection(ordered, kept, expectedSec, kept.firstOrNull()?.verdict ?: StreamVerdict.UNKNOWN, mined, notes, ranked, origins)
     }
 
     private fun hostOfUrl(u: String) = runCatching { java.net.URI(u).host.orEmpty() }.getOrDefault(u.take(40))
@@ -341,9 +396,10 @@ class StreamSelector(private val client: OkHttpClient, private val referer: Stri
         }
     }.getOrNull()
 
-    private suspend fun probeAll(list: List<MediaSource>, into: MutableMap<String, StreamFacts>) = coroutineScope {
-        val gate = Semaphore(4)
-        val todo = list.filter { it.url !in into }.take(MAX_PROBES)
+    /** Candidates are measured in parallel (4 at a time): fast, but gentle enough not to trip 429 limits. */
+    private suspend fun probeAllLimited(list: List<MediaSource>, into: MutableMap<String, StreamFacts>, max: Int) = coroutineScope {
+        val gate = Semaphore(PARALLEL_PROBES)
+        val todo = list.filter { it.url !in into }.take(max)
         val results = todo.map { s ->
             async(Dispatchers.IO) { gate.withPermit { s.url to (withTimeoutOrNull(PROBE_TIMEOUT_MS) { probe.probe(s) } ?: StreamFacts(s.url, note = "timeout")) } }
         }.awaitAll()
@@ -354,6 +410,7 @@ class StreamSelector(private val client: OkHttpClient, private val referer: Stri
         const val MAX_PROBES = 8
         const val PROBE_TIMEOUT_MS = 9_000L
         const val PAGE_MAX_BYTES = 3_000_000L
+        const val PARALLEL_PROBES = 4
 
         fun create(client: OkHttpClient, referer: String) = StreamSelector(client, referer)
     }

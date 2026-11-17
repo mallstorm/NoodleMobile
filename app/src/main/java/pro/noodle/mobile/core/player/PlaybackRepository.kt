@@ -33,6 +33,8 @@ data class PlaybackSession(
     val streamNote: String = "",
     val streamVerdict: String = "",
     val expectedSeconds: Int = 0,
+    /** Verification evidence: every extraction variant and what each candidate measured as. */
+    val streamDetails: String = "",
 )
 
 data class PlaybackLoadResult(
@@ -46,7 +48,7 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
     private val webExtractor = SandboxedWebExtractor(context.applicationContext)
     private val diagnostics = SourceRuntimeDiagnosticsStore(context.applicationContext)
 
-    suspend fun resolve(video: VideoItem, adapter: AdapterDefinition): PlaybackLoadResult = withContext(Dispatchers.IO) {
+    suspend fun resolve(video: VideoItem, adapter: AdapterDefinition, exhaustive: Boolean = false): PlaybackLoadResult = withContext(Dispatchers.IO) {
         if (!isStaticEntryAllowed(video.watchUrl, adapter)) {
             diagnostics.recordPlayback(adapter.id, video.watchUrl, "", "entry_blocked", "PLAYBACK_ENTRY_BLOCKED")
             return@withContext PlaybackLoadResult(
@@ -152,11 +154,11 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
         val hints = StreamHints(adapter.streamPrefer, adapter.streamReject, adapter.streamMinSeconds, adapter.streamExtract)
         val pageBodies = buildList { add(initialUrl to initialText); synchronized(fetchedPages) { addAll(fetchedPages) } }
         var referer = resolved.playerPageUrl.ifBlank { initialUrl }
-        var selection = selectStreams(safeSources, adapter, referer, expectedSec, hints, pageBodies)
+        var selection = selectStreams(safeSources, adapter, referer, expectedSec, hints, pageBodies, exhaustive)
         if (selection.ranked.isNotEmpty() && selection.ranked.all { it.facts != null && !it.facts.ok && it.facts.status in setOf(401, 403) }) {
             val alt = adapter.baseUrl.trimEnd('/') + "/"
             if (!alt.equals(referer, true)) {
-                val retry = selectStreams(safeSources, adapter, alt, expectedSec, hints, pageBodies)
+                val retry = selectStreams(safeSources, adapter, alt, expectedSec, hints, pageBodies, exhaustive)
                 if (retry.ranked.any { it.facts?.ok == true }) { selection = retry; referer = alt }
             }
         }
@@ -191,7 +193,7 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
             audioTracks = resolved.audioTracks,
             textTracks = safeTextTracks,
         )
-        PlaybackLoadResult(true, PlaybackSession(out, sessionPolicy, adapter.id, referer, selection.summary, selection.best.name.lowercase(), expectedSec))
+        PlaybackLoadResult(true, PlaybackSession(out, sessionPolicy, adapter.id, referer, selection.summary, selection.best.name.lowercase(), expectedSec, selection.details()))
     }
 
     private suspend fun selectStreams(
@@ -201,11 +203,12 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
         expectedSec: Int,
         hints: StreamHints,
         pages: List<Pair<String, String>>,
+        exhaustive: Boolean = false,
     ): StreamSelection {
         // Probing is read-only and public-HTTPS-only (UrlPolicy); candidate CDN hosts are admitted afterwards.
         val client = http.streamingClient(NetworkPolicy(emptyList(), allowCookies = adapter.allowCookies), adapter.id)
         return runCatching {
-            kotlinx.coroutines.withTimeoutOrNull(SELECT_TIMEOUT_MS) { StreamSelector(client, referer).select(sources, expectedSec, hints, pages) }
+            kotlinx.coroutines.withTimeoutOrNull(if (exhaustive) SELECT_TIMEOUT_MS + 20_000L else SELECT_TIMEOUT_MS) { StreamSelector(client, referer).select(sources, expectedSec, hints, pages, exhaustive) }
         }.getOrNull() ?: StreamSelection(sources, emptyList(), expectedSec, StreamVerdict.UNKNOWN)
     }
 

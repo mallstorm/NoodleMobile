@@ -10,6 +10,9 @@ import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.async
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -151,18 +154,28 @@ class AdapterProbeService(
         var previewCount = 0
         var firstError: Pair<String, String>? = null
         val evidence = mutableListOf<String>()
+        // Stage 2 runs in parallel (3 videos at a time): every extraction variant, every candidate measured.
+        // Stage 3 (Media3) stays sequential — one real player at a time on the main thread.
+        val gate = kotlinx.coroutines.sync.Semaphore(PARALLEL_SAMPLES)
+        val resolvedAll = kotlinx.coroutines.coroutineScope {
+            samples.map { item ->
+                async(Dispatchers.IO) {
+                    gate.withPermit { withTimeoutOrNull(SAMPLE_RESOLVE_TIMEOUT_MS) { playback.resolve(item, d, exhaustive = true) } }
+                }
+            }.awaitAll()
+        }
         for ((index, item) in samples.withIndex()) {
             if (readyCount >= required) break
-            if (samples.size - index + readyCount < required) break
             val head = "${index + 1}. ${item.title.take(60)} | карточка ${item.duration.ifBlank { "?" }}"
-            val resolved = playback.resolve(item, d)
+            val resolved = resolvedAll[index] ?: pro.noodle.mobile.core.player.PlaybackLoadResult(false, errorCode = "SNP_RESOLVE_TIMEOUT", errorMessage = "Разбор страницы не уложился в ${SAMPLE_RESOLVE_TIMEOUT_MS / 1000} с.")
             if (!resolved.success || resolved.session == null) {
                 evidence += "$head\n   ✘ поток не найден: ${resolved.errorCode} ${resolved.errorMessage.take(160)}"
                 if (firstError == null) firstError = resolved.errorCode.ifBlank { "SNP_SEMANTIC_PLAYBACK_ERROR" } to "Карточка ${index + 1}/${samples.size}: ${resolved.errorMessage.ifBlank { "Медиапоток не разрешён." }}"
                 continue
             }
             val session = resolved.session
-            val streamLine = "   поток: ${session.streamNote.ifBlank { "не измерен" }} • кандидатов ${session.video.sources.size}"
+            val streamLine = "   поток: ${session.streamNote.ifBlank { "не измерен" }} • кандидатов ${session.video.sources.size}" +
+                if (session.streamDetails.isNotBlank()) "\n" + session.streamDetails else ""
             if (session.streamVerdict == "preview") {
                 previewCount++
                 evidence += "$head\n$streamLine\n   ✘ только превью — отсечено"
@@ -350,6 +363,8 @@ class AdapterProbeService(
         private const val PLAYBACK_REQUIRED_RATIO = 0.6
         private const val MAX_MEDIA_SOURCE_FALLBACKS = 4
         private const val MEDIA3_READY_TIMEOUT_MS = 25_000L
+        private const val PARALLEL_SAMPLES = 3
+        private const val SAMPLE_RESOLVE_TIMEOUT_MS = 90_000L
     }
 }
 
