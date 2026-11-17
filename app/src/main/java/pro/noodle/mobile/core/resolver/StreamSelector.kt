@@ -177,7 +177,7 @@ object DeepMediaMiner {
         }
         for (pattern in extract) {
             val re = runCatching { Regex(pattern, setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)) }.getOrNull() ?: continue
-            re.findAll(text).take(8).forEach { m -> add(if (m.groupValues.size > 1 && m.groupValues[1].isNotBlank()) m.groupValues[1] else m.value, strongHit = true, variant = "правило сайта") }
+            re.findAll(text).take(8).forEach { m -> add(if (m.groupValues.size > 1 && m.groupValues[1].isNotBlank()) m.groupValues[1] else m.value, variant = "правило сайта") }
         }
         kvs.findAll(text).forEach { add(it.groupValues[1].removePrefix("function/0/"), strongHit = true, variant = "KVS flashvars") }
         jw.findAll(text).forEach { add(it.groupValues[1], strongHit = true, variant = "JW sources") }
