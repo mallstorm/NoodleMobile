@@ -207,7 +207,8 @@ object MediaRemuxer {
                 if (size < 0) break
                 val track = map[extractor.sampleTrackIndex]
                 if (track != null) {
-                    info.set(0, size, extractor.sampleTime.coerceAtLeast(0L), extractor.sampleFlags)
+                    val flags = if ((extractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC) != 0) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0
+                    info.set(0, size, extractor.sampleTime.coerceAtLeast(0L), flags)
                     muxer.writeSampleData(track, buf, info)
                 }
                 extractor.advance()
