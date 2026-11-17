@@ -144,8 +144,11 @@ class SnpAutoStudioTest {
         assertTrue(EngineParsing.isPreviewDuration("12:05", 5_000L))
         assertTrue(EngineParsing.isPreviewDuration("01:12:05", 5_000L))
         assertFalse(EngineParsing.isPreviewDuration("00:05", 5_000L))
-        assertFalse(EngineParsing.isPreviewDuration("12:05", 120_000L))
-        assertFalse(EngineParsing.isPreviewDuration("", 5_000L))
+        assertFalse(EngineParsing.isPreviewDuration("12:05", 700_000L))
+        assertTrue(EngineParsing.isPreviewDuration("12:05", 120_000L)) // 2-minute teaser of a 12-minute video
+        assertTrue(EngineParsing.isPreviewDuration("", 5_000L))   // card without duration: 5 s is a preview
+        assertTrue(EngineParsing.isPreviewDuration("HD", 9_000L))
+        assertFalse(EngineParsing.isPreviewDuration("HD", 600_000L))
     }
 
 

@@ -32,6 +32,8 @@ enum class StreamVerdict { FULL, UNKNOWN, PREVIEW, DEAD }
 data class RankedSource(val source: MediaSource, val facts: StreamFacts?, val verdict: StreamVerdict, val score: Int)
 
 object StreamScorer {
+    /** Anything shorter than this, on a card that does not itself say "short", is treated as a preview. */
+    const val PREVIEW_ABS_SEC = 20.0
     private val previewWords = Regex("(?:^|[/_.\\-=])(?:preview|trailer|teaser|sample|thumb|thumbs|mini|tiny|short|clip|snippet|hover)(?:[/_.\\-=?&]|\\d|$)", RegexOption.IGNORE_CASE)
 
     /**
@@ -59,7 +61,10 @@ object StreamScorer {
                 score -= 300 // network error/timeout: unknown, but try it after healthy candidates
             } else {
                 if (f != null && f.durationSec >= 0) {
+                    val cardSaysShort = expectedSec in 1..29
                     when {
+                        // A 3–20 s file on a site of full-length videos is a hover/teaser clip, whatever the card says.
+                        !cardSaysShort && f.durationSec > 0 && f.durationSec < PREVIEW_ABS_SEC -> { verdict = StreamVerdict.PREVIEW; score -= 1200 }
                         refDur > 0 && f.durationSec < refDur * 0.6 -> { verdict = StreamVerdict.PREVIEW; score -= 1000 }
                         hints.minSeconds > 0 && f.durationSec < hints.minSeconds && (refDur <= 0 || refDur >= hints.minSeconds) -> { verdict = StreamVerdict.PREVIEW; score -= 1000 }
                         refDur > 0 && f.durationSec >= refDur * 0.85 -> { verdict = StreamVerdict.FULL; score += 1000 }
@@ -67,7 +72,7 @@ object StreamScorer {
                     }
                     if (f.live) score -= 200
                 } else if (f != null && f.bytes >= 0 && (f.kind == "mp4" || f.kind == "webm")) {
-                    if (f.bytes < 1_500_000 && (maxBytes > f.bytes * 3 || refDur >= 30.0)) { verdict = StreamVerdict.PREVIEW; score -= 900 }
+                    if (f.bytes < 1_500_000 && (maxBytes > f.bytes * 3 || refDur >= 30.0 || expectedSec !in 1..29)) { verdict = StreamVerdict.PREVIEW; score -= 900 }
                     else if (maxBytes > 0 && f.bytes < maxBytes * 0.25 && f.bytes < 8_000_000) { verdict = StreamVerdict.PREVIEW; score -= 700 }
                     else if (maxBytes > 0 && f.bytes >= maxBytes * 0.8 && f.bytes > 4_000_000) score += 250
                 }
@@ -136,15 +141,66 @@ object DeepMediaMiner {
     }
 }
 
+/** "video_preview.mp4" → "video.mp4", "/previews/123.mp4" → "/123.mp4": the full file often sits next to the teaser. */
+object PreviewUrlVariants {
+    private val rules = listOf(
+        Regex("[_\\-.](?:preview|trailer|teaser|sample|short|mini|hover|thumb)(?=[_\\-.]?\\d*p?\\.(?:mp4|webm|m4v|m3u8)(?:/|$)|/?$)", RegexOption.IGNORE_CASE) to "",
+        Regex("/(?:previews?|trailers?|teasers?|samples?|hover|thumbs?|clips?)/", RegexOption.IGNORE_CASE) to "/",
+        Regex("(?<=/)(?:preview|trailer|teaser)[_\\-]", RegexOption.IGNORE_CASE) to "",
+    )
+
+    fun of(url: String): List<String> {
+        val path = url.substringBefore('?')
+        val query = url.substringAfter('?', "")
+        val out = linkedSetOf<String>()
+        var acc = path
+        for ((re, rep) in rules) {
+            val one = re.replace(path, rep)
+            if (one != path) out += one
+            acc = re.replace(acc, rep)
+        }
+        if (acc != path) out += acc
+        return out.map { if (query.isNotBlank()) "$it?$query" else it }.filter { it != url }.take(4)
+    }
+}
+
+/** Player pages hidden behind iframes / JSON-LD embedUrl / og:video — where the real stream usually lives. */
+object EmbedFinder {
+    private val iframe = Regex("<iframe\\b[^>]*?\\s(?:data-src|src)\\s*=\\s*[\"']([^\"']+)[\"']", RegexOption.IGNORE_CASE)
+    private val embedUrl = Regex("[\"'](?:embedUrl|embed_url|playerUrl|player_url|iframeUrl)[\"']\\s*:\\s*[\"']([^\"']+)[\"']", RegexOption.IGNORE_CASE)
+    private val ogVideo = Regex("<meta[^>]+(?:property|name)=[\"'](?:og:video(?::url|:secure_url)?|twitter:player(?::stream)?)[\"'][^>]+content=[\"']([^\"']+)[\"']", RegexOption.IGNORE_CASE)
+    private val playerHref = Regex("(?:href|data-href|data-url)\\s*=\\s*[\"']([^\"']*/(?:embed|player|playerjs|iframe|e)/[^\"']+)[\"']", RegexOption.IGNORE_CASE)
+    private val adHosts = Regex("(?:^|\\.)(?:doubleclick|googlesyndication|exoclick|exosrv|juicyads|trafficjunky|adsterra|tsyndicate|magsrv|realsrv|adspyglass|clickadu|popads|hilltopads|twinred|traffichaus|syndication|yandex|google|facebook|twitter|vk)\\.", RegexOption.IGNORE_CASE)
+
+    fun find(pages: List<Pair<String, String>>, limit: Int = 4): List<String> {
+        val out = linkedSetOf<String>()
+        for ((pageUrl, body0) in pages) {
+            val body = body0.replace("\\/", "/").replace("&amp;", "&")
+            listOf(iframe, embedUrl, ogVideo, playerHref).forEach { re ->
+                re.findAll(body).forEach { m ->
+                    val abs = EngineParsing.absolute(m.groupValues[1].trim(), pageUrl)
+                    val host = runCatching { java.net.URI(abs).host.orEmpty() }.getOrDefault("")
+                    if (abs.startsWith("https://", true) && host.isNotBlank() && !adHosts.containsMatchIn(host) &&
+                        !abs.equals(pageUrl, true) && !abs.substringBefore('?').lowercase().let { it.endsWith(".js") || it.endsWith(".css") || it.endsWith(".jpg") || it.endsWith(".png") }) out += abs
+                }
+            }
+        }
+        return out.take(limit)
+    }
+}
+
 data class StreamSelection(
     val sources: List<MediaSource>,
     val ranked: List<RankedSource>,
     val expectedSec: Int,
     val best: StreamVerdict,
     val minedExtra: Int = 0,
+    /** What the deep search did when the obvious candidates were only previews. */
+    val notes: List<String> = emptyList(),
 ) {
     val summary: String get() = ranked.firstOrNull()?.let { r ->
-        "${r.verdict.name.lowercase()} • ${r.facts?.brief().orEmpty().ifBlank { "не проверен" }}" + if (expectedSec > 0) " • ожидалось ${DurationText.format(expectedSec.toDouble())}" else ""
+        "${r.verdict.name.lowercase()} • ${r.facts?.brief().orEmpty().ifBlank { "не проверен" }}" + if (expectedSec > 0) " • ожидалось ${DurationText.format(expectedSec.toDouble())}" else "" +
+            if (notes.isNotEmpty()) " • глубже: " + notes.joinToString("; ") else ""
     }.orEmpty()
 }
 
@@ -183,11 +239,67 @@ class StreamSelector(private val client: OkHttpClient, private val referer: Stri
                 ranked = StreamScorer.rank(all, facts, expectedSec, hints)
             }
         }
+        val notes = mutableListOf<String>()
+        if (ranked.none { it.verdict == StreamVerdict.FULL }) {
+            // Dig 1: the full file often sits next to the teaser under a predictable name.
+            val variants = ranked.filter { it.verdict == StreamVerdict.PREVIEW || EngineParsing.isPreviewClip(it.source.url) }
+                .flatMap { r -> PreviewUrlVariants.of(r.source.url).map { r.source.copy(url = it, label = r.source.label.ifBlank { EngineParsing.inferLabel(it) }, isDefault = false) } }
+                .filter { c -> all.none { it.url.equals(c.url, true) } }
+                .distinctBy { it.url.lowercase() }.take(6)
+            if (variants.isNotEmpty()) {
+                all = (all + variants).distinctBy { it.url.lowercase() }
+                probeAll(variants, facts)
+                ranked = StreamScorer.rank(all, facts, expectedSec, hints)
+                val ok = variants.count { v -> ranked.any { it.source.url == v.url && it.verdict == StreamVerdict.FULL } }
+                notes += "варианты без preview: ${variants.size}, полных $ok"
+            }
+        }
+        if (ranked.none { it.verdict == StreamVerdict.FULL }) {
+            // Dig 2: the real player is behind an iframe / embedUrl / og:video page.
+            val embeds = EmbedFinder.find(pages)
+            for (embed in embeds) {
+                val path = embed.substringBefore('?').lowercase()
+                val direct = path.endsWith(".mp4") || path.endsWith(".m3u8") || path.endsWith(".mpd") || path.endsWith(".webm")
+                val found = if (direct) listOf(MediaSource(label = EngineParsing.inferLabel(embed), url = embed, mimeType = if (path.endsWith(".m3u8")) "application/vnd.apple.mpegurl" else "video/mp4", protocol = EngineParsing.protocol(embed)))
+                else {
+                    val body = fetchPage(embed) ?: continue
+                    val engine = runCatching { pro.noodle.mobile.core.engine.impl.AutoCatalogEngine().resolvePlayback(body, embed).sources }.getOrDefault(emptyList())
+                    (engine + DeepMediaMiner.mine(body, embed, hints.extract)).filter { !EngineParsing.isPreviewClip(it.url) }
+                }
+                val fresh = found.filter { c -> all.none { it.url.equals(c.url, true) } }.distinctBy { it.url.lowercase() }.take(6)
+                notes += "embed ${hostOfUrl(embed)}: кандидатов ${fresh.size}"
+                if (fresh.isEmpty()) continue
+                all = (all + fresh).distinctBy { it.url.lowercase() }
+                probeAll(fresh, facts)
+                ranked = StreamScorer.rank(all, facts, expectedSec, hints)
+                if (ranked.any { it.verdict == StreamVerdict.FULL }) break
+            }
+        }
         val hasGood = ranked.any { it.verdict == StreamVerdict.FULL || it.verdict == StreamVerdict.UNKNOWN }
         val kept = if (hasGood) ranked.filter { it.verdict == StreamVerdict.FULL || it.verdict == StreamVerdict.UNKNOWN || it.verdict == StreamVerdict.DEAD } else ranked
         val ordered = kept.mapIndexed { i, r -> r.source.copy(isDefault = i == 0) }
-        StreamSelection(ordered, kept, expectedSec, kept.firstOrNull()?.verdict ?: StreamVerdict.UNKNOWN, mined)
+        StreamSelection(ordered, kept, expectedSec, kept.firstOrNull()?.verdict ?: StreamVerdict.UNKNOWN, mined, notes)
     }
+
+    private fun hostOfUrl(u: String) = runCatching { java.net.URI(u).host.orEmpty() }.getOrDefault(u.take(40))
+
+    /** Fetches an embed/player page (public HTTPS only — the client's PolicyInterceptor enforces it). */
+    private fun fetchPage(url: String): String? = runCatching {
+        val req = okhttp3.Request.Builder().url(url)
+            .header("User-Agent", pro.noodle.mobile.core.version.BuildIdentity.USER_AGENT)
+            .header("Accept", "text/html,application/xhtml+xml,*/*;q=0.8")
+            .apply { if (referer.isNotBlank()) header("Referer", referer) }
+            .build()
+        client.newCall(req).execute().use { r ->
+            if (!r.isSuccessful) return@use null
+            val body = r.body ?: return@use null
+            val ct = body.contentType()?.toString().orEmpty().lowercase()
+            if (ct.startsWith("video/") || ct.contains("octet-stream") || ct.startsWith("image/")) return@use null
+            val src = body.source()
+            src.request(PAGE_MAX_BYTES)
+            src.buffer.readUtf8(minOf(src.buffer.size, PAGE_MAX_BYTES))
+        }
+    }.getOrNull()
 
     private suspend fun probeAll(list: List<MediaSource>, into: MutableMap<String, StreamFacts>) = coroutineScope {
         val gate = Semaphore(4)
@@ -201,6 +313,7 @@ class StreamSelector(private val client: OkHttpClient, private val referer: Stri
     companion object {
         const val MAX_PROBES = 8
         const val PROBE_TIMEOUT_MS = 9_000L
+        const val PAGE_MAX_BYTES = 3_000_000L
 
         fun create(client: OkHttpClient, referer: String) = StreamSelector(client, referer)
     }

@@ -42,12 +42,15 @@ data class AdapterSemanticResult(
     val errorCode: String = "",
     val message: String = "",
     val action: String = "",
+    /** Step-by-step evidence of the check: cards, covers, every sampled video and its measured stream. */
+    val report: String = "",
 )
 
 private data class Media3ProbeResult(
     val success: Boolean,
     val errorCode: String = "",
     val message: String = "",
+    val durationMs: Long = -1L,
 )
 
 class AdapterProbeService(
@@ -65,6 +68,7 @@ class AdapterProbeService(
         val query = queryOverride.trim().ifBlank { d.healthQuery.trim().ifBlank { "video" } }
         val started = System.currentTimeMillis()
         val search = searchOne(d, query, CERTIFICATION_SEARCH_LIMIT)
+        val stage = searchStage(d, search.first)
         var out = if (search.second != null) {
             result(d.id, d.name, d.adapterVersion, SemanticStatus.SEARCH_FAILED, query, errorCode = search.second!!.first, message = search.second!!.second)
         } else if (search.first.size < d.healthMinResults) {
@@ -74,6 +78,8 @@ class AdapterProbeService(
         } else {
             validateRealPlayback(d, query, search.first)
         }
+        out = out.copy(report = "Запрос: «$query»\n" + stage.first + if (out.report.isNotBlank()) "\n" + out.report else "\n" + out.message,
+            message = out.message + if (stage.second.isNotBlank()) " " + stage.second else "")
 
         val pending = updater.readPending(d.id)
         if (pending != null) {
@@ -89,6 +95,8 @@ class AdapterProbeService(
             "playback_count" to pro.noodle.mobile.core.json.JsonValue.Num(out.playbackSourceCount.toDouble()),
             "certification_samples" to pro.noodle.mobile.core.json.JsonValue.Num(PLAYBACK_SAMPLE_COUNT.toDouble()),
             "elapsed_ms" to pro.noodle.mobile.core.json.JsonValue.Num(elapsed.toDouble()),
+            "report" to pro.noodle.mobile.core.json.JsonValue.Str(out.report.take(12_000)),
+            "checked_at" to pro.noodle.mobile.core.json.JsonValue.Num(System.currentTimeMillis().toDouble()),
         ))
         return out
     }
@@ -99,7 +107,30 @@ class AdapterProbeService(
         if (search.second != null) return result(d.id,d.name,d.adapterVersion,SemanticStatus.SEARCH_FAILED,query,errorCode=search.second!!.first,message=search.second!!.second)
         if (search.first.size < d.healthMinResults) return result(d.id,d.name,d.adapterVersion,SemanticStatus.NO_RESULTS,query,search.first.size,errorCode=if(search.first.isEmpty()) "SNP_SEMANTIC_NO_RESULTS" else "SNP_SEMANTIC_MIN_RESULTS",message="Получено ${search.first.size}, требуется минимум ${d.healthMinResults}.")
         if (!d.healthRequirePlayback) return result(d.id,d.name,d.adapterVersion,SemanticStatus.HEALTHY,query,search.first.size,message="Поиск прошёл успешно.")
-        return validateRealPlayback(d, query, search.first)
+        val stage = searchStage(d, search.first)
+        val out = validateRealPlayback(d, query, search.first)
+        return out.copy(report = "Запрос: «$query»\n" + stage.first + "\n" + out.report, message = out.message + if (stage.second.isNotBlank()) " " + stage.second else "")
+    }
+
+    /** Stage 1 evidence: how complete the cards are and whether covers really load from their CDN. */
+    private suspend fun searchStage(d: AdapterDefinition, items: List<VideoItem>): Pair<String, String> {
+        if (items.isEmpty()) return "Поиск: карточек нет" to ""
+        val withThumb = items.filter { it.thumbnailUrl.isNotBlank() }
+        val withDur = items.count { pro.noodle.mobile.core.resolver.DurationText.seconds(it.duration) > 0 }
+        val sample = spreadSamples(withThumb, 4)
+        val loaded = sample.map { v ->
+            runCatching { pro.noodle.mobile.core.media.ThumbnailFetcher.fetch(http, v, d.baseUrl, d.id, d.allowCookies, 1536 * 1024).ok }.getOrDefault(false)
+        }.count { it }
+        val text = buildString {
+            append("Поиск: карточек ${items.size}, с обложкой ${withThumb.size}, с длительностью $withDur")
+            append("\nОбложки: ").append(if (sample.isEmpty()) "у карточек нет ссылок на картинки" else "загружено $loaded из ${sample.size}")
+        }
+        val warn = when {
+            withThumb.isEmpty() -> "Обложки: сайт не отдаёт картинок в карточках."
+            loaded == 0 -> "Обложки не загружаются (CDN блокирует)."
+            else -> "Обложки: $loaded/${sample.size}."
+        }
+        return text to warn
     }
 
     /**
@@ -117,35 +148,54 @@ class AdapterProbeService(
         // clear majority of the spread samples resolves AND reaches Media3 STATE_READY.
         val required = kotlin.math.ceil(samples.size * PLAYBACK_REQUIRED_RATIO).toInt().coerceAtLeast(1)
         var readyCount = 0
+        var previewCount = 0
         var firstError: Pair<String, String>? = null
+        val evidence = mutableListOf<String>()
         for ((index, item) in samples.withIndex()) {
             if (readyCount >= required) break
             if (samples.size - index + readyCount < required) break
+            val head = "${index + 1}. ${item.title.take(60)} | карточка ${item.duration.ifBlank { "?" }}"
             val resolved = playback.resolve(item, d)
             if (!resolved.success || resolved.session == null) {
+                evidence += "$head\n   ✘ поток не найден: ${resolved.errorCode} ${resolved.errorMessage.take(160)}"
                 if (firstError == null) firstError = resolved.errorCode.ifBlank { "SNP_SEMANTIC_PLAYBACK_ERROR" } to "Карточка ${index + 1}/${samples.size}: ${resolved.errorMessage.ifBlank { "Медиапоток не разрешён." }}"
                 continue
             }
-            if (resolved.session.streamVerdict == "preview") {
-                if (firstError == null) firstError = "SNP_PREVIEW_ONLY" to "Карточка ${index + 1}/${samples.size}: найден только короткий превью-ролик, а не само видео (${resolved.session.streamNote})."
+            val session = resolved.session
+            val streamLine = "   поток: ${session.streamNote.ifBlank { "не измерен" }} • кандидатов ${session.video.sources.size}"
+            if (session.streamVerdict == "preview") {
+                previewCount++
+                evidence += "$head\n$streamLine\n   ✘ только превью — отсечено"
+                if (firstError == null) firstError = "SNP_PREVIEW_ONLY" to "Карточка ${index + 1}/${samples.size}: найден только короткий превью-ролик, а не само видео (${session.streamNote})."
                 continue
             }
-            val media3 = probeMedia3Ready(resolved.session)
+            val media3 = probeMedia3Ready(session)
             // A slow link/VPN can time out Media3 even though the stream was measured as the full
             // video (duration matches the card). That is not a broken adapter.
-            if (!media3.success && media3.errorCode.endsWith("READY_TIMEOUT") && resolved.session.streamVerdict == "full") {
+            if (!media3.success && media3.errorCode.endsWith("READY_TIMEOUT") && session.streamVerdict == "full") {
+                evidence += "$head\n$streamLine\n   ✔ Media3: медленно (таймаут), но поток измерен как полный"
                 readyCount++
                 continue
             }
             if (!media3.success) {
+                if (media3.errorCode.endsWith("PREVIEW_ONLY")) previewCount++
+                evidence += "$head\n$streamLine\n   ✘ Media3: ${media3.errorCode} ${media3.message.take(200)}"
                 if (firstError == null) firstError = media3.errorCode.ifBlank { "SNP_MEDIA3_NOT_READY" } to "Карточка ${index + 1}/${samples.size}: реальная загрузка видео не прошла. ${media3.message}"
                 continue
             }
+            val playedSec = media3.durationMs / 1000.0
+            val expected = session.expectedSeconds
+            val match = if (expected > 0 && media3.durationMs > 0) " (карточка ${pro.noodle.mobile.core.resolver.DurationText.format(expected.toDouble())})" else ""
+            evidence += "$head\n$streamLine\n   ✔ Media3 READY: ${if (media3.durationMs > 0) pro.noodle.mobile.core.resolver.DurationText.format(playedSec) else "длительность неизвестна"}$match • ${session.streamVerdict}"
             readyCount++
+        }
+        val reportText = buildString {
+            append("Видео: проверено ${evidence.size}, готово $readyCount (нужно $required), превью отсечено $previewCount")
+            evidence.forEach { append('\n').append(it) }
         }
         if (readyCount < required) {
             val (code, message) = firstError ?: ("SNP_SEMANTIC_PLAYBACK_ERROR" to "Медиапоток не разрешён.")
-            return result(d.id, d.name, d.adapterVersion, SemanticStatus.PLAYBACK_FAILED, query, items.size, readyCount, errorCode = code, message = "$message (готово $readyCount, нужно $required)")
+            return result(d.id, d.name, d.adapterVersion, SemanticStatus.PLAYBACK_FAILED, query, items.size, readyCount, errorCode = code, message = "$message (готово $readyCount, нужно $required)").copy(report = reportText)
         }
         return result(
             d.id,
@@ -155,8 +205,8 @@ class AdapterProbeService(
             query,
             items.size,
             readyCount,
-            message = "Сертификация пройдена: поиск, resolver и реальная загрузка видео успешны. Media3 READY: $readyCount/${samples.size}.",
-        )
+            message = "Сертификация пройдена: настоящий поток подтверждён на $readyCount видео" + (if (previewCount > 0) ", превью отсечено: $previewCount." else "."),
+        ).copy(report = reportText)
     }
 
     private fun spreadSamples(items: List<VideoItem>, count: Int): List<VideoItem> {
@@ -217,11 +267,12 @@ class AdapterProbeService(
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_READY && !gate.isCompleted) {
                     val duration = player.duration
-                    if (EngineParsing.isPreviewDuration(session.video.duration, duration)) {
+                    val expectedSec = session.expectedSeconds.takeIf { it > 0 } ?: pro.noodle.mobile.core.resolver.DurationText.seconds(session.video.duration)
+                    if (EngineParsing.isPreviewDurationSec(expectedSec, duration)) {
                         gate.complete(Media3ProbeResult(false, "SNP_MEDIA3_PREVIEW_ONLY",
-                            "Вместо ролика "+session.video.duration+" открыт короткий preview: "+(duration / 1000)+" с. ("+source.url+")"))
+                            "Вместо ролика "+session.video.duration.ifBlank { "?" }+" открыт короткий preview: "+(duration / 1000)+" с. ("+source.url.take(120)+")", duration))
                     } else {
-                        gate.complete(Media3ProbeResult(true, message = "Media3 STATE_READY; durationMs="+duration+"; source="+source.url))
+                        gate.complete(Media3ProbeResult(true, message = "Media3 STATE_READY; durationMs="+duration+"; source="+source.url, durationMs = duration))
                     }
                 }
             }

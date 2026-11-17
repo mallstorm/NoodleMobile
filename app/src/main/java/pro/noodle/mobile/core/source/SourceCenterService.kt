@@ -51,6 +51,7 @@ data class SourceDetails(
     val reliabilityStatus:String = "unknown", val reliabilityScore:Int = 0,
     val semanticSearchCount:Int = 0, val semanticPlaybackCount:Int = 0, val semanticElapsedMs:Long = 0L,
     val semanticMessage:String = "", val semanticErrorCode:String = "", val runtimeDiagnostics:String = "",
+    val semanticReport:String = "", val semanticStatus:String = "",
 )
 
 data class SourceActionResult(val success:Boolean,val status:String="",val message:String="",val errorCode:String="")
@@ -81,7 +82,8 @@ class SourceCenterService(context:Context){
             r.bundled,r.packageInfo.trustStatus.wireName,d.healthQuery,d.healthMinResults,d.healthRequirePlayback,d.healthAutoRepair,
             d.repairEnabled,d.repairMode,d.repairStrategies,d.repairFailureThreshold,d.repairCooldownMinutes,d.repairAutoQuarantine,
             d.updateFeedUrl,recovery.enumerate(d.id),quality.status,quality.score,quality.searchCount,quality.playbackCount,
-            quality.elapsedMs,semanticStore.get(d.id,"message"),semanticStore.get(d.id,"error_code"),runtimeDiagnostics.summary(d.id)
+            quality.elapsedMs,semanticStore.get(d.id,"message"),semanticStore.get(d.id,"error_code"),runtimeDiagnostics.summary(d.id),
+            semanticReport=semanticStore.get(d.id,"report"),semanticStatus=semanticStore.get(d.id,"status")
         )
     }
 

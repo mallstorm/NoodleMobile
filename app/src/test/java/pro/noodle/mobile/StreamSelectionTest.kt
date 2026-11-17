@@ -95,4 +95,36 @@ class StreamSelectionTest {
         // no media extension → ignored by the safety filter, proving extract cannot smuggle arbitrary URLs
         assertTrue(urls.isEmpty())
     }
+
+    @org.junit.Test
+    fun shortClipIsPreviewEvenWithoutCardDuration() {
+        val clip = pro.noodle.mobile.core.model.MediaSource(label = "720p", url = "https://cdn.example.com/v/123.mp4", mimeType = "video/mp4", protocol = "http")
+        val ranked = pro.noodle.mobile.core.resolver.StreamScorer.rank(
+            listOf(clip),
+            mapOf(clip.url to pro.noodle.mobile.core.resolver.StreamFacts(clip.url, ok = true, kind = "mp4", durationSec = 5.2, bytes = 900_000)),
+            0, pro.noodle.mobile.core.resolver.StreamHints(),
+        )
+        org.junit.Assert.assertEquals(pro.noodle.mobile.core.resolver.StreamVerdict.PREVIEW, ranked.first().verdict)
+        // ...but a card that itself says 0:12 keeps its short video.
+        val short = pro.noodle.mobile.core.resolver.StreamScorer.rank(
+            listOf(clip),
+            mapOf(clip.url to pro.noodle.mobile.core.resolver.StreamFacts(clip.url, ok = true, kind = "mp4", durationSec = 12.0, bytes = 2_000_000)),
+            12, pro.noodle.mobile.core.resolver.StreamHints(),
+        )
+        org.junit.Assert.assertNotEquals(pro.noodle.mobile.core.resolver.StreamVerdict.PREVIEW, short.first().verdict)
+    }
+
+    @org.junit.Test
+    fun previewUrlVariantsAndEmbeds() {
+        val v = pro.noodle.mobile.core.resolver.PreviewUrlVariants.of("https://cdn.example.com/get_file/1/abc/123_preview.mp4/?t=1")
+        org.junit.Assert.assertTrue(v.toString(), v.contains("https://cdn.example.com/get_file/1/abc/123.mp4/?t=1"))
+        val w = pro.noodle.mobile.core.resolver.PreviewUrlVariants.of("https://cdn.example.com/previews/720/clip-trailer-720p.mp4")
+        org.junit.Assert.assertTrue(w.toString(), w.contains("https://cdn.example.com/720/clip-720p.mp4"))
+        val html = """<iframe src="//player.example.net/embed/55" width=1></iframe><iframe src="https://ads.exoclick.com/x"></iframe>
+            <script type="application/ld+json">{"embedUrl":"https:\/\/v.example.org\/e\/77"}</script>"""
+        val e = pro.noodle.mobile.core.resolver.EmbedFinder.find(listOf("https://site.example.com/video/1" to html))
+        org.junit.Assert.assertTrue(e.toString(), e.contains("https://player.example.net/embed/55"))
+        org.junit.Assert.assertTrue(e.toString(), e.contains("https://v.example.org/e/77"))
+        org.junit.Assert.assertFalse(e.toString(), e.any { it.contains("exoclick") })
+    }
 }

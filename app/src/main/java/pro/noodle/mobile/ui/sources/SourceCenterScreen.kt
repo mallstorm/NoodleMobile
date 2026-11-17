@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
+import androidx.compose.foundation.clickable
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -190,7 +191,7 @@ private fun SourceCard(
                         SourceMenuAction("Подробности", "details", { menu = false }, onAction)
                         HorizontalDivider()
                         SourceMenuAction("Проверить доступность", "health", { menu = false }, onAction)
-                        SourceMenuAction("Semantic health", "semantic", { menu = false }, onAction)
+                        SourceMenuAction("Проверить поиск и видео (подробно)", "semantic", { menu = false }, onAction)
                         SourceMenuAction("Fingerprint", "fingerprint", { menu = false }, onAction)
                         SourceMenuAction("Breakage check", "breakage", { menu = false }, onAction)
                         HorizontalDivider()
@@ -209,7 +210,10 @@ private fun SourceCard(
                 }
             }
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(
+                Modifier.clickable { onAction("details") },
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
                 StatusPill("Сайт", item.healthStatus)
                 StatusPill("Поиск и видео", item.semanticStatus + if (item.pendingValidation) " • pending" else "")
             }
@@ -239,7 +243,31 @@ private fun SourceDetailsDialog(d: SourceDetails, onDismiss: () -> Unit) {
         confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } },
         title = { Text(d.name) },
         text = {
+            val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+            var copied by remember { mutableStateOf(false) }
             LazyColumn(Modifier.heightIn(max = 560.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                item {
+                    Text("Последняя проверка «Поиск и видео»", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                    if (d.semanticStatus.isBlank()) {
+                        Text("Ещё не проводилась. Меню ⋮ → «Semantic health».", style = MaterialTheme.typography.bodySmall)
+                    } else {
+                        Text(
+                            d.semanticStatus + (if (d.semanticErrorCode.isNotBlank()) " • ${d.semanticErrorCode}" else "") + "\n" + d.semanticMessage,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (d.semanticStatus == "healthy") MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error,
+                        )
+                        if (d.semanticReport.isNotBlank()) {
+                            androidx.compose.foundation.text.selection.SelectionContainer {
+                                Text(d.semanticReport, style = MaterialTheme.typography.bodySmall, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                            }
+                            TextButton(onClick = {
+                                clipboard.setText(androidx.compose.ui.text.AnnotatedString("${d.name} (${d.baseUrl})\n${d.semanticStatus} ${d.semanticErrorCode}\n${d.semanticMessage}\n\n${d.semanticReport}"))
+                                copied = true
+                            }) { Text(if (copied) "Отчёт скопирован" else "Скопировать отчёт проверки") }
+                        }
+                    }
+                    HorizontalDivider()
+                }
                 item {
                     Detail("ID", d.adapterId)
                     Detail("Version / publisher", "${d.version} / ${d.publisher}")

@@ -325,6 +325,6 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
 
     companion object {
         private const val MAX_DISCOVERED_HOSTS = 8
-        private const val SELECT_TIMEOUT_MS = 20_000L
+        private const val SELECT_TIMEOUT_MS = 35_000L
     }
 }

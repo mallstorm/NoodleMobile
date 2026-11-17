@@ -84,12 +84,22 @@ object EngineParsing {
     }
 
     /** A five-second stream is a teaser if the search card advertises a full-length video. */
-    fun isPreviewDuration(expectedDuration: String, actualMs: Long): Boolean {
-        if (actualMs <= 0L || actualMs >= 9_000L) return false
-        val numbers = expectedDuration.trim().split(':').map { it.toLongOrNull() ?: return false }
-        if (numbers.size !in 2..3 || numbers[0] < 0L || numbers.drop(1).any { it !in 0..59 }) return false
-        val seconds = numbers.fold(0L) { total, n -> total * 60 + n }
-        return seconds >= 30L
+    fun isPreviewDuration(expectedDuration: String, actualMs: Long): Boolean =
+        isPreviewDurationSec(pro.noodle.mobile.core.resolver.DurationText.seconds(expectedDuration), actualMs)
+
+    /**
+     * True when the opened stream is a hover/teaser clip rather than the video itself.
+     * Card says ≥30 s → <9 s, or <40 % of a ≥1 min card. Card says nothing ("HD", blank) → <15 s.
+     * Card itself says <30 s → never (the video really is short).
+     */
+    fun isPreviewDurationSec(expectedSec: Int, actualMs: Long): Boolean {
+        if (actualMs <= 0L) return false
+        val a = actualMs / 1000.0
+        return when {
+            expectedSec in 1..29 -> false
+            expectedSec >= 30 -> a < 9.0 || (expectedSec >= 60 && a < expectedSec * 0.4)
+            else -> a < 15.0
+        }
     }
 
     fun encodedQuery(value: String): String = URLEncoder.encode(value.trim(), StandardCharsets.UTF_8.name()).replace("+", "%20")
