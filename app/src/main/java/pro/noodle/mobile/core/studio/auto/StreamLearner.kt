@@ -135,11 +135,27 @@ class StreamLearner(private val http: SecureHttpClient, private val strategies: 
         val bodies = buildList { add(pageUrl to page.text); synchronized(fetched) { addAll(fetched) } }
         val mined = bodies.flatMap { (u, b) -> DeepMediaMiner.mine(b, u) }.filter { m -> pipeline.none { it.url.equals(m.url, true) } }
         val origin = HashMap<String, String>()
-        val all = (pipeline.map { origin[it.url] = "pipeline"; it } + mined.map { origin.putIfAbsent(it.url, "mined"); it }).distinctBy { it.url.lowercase() }.take(10)
+        pipeline.forEach { origin[it.url] = "pipeline" }
+        mined.forEach { origin.putIfAbsent(it.url, "mined") }
+        // Pages often list a dozen hover previews of OTHER videos; keep room for what the page code names.
+        val all = (pipeline.take(6) + mined.take(6) + pipeline.drop(6)).distinctBy { it.url.lowercase() }.take(12)
         val referer = resolved?.playerPageUrl?.ifBlank { pageUrl } ?: pageUrl
         val facts = probeAll(all, http, sourceKey, referer)
         val expected = DurationText.seconds(item.durationText).takeIf { it > 0 } ?: DurationText.fromPage(page.text)
-        return VideoEvidence(pageUrl, item.title, expected, referer, classify(all, facts, expected, origin), page.text.take(MAX_BODY))
+        var candidates = classify(all, facts, expected, origin)
+        if (candidates.none { it.truth }) {
+            // Dig deeper exactly like playback does: names without "preview", iframe/embed players, og:video.
+            val client = http.streamingClient(NetworkPolicy(emptyList(), allowCookies = true), sourceKey)
+            val sel = withTimeoutOrNull(30_000) { pro.noodle.mobile.core.resolver.StreamSelector(client, referer).select(all, expected, StreamHints(), bodies) }
+            val extra = sel?.ranked?.filter { r -> r.facts != null && all.none { it.url.equals(r.source.url, true) } }.orEmpty()
+            if (extra.isNotEmpty()) {
+                extra.forEach { origin[it.source.url] = "deep" }
+                val all2 = all + extra.map { it.source }
+                val facts2 = facts + extra.associate { it.source.url to it.facts!! }
+                candidates = classify(all2, facts2, expected, origin)
+            }
+        }
+        return VideoEvidence(pageUrl, item.title, expected, referer, candidates, page.text.take(MAX_BODY))
     }
 
     private suspend fun probeAll(list: List<MediaSource>, http: SecureHttpClient, sourceKey: String, referer: String): Map<String, StreamFacts> = coroutineScope {
@@ -162,7 +178,9 @@ class StreamLearner(private val http: SecureHttpClient, private val strategies: 
             var truth = false
             var decoy = false
             if (f.ok && f.durationSec >= 0) {
-                if (expected > 0) {
+                if (expected !in 1..29 && f.durationSec > 0 && f.durationSec < StreamScorer.PREVIEW_ABS_SEC) {
+                    decoy = true // 3–20 s clip on a full-length video site: a hover preview
+                } else if (expected > 0) {
                     truth = kotlin.math.abs(f.durationSec - expected) <= maxOf(10.0, expected * 0.15)
                     decoy = f.durationSec < expected * 0.6
                 } else if (maxDur >= 45) {

@@ -127,4 +127,18 @@ class StreamSelectionTest {
         org.junit.Assert.assertTrue(e.toString(), e.contains("https://v.example.org/e/77"))
         org.junit.Assert.assertFalse(e.toString(), e.any { it.contains("exoclick") })
     }
+
+    @org.junit.Test
+    fun minesPageDeclaredExtensionlessStream() {
+        val html = """<div data-video="https://st2.cdn.example/roliki/big-other.mp4"></div>
+            <meta property="og:video" content="https://site.example/videorolik/WyJhIl0%3D" />
+            <script>js_player = new Playerjs({id:'player_container2', file: '/videorolik/WyJwIl0%3D?exp=1&sig=abc', poster: 'https://cdn.example/p.jpg'});</script>"""
+        val mined = DeepMediaMiner.mine(html, "https://site.example/rolik/x.html")
+        val urls = mined.map { it.url }
+        assertTrue(urls.toString(), urls.first() == "https://site.example/videorolik/WyJwIl0%3D?exp=1&sig=abc")
+        assertTrue(urls.toString(), "https://site.example/videorolik/WyJhIl0%3D" in urls)
+        assertTrue(urls.none { it.endsWith(".jpg") })
+        val files = DeepMediaMiner.playerjsFiles("[720p]https://a/1.mp4,[480p]https://a/2.mp4")
+        assertEquals(listOf("720p" to "https://a/1.mp4", "480p" to "https://a/2.mp4"), files)
+    }
 }

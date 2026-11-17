@@ -94,6 +94,28 @@ object DeepMediaMiner {
     private val mediaUrl = Regex("(?:https?:)?//[^\"'<>\\s\\\\,()]+?\\.(?:mp4|m3u8|mpd|webm|m4v)(?:\\?[^\"'<>\\s\\\\,()]*)?", RegexOption.IGNORE_CASE)
     private val keyed = Regex("[\"'](?:video_?url|video_?alt_?url\\d*|file|src|source|stream|stream_?url|hls|hls_?url|mp4|mp4_?url|download|download_?url|play|link|url|contentUrl)[\"']?\\s*[:=]\\s*[\"']([^\"']{6,600})[\"']", RegexOption.IGNORE_CASE)
     private val b64 = Regex("(?:atob\\(\\s*|[\"'])([A-Za-z0-9+/]{24,}={0,2})[\"']")
+    /**
+     * Places where the page itself names THE video of this page. Their URLs are often extension-less
+     * proxies ("/videorolik/<token>?exp=&sig=") that redirect to the CDN, so they are taken as
+     * candidates without the extension test; the probe then measures what they really are.
+     */
+    private val strong = listOf(
+        Regex("new\\s+Playerjs\\s*\\(\\s*\\{[\\s\\S]{0,800}?\\bfile\\s*:\\s*[\"']([^\"']{4,2000})[\"']", RegexOption.IGNORE_CASE),
+        Regex("<meta[^>]+(?:property|itemprop|name)=[\"'](?:og:video(?::url|:secure_url)?|ya:ovs:content_url|contentUrl)[\"'][^>]+content=[\"']([^\"']+)[\"']", RegexOption.IGNORE_CASE),
+        Regex("<meta[^>]+content=[\"']([^\"']+)[\"'][^>]+(?:property|itemprop|name)=[\"'](?:og:video(?::url|:secure_url)?|ya:ovs:content_url|contentUrl)[\"']", RegexOption.IGNORE_CASE),
+        Regex("[\"']contentUrl[\"']\\s*:\\s*[\"']([^\"']+)[\"']", RegexOption.IGNORE_CASE),
+    )
+
+    /** PlayerJS "file" may hold "[720p]url1,[480p]url2" or "url1 or url2". */
+    fun playerjsFiles(value: String): List<Pair<String, String>> {
+        if (value.startsWith("#")) return emptyList() // PlayerJS-encrypted value: not decodable here
+        return value.split(Regex(",(?=\\s*\\[)|\\s+or\\s+")).mapNotNull { part ->
+            val p = part.trim()
+            val label = Regex("^\\[([^\\]]*)\\]").find(p)?.groupValues?.get(1).orEmpty()
+            val url = p.replace(Regex("^\\[[^\\]]*\\]"), "").trim()
+            if (url.isBlank()) null else label to url
+        }
+    }
 
     fun corpus(raw: String): String {
         val sb = StringBuilder(raw.length + 1024)
@@ -115,21 +137,28 @@ object DeepMediaMiner {
         if (raw.isBlank()) return emptyList()
         val text = corpus(raw)
         val out = linkedMapOf<String, MediaSource>()
-        fun add(candidate: String) {
+        fun add(candidate: String, strongHit: Boolean = false, label: String = "") {
             val url = EngineParsing.absolute(candidate.trim().trim('"', '\'', ' '), pageUrl)
             if (!url.startsWith("http", true) || out.size >= limit) return
             val path = url.substringBefore('?').lowercase()
             val looksMedia = path.endsWith(".mp4") || path.endsWith(".m3u8") || path.endsWith(".mpd") || path.endsWith(".webm") || path.endsWith(".m4v") ||
                 path.contains("/get_file/") || path.contains("/videoplayback") || path.contains("/stream/") || path.contains("/hls/")
-            if (!looksMedia) return
+            val notMedia = Regex("\\.(?:jpe?g|png|webp|gif|svg|js|css|html?|php|vtt|srt|xml|json)$").containsMatchIn(path)
+            if (!(looksMedia || (strongHit && !notMedia))) return
             if (EngineParsing.isPreviewClip(url)) return
             if (path.endsWith(".jpg") || path.endsWith(".png") || path.endsWith(".webp")) return
             out.putIfAbsent(url.lowercase(), MediaSource(
-                label = EngineParsing.inferLabel(url),
+                label = label.ifBlank { EngineParsing.inferLabel(url) },
                 url = url,
                 mimeType = when (EngineParsing.protocol(url)) { "hls" -> "application/vnd.apple.mpegurl"; "dash" -> "application/dash+xml"; else -> "video/mp4" },
                 protocol = EngineParsing.protocol(url),
             ))
+        }
+        for (re in strong) {
+            re.findAll(text).take(4).forEach { m ->
+                val value = EngineParsing.htmlDecode(m.groupValues[1])
+                if (re === strong[0]) playerjsFiles(value).forEach { (label, u) -> add(u, strongHit = true, label = label) } else add(value, strongHit = true)
+            }
         }
         for (pattern in extract) {
             val re = runCatching { Regex(pattern, setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)) }.getOrNull() ?: continue
@@ -221,6 +250,7 @@ class StreamSelector(private val client: OkHttpClient, private val referer: Stri
         var all = sources.distinctBy { it.url.lowercase() }
         // hints.extract applies to the page itself first: that is the site-specific rule.
         var mined = 0
+        val notes = mutableListOf<String>()
         if (hints.extract.isNotEmpty()) {
             val extra = pages.flatMap { (url, body) -> DeepMediaMiner.mine(body, url, hints.extract, 8) }
                 .filter { c -> all.none { it.url.equals(c.url, true) } }
@@ -232,6 +262,7 @@ class StreamSelector(private val client: OkHttpClient, private val referer: Stri
             val extra = pages.flatMap { (url, body) -> DeepMediaMiner.mine(body, url) }
                 .filter { c -> all.none { it.url.equals(c.url, true) } }
                 .take(10)
+            if (extra.isNotEmpty()) notes += "из кода страницы: ${extra.size}"
             if (extra.isNotEmpty()) {
                 mined += extra.size
                 all = (all + extra).distinctBy { it.url.lowercase() }
@@ -239,7 +270,6 @@ class StreamSelector(private val client: OkHttpClient, private val referer: Stri
                 ranked = StreamScorer.rank(all, facts, expectedSec, hints)
             }
         }
-        val notes = mutableListOf<String>()
         if (ranked.none { it.verdict == StreamVerdict.FULL }) {
             // Dig 1: the full file often sits next to the teaser under a predictable name.
             val variants = ranked.filter { it.verdict == StreamVerdict.PREVIEW || EngineParsing.isPreviewClip(it.source.url) }
@@ -277,7 +307,17 @@ class StreamSelector(private val client: OkHttpClient, private val referer: Stri
         }
         val hasGood = ranked.any { it.verdict == StreamVerdict.FULL || it.verdict == StreamVerdict.UNKNOWN }
         val kept = if (hasGood) ranked.filter { it.verdict == StreamVerdict.FULL || it.verdict == StreamVerdict.UNKNOWN || it.verdict == StreamVerdict.DEAD } else ranked
-        val ordered = kept.mapIndexed { i, r -> r.source.copy(isDefault = i == 0) }
+        // Extension-less proxies may turn out to be HLS/DASH: tell the player what the probe saw.
+        val ordered = kept.mapIndexed { i, r ->
+            val kind = r.facts?.kind
+            val s = when {
+                kind == "hls" && !r.source.protocol.equals("hls", true) -> r.source.copy(protocol = "hls", mimeType = "application/vnd.apple.mpegurl")
+                kind == "dash" && !r.source.protocol.equals("dash", true) -> r.source.copy(protocol = "dash", mimeType = "application/dash+xml")
+                kind == "webm" && !r.source.mimeType.contains("webm") -> r.source.copy(mimeType = "video/webm")
+                else -> r.source
+            }
+            s.copy(isDefault = i == 0)
+        }
         StreamSelection(ordered, kept, expectedSec, kept.firstOrNull()?.verdict ?: StreamVerdict.UNKNOWN, mined, notes)
     }
 
