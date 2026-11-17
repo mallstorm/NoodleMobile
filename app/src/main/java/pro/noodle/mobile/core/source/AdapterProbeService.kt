@@ -232,6 +232,8 @@ class AdapterProbeService(
                         .filterIsInstance<HttpDataSource.InvalidResponseCodeException>()
                         .firstOrNull()
                     val code = httpError?.responseCode
+                    val root = generateSequence(error.cause) { it.cause }.lastOrNull()
+                    val rootText = root?.let { it.javaClass.simpleName + ": " + it.message.orEmpty().take(160) }.orEmpty()
                     gate.complete(
                         Media3ProbeResult(
                             false,
@@ -239,7 +241,7 @@ class AdapterProbeService(
                             if (code != null) {
                                 "HTTP $code: ${error.message.orEmpty().ifBlank { "Media3 source error" }}"
                             } else {
-                                error.message.orEmpty().ifBlank { "Media3 playback error" }
+                                error.message.orEmpty().ifBlank { "Media3 playback error" } + if (rootText.isNotBlank()) " [$rootText]" else ""
                             },
                         ),
                     )

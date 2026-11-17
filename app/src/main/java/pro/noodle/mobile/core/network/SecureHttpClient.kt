@@ -176,9 +176,9 @@ class SecureHttpClient {
      * request in the redirect/manifest/segment chain is revalidated by PolicyInterceptor.
      */
     fun streamingClient(policy: NetworkPolicy, sourceKey: String): OkHttpClient =
-        clientFor(policy, sourceKey, followRedirects = true)
+        clientFor(policy, sourceKey, followRedirects = true, anyPublicHost = true)
 
-    private fun clientFor(policy: NetworkPolicy, sourceKey: String, followRedirects: Boolean): OkHttpClient {
+    private fun clientFor(policy: NetworkPolicy, sourceKey: String, followRedirects: Boolean, anyPublicHost: Boolean = false): OkHttpClient {
         val cookies = if (policy.allowCookies) cookieStores.getOrPut(sourceKey) { MemoryCookieJar() } else CookieJar.NO_COOKIES
         return OkHttpClient.Builder()
             .connectionPool(sharedConnectionPool)
@@ -189,19 +189,21 @@ class SecureHttpClient {
             .callTimeout(35, TimeUnit.SECONDS)
             .dns(SafeDns)
             .cookieJar(cookies)
-            .addNetworkInterceptor(PolicyInterceptor(policy))
+            .addNetworkInterceptor(PolicyInterceptor(policy, anyPublicHost))
             .build()
     }
 
     private fun hostAllowed(host: String, policy: NetworkPolicy): Boolean =
         policy.allowedHosts.isEmpty() || UrlPolicy.isHostAllowed(host, policy.allowedHosts)
 
-    private class PolicyInterceptor(private val policy: NetworkPolicy) : Interceptor {
+    private class PolicyInterceptor(private val policy: NetworkPolicy, private val anyPublicHost: Boolean = false) : Interceptor {
         override fun intercept(chain: Interceptor.Chain): okhttp3.Response {
             val url = chain.request().url
             val decision = UrlPolicy.evaluateNavigation(url.toString(), allowHttp = policy.allowHttp, resolveDns = false)
             if (!decision.allowed) throw IOException("${decision.errorCode}: ${decision.reason}")
-            if (policy.allowedHosts.isNotEmpty() && !UrlPolicy.isHostAllowed(url.host, policy.allowedHosts)) {
+            // Media CDNs redirect signed get_file/segment URLs to storage hosts nobody can list in advance;
+            // https + public-address rules above still apply to every hop.
+            if (!anyPublicHost && policy.allowedHosts.isNotEmpty() && !UrlPolicy.isHostAllowed(url.host, policy.allowedHosts)) {
                 throw IOException("URL_HOST_NOT_ALLOWED: ${url.host}")
             }
             return chain.proceed(chain.request())
