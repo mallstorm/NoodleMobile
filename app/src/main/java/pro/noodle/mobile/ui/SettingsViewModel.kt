@@ -41,7 +41,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     fun uiScale(v: Int) = viewModelScope.launch { repo.setUiScalePercent(v) }
     fun relatedVideosColumns(v: Int) = viewModelScope.launch { repo.setRelatedVideosColumns(v) }
     fun parallel(v: Int) = viewModelScope.launch {
-        val n = v.coerceIn(1, 3)
+        val n = v.coerceIn(1, 10)
         repo.setParallelDownloads(n)
         MediaDownloadRuntime.manager(getApplication()).maxParallelDownloads = n
     }

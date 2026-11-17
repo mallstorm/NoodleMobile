@@ -44,11 +44,34 @@ class SourceMaintenanceWorker(appContext: Context, params: WorkerParameters) : C
                 prefs.edit().putBoolean("notified_${d.id}", true).apply()
             }
         }
+        val found = runCatching { pro.noodle.mobile.core.newvideos.NewVideosScanner(applicationContext).scan() }.getOrDefault(0)
+        if (found > 0) SourceAlerts.notifyNew(applicationContext, found, settings.monitoringIntervalHours)
         return Result.success()
     }
 }
 
 object SourceAlerts {
+    const val CHANNEL_NEW = "noodle_new_videos"
+
+    fun notifyNew(context: Context, count: Int, hours: Int) {
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) return
+        val nm = context.getSystemService(android.app.NotificationManager::class.java)
+        nm.createNotificationChannel(android.app.NotificationChannel(CHANNEL_NEW, "Новые видео", android.app.NotificationManager.IMPORTANCE_DEFAULT))
+        val open = android.content.Intent(context, pro.noodle.mobile.MainActivity::class.java)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        val pi = android.app.PendingIntent.getActivity(context, 7001, open, android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
+        val n = android.app.Notification.Builder(context, CHANNEL_NEW)
+            .setSmallIcon(android.R.drawable.stat_notify_more)
+            .setContentTitle("Новые видео: $count")
+            .setContentText("На ваших источниках появились новые ролики. Откройте колокольчик на главной.")
+            .setContentIntent(pi)
+            .setAutoCancel(true)
+            .build()
+        nm.notify(7001, n)
+    }
+
     const val CHANNEL = "noodle_sources"
     const val EXTRA_STUDIO_URL = "pro.noodle.mobile.extra.STUDIO_URL"
     const val EXTRA_STUDIO_QUERY = "pro.noodle.mobile.extra.STUDIO_QUERY"
@@ -84,7 +107,7 @@ object SourceMaintenanceScheduler {
             wm.cancelUniqueWork(UNIQUE)
             return
         }
-        val hours = intervalHours.coerceIn(6, 168).toLong()
+        val hours = intervalHours.coerceIn(2, 46).toLong()
         val req = PeriodicWorkRequestBuilder<SourceMaintenanceWorker>(hours, TimeUnit.HOURS)
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.MINUTES)

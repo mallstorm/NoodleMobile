@@ -22,6 +22,9 @@ data class AppSettings(
     val followedSources: Set<String> = emptySet(),
 )
 
+/** Масштаб интерфейса: 85–100 % с шагом 5. */
+fun snapScale(raw: Int): Int = ((raw.coerceIn(85, 100) + 2) / 5 * 5).coerceIn(85, 100)
+
 class AppSettingsRepository(private val context: Context) {
     private object Keys {
         val theme = stringPreferencesKey("theme_skin2")
@@ -40,16 +43,10 @@ class AppSettingsRepository(private val context: Context) {
     val settings: Flow<AppSettings> = context.noodleSettingsStore.data.map { p ->
         AppSettings(
             theme = p[Keys.theme] ?: "salad_sand",
-            uiScalePercent = (p[Keys.uiScalePercent] ?: 100).let { raw ->
-                when {
-                    raw >= 95 -> 100
-                    raw >= 85 -> 90
-                    else -> 80
-                }
-            },
-            parallelDownloads = (p[Keys.parallelDownloads] ?: 2).coerceIn(1, 3),
+            uiScalePercent = snapScale(p[Keys.uiScalePercent] ?: 100),
+            parallelDownloads = (p[Keys.parallelDownloads] ?: 2).coerceIn(1, 10),
             backgroundMonitoring = p[Keys.backgroundMonitoring] ?: true,
-            monitoringIntervalHours = (p[Keys.monitoringIntervalHours] ?: 24).coerceIn(6, 168),
+            monitoringIntervalHours = (p[Keys.monitoringIntervalHours] ?: 24).coerceIn(2, 46),
             rememberPlaybackPosition = p[Keys.rememberPlaybackPosition] ?: true,
             relatedVideosColumns = (p[Keys.relatedVideosColumns] ?: 2).let { if (it == 1) 1 else 2 },
             lockMode = p[Keys.lockMode] ?: "none",
@@ -61,15 +58,11 @@ class AppSettingsRepository(private val context: Context) {
 
     suspend fun setTheme(value: String) = context.noodleSettingsStore.edit { it[Keys.theme] = value }
     suspend fun setUiScalePercent(value: Int) = context.noodleSettingsStore.edit {
-        it[Keys.uiScalePercent] = when {
-            value >= 95 -> 100
-            value >= 85 -> 90
-            else -> 80
-        }
+        it[Keys.uiScalePercent] = snapScale(value)
     }
-    suspend fun setParallelDownloads(value: Int) = context.noodleSettingsStore.edit { it[Keys.parallelDownloads] = value.coerceIn(1, 3) }
+    suspend fun setParallelDownloads(value: Int) = context.noodleSettingsStore.edit { it[Keys.parallelDownloads] = value.coerceIn(1, 10) }
     suspend fun setBackgroundMonitoring(value: Boolean) = context.noodleSettingsStore.edit { it[Keys.backgroundMonitoring] = value }
-    suspend fun setMonitoringIntervalHours(value: Int) = context.noodleSettingsStore.edit { it[Keys.monitoringIntervalHours] = value.coerceIn(6, 168) }
+    suspend fun setMonitoringIntervalHours(value: Int) = context.noodleSettingsStore.edit { it[Keys.monitoringIntervalHours] = value.coerceIn(2, 46) }
     suspend fun setRememberPlaybackPosition(value: Boolean) = context.noodleSettingsStore.edit { it[Keys.rememberPlaybackPosition] = value }
     suspend fun setRelatedVideosColumns(value: Int) = context.noodleSettingsStore.edit {
         it[Keys.relatedVideosColumns] = if (value == 1) 1 else 2

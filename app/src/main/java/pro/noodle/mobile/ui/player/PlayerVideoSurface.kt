@@ -39,8 +39,6 @@ import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import pro.noodle.mobile.core.player.NoodlePlaybackService
-import pro.noodle.mobile.core.player.PlaybackSessionHolder
 
 @Composable
 internal fun PlayerVideoSurface(
@@ -51,15 +49,10 @@ internal fun PlayerVideoSurface(
     onOpenSettings: () -> Unit,
     activity: android.app.Activity?,
     modifier: Modifier = Modifier,
-    onDownload: () -> Unit = {},
-    audioOnly: Boolean = false,
-    onAudioOnlyChange: (Boolean) -> Unit = {},
-    title: String = "",
 ) {
     val context = LocalContext.current
     var locked by remember { mutableStateOf(false) }
     var aspectMode by remember { mutableIntStateOf(0) } // 0 fit, 1 stretch, 2 crop
-    val audioOnlyState by rememberUpdatedState(audioOnly)
     val scope = rememberCoroutineScope()
     var controlsVisible by remember { mutableStateOf(true) }
     var positionMs by remember { mutableLongStateOf(0L) }
@@ -86,39 +79,12 @@ internal fun PlayerVideoSurface(
     DisposableEffect(player, activity) {
         val owner = activity as? LifecycleOwner
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP && activity?.isInPictureInPictureMode != true && !audioOnlyState) {
+            if (event == Lifecycle.Event.ON_STOP && activity?.isInPictureInPictureMode != true) {
                 player.pause()
             }
         }
         owner?.lifecycle?.addObserver(observer)
         onDispose { owner?.lifecycle?.removeObserver(observer) }
-    }
-
-    // MediaSession: управление с экрана блокировки/из шторки; сервис нужен только в режиме «только звук».
-    DisposableEffect(player) {
-        val session = runCatching { androidx.media3.session.MediaSession.Builder(context, player).setId("noodle_player").build() }.getOrNull()
-        PlaybackSessionHolder.session = session
-        onDispose {
-            if (PlaybackSessionHolder.session === session) PlaybackSessionHolder.session = null
-            runCatching { context.stopService(android.content.Intent(context, NoodlePlaybackService::class.java)) }
-            runCatching { session?.release() }
-        }
-    }
-    LaunchedEffect(audioOnly) {
-        if (audioOnly) runCatching { context.startService(android.content.Intent(context, NoodlePlaybackService::class.java)) }
-        else runCatching { context.stopService(android.content.Intent(context, NoodlePlaybackService::class.java)) }
-    }
-    // Автовход в PiP при сворачивании во время воспроизведения (Android 12+).
-    LaunchedEffect(isPlaying, fullscreen) {
-        if (Build.VERSION.SDK_INT >= 31) {
-            val vs = player.videoSize
-            val ratio = if (vs.width > 0 && vs.height > 0) Rational(vs.width.coerceAtMost(vs.height * 2).coerceAtLeast(vs.height / 2), vs.height) else Rational(16, 9)
-            runCatching {
-                activity?.setPictureInPictureParams(
-                    PictureInPictureParams.Builder().setAspectRatio(ratio).setAutoEnterEnabled(isPlaying && !audioOnly).build(),
-                )
-            }
-        }
     }
 
     // React only to a real orientation change. This keeps the manual fullscreen button usable
@@ -160,7 +126,7 @@ internal fun PlayerVideoSurface(
                     this.player = player
                     useController = false
                     resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    keepScreenOn = !audioOnly
+                    keepScreenOn = true
                     layoutParams = ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT,
@@ -174,22 +140,12 @@ internal fun PlayerVideoSurface(
                     2 -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                     else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
                 }
-                it.keepScreenOn = !audioOnly
-                it.visibility = if (audioOnly) android.view.View.INVISIBLE else android.view.View.VISIBLE
             },
             modifier = Modifier.fillMaxSize(),
         )
 
         // Gestures: tap = controls, double tap left/right = ∓10 s, horizontal swipe = seek with preview,
         // vertical swipe left = brightness, right = volume.
-        if (audioOnly) {
-            Column(Modifier.align(Alignment.Center).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Outlined.Headphones, null, tint = Color.White.copy(alpha = .85f), modifier = Modifier.size(56.dp))
-                Spacer(Modifier.height(8.dp))
-                Text("Только звук", color = Color.White, style = MaterialTheme.typography.titleMedium)
-                if (title.isNotBlank()) Text(title, color = Color.White.copy(alpha = .7f), maxLines = 2, style = MaterialTheme.typography.bodySmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-            }
-        }
         val audio = remember { context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager }
         var gestureLabel by remember { mutableStateOf("") }
         var gestureTick by remember { mutableIntStateOf(0) }
@@ -314,10 +270,6 @@ internal fun PlayerVideoSurface(
                 }
                 Spacer(Modifier.weight(1f))
                 if (!locked) {
-                    IconButton(onClick = onDownload) { Icon(Icons.Outlined.Download, "Скачать", tint = Color.White) }
-                    IconButton(onClick = { onAudioOnlyChange(!audioOnly) }) {
-                        Icon(Icons.Outlined.Headphones, "Только звук", tint = if (audioOnly) MaterialTheme.colorScheme.tertiary else Color.White)
-                    }
                     IconButton(onClick = {
                         aspectMode = (aspectMode + 1) % 3
                         gestureLabel = when (aspectMode) { 1 -> "Растянуть"; 2 -> "Обрезать по экрану"; else -> "По размеру" }; gestureTick++
@@ -399,17 +351,6 @@ internal fun PlayerVideoSurface(
                         style = MaterialTheme.typography.labelMedium,
                     )
                     Spacer(Modifier.weight(1f))
-                    if (Build.VERSION.SDK_INT >= 26 && !fullscreen) {
-                        IconButton(
-                            onClick = {
-                                activity?.enterPictureInPictureMode(
-                                    PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build(),
-                                )
-                            },
-                        ) {
-                            Icon(Icons.Outlined.PictureInPictureAlt, "PiP", tint = Color.White)
-                        }
-                    }
                     IconButton(onClick = onToggleFullscreen) {
                         Icon(
                             if (fullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,

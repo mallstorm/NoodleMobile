@@ -344,7 +344,7 @@ class AdapterProbeService(
             val net = http.fetchText(url, NetworkPolicy(d.allowedHosts, allowCookies=d.allowCookies, maxResponseBytes=5*1024*1024), d.id)
             if (!net.success) { lastError = "SNP_SEMANTIC_SEARCH_ERROR" to "${net.errorCode}: ${net.errorMessage}"; continue }
             val finalBase = runCatching { URI(net.finalUrl).let { u -> if (u.host.isNullOrBlank()) d.baseUrl else "${u.scheme}://${u.host}${if (u.port >= 0) ":${u.port}" else ""}" } }.getOrDefault(d.baseUrl)
-            val items = engine.parseSearch(net.text, req.copy(baseUrl = finalBase)).mapNotNull { p ->
+            val items = pro.noodle.mobile.core.search.CardEnricher.enrich(engine.parseSearch(net.text, req.copy(baseUrl = finalBase)), net.text, net.finalUrl.ifBlank { url }, d).mapNotNull { p ->
                 val watch = normalizeAllowed(p.watchPath, d, base = finalBase) ?: return@mapNotNull null
                 VideoItem(id="${d.id}|${p.remoteId.ifBlank { watch }}", remoteId=p.remoteId, watchUrl=watch, title=p.title.ifBlank { p.remoteId.ifBlank { "Без названия" } }, thumbnailUrl=normalizeAllowed(p.thumbnailUrl,d,true,finalBase).orEmpty(), duration=p.durationText, views=p.viewsText, sourceName=d.name, sourceBaseUrl=d.baseUrl, sourceEngine=d.engine, playerPageUrl=watch, favoriteKey="${d.id}|${p.remoteId.ifBlank { watch }}")
             }.distinctBy { it.watchUrl.lowercase() }.take(max.coerceAtLeast(1))

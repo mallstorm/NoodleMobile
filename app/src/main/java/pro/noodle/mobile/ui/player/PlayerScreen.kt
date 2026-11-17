@@ -91,7 +91,6 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
     var failedSourceUrls by remember(video.id) { mutableStateOf<Set<String>>(emptySet()) }
     var resolverRecoveryAttempts by remember(video.id) { mutableIntStateOf(0) }
     var handoffPositionMs by remember(video.id) { mutableLongStateOf(0L) }
-    var audioOnly by remember { mutableStateOf(false) }
     var showStreamReport by remember { mutableStateOf(false) }
     var networkRetries by remember(video.id) { mutableIntStateOf(0) }
     var attemptStartMs by remember { mutableLongStateOf(0L) }
@@ -625,10 +624,6 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
             onOpenSettings = { showPlaybackSettings = true },
             activity = activity,
             modifier = Modifier.fillMaxSize(),
-            onDownload = { requestDownload() },
-            audioOnly = audioOnly,
-            onAudioOnlyChange = { audioOnly = it },
-            title = video.title,
         )
         return
     }
@@ -642,10 +637,6 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
             onOpenSettings = { showPlaybackSettings = true },
             activity = activity,
             modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
-            onDownload = { requestDownload() },
-            audioOnly = audioOnly,
-            onAudioOnlyChange = { audioOnly = it },
-            title = video.title,
         )
 
         LazyColumn(

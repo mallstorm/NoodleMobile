@@ -55,17 +55,11 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow(SearchUiState())
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
 
-    // Recent queries (newest first), kept locally on the device only.
-    private val historyPrefs = app.getSharedPreferences("noodle_search_history", android.content.Context.MODE_PRIVATE)
-    private val _recent = MutableStateFlow(loadRecent())
-    val recentQueries: StateFlow<List<String>> = _recent.asStateFlow()
+    init {
+        // Историю запросов приложение больше не хранит: чистим то, что осталось от прошлых версий.
+        app.getSharedPreferences("noodle_search_history", android.content.Context.MODE_PRIVATE).edit().clear().apply()
+    }
 
-    private fun loadRecent(): List<String> = historyPrefs.getString("q", "").orEmpty().split('\n').filter { it.isNotBlank() }
-    private fun storeRecent(list: List<String>) { _recent.value = list; historyPrefs.edit().putString("q", list.joinToString("\n")).apply() }
-    private fun rememberQuery(q: String) = storeRecent((listOf(q) + _recent.value.filterNot { it.equals(q, true) }).take(MAX_RECENT))
-    fun removeRecent(q: String) = storeRecent(_recent.value.filterNot { it == q })
-    fun clearRecent() = storeRecent(emptyList())
-    fun searchFor(q: String) { setQuery(q); search() }
     private var generation = 0L
     private var searchJob: Job? = null
     private var pagingJob: Job? = null
@@ -155,7 +149,6 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     fun search() {
         val q = _state.value.query.trim()
         if (q.isBlank()) return
-        rememberQuery(q)
         generation++
         val g = generation
         searchJob?.cancel()

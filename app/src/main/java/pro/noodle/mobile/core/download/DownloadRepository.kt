@@ -135,7 +135,7 @@ class DownloadRepository(private val context: Context) {
         sourceKey: String,
         selection: AdaptiveDownloadSelection,
     ) {
-        val maxParallel = AppSettingsRepository(app).settings.first().parallelDownloads.coerceIn(1, 3)
+        val maxParallel = AppSettingsRepository(app).settings.first().parallelDownloads.coerceIn(1, 10)
         // Media3 DownloadManager is thread-affine. All manager access must happen on the
         // main looper because the singleton is created and serviced there by DownloadService.
         withContext(Dispatchers.Main.immediate) {

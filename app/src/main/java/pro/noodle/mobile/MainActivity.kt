@@ -181,25 +181,18 @@ private fun NoodleApp(settingsVm: SettingsViewModel) {
             if (!playerActive && section != Section.SEARCH) {
                 TopAppBar(
                     title = {
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Outlined.PlayCircle, null, tint = MaterialTheme.colorScheme.primary)
-                                Spacer(Modifier.width(8.dp))
-                                Text("NoodleMobile", fontWeight = FontWeight.Bold)
-                            }
-                            Text(
-                                BuildIdentity.STAGE_LABEL,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Noodle", fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
+                            Text("Mobile", fontWeight = FontWeight.Medium)
                         }
                     },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 )
             }
         },
         bottomBar = {
             if (showBottomNavigation) {
-                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
                     Section.entries.forEach { s ->
                         NavigationBarItem(
                             selected = section == s,
@@ -219,10 +212,7 @@ private fun NoodleApp(settingsVm: SettingsViewModel) {
     ) { pad ->
         Box(Modifier.padding(pad).fillMaxSize()) {
             when (section) {
-                Section.SEARCH -> NoodleSearchScreen(
-                    vm = searchVm,
-                    onOpenSettings = { navigateTo(Section.MORE) },
-                )
+                Section.SEARCH -> NoodleSearchScreen(vm = searchVm)
                 Section.DOWNLOADS -> DownloadsScreen(downloadsVm)
                 Section.FAVORITES -> FavoritesScreen(favoritesVm)
                 Section.HISTORY -> HistoryScreen(historyVm)
@@ -501,6 +491,7 @@ private fun SettingsScreen(vm: SettingsViewModel) {
     ) { uri ->
         if (uri != null) vm.exportDiagnostics(uri)
     }
+    var devOpen by rememberSaveable { mutableStateOf(false) }
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(12.dp),
@@ -513,11 +504,9 @@ private fun SettingsScreen(vm: SettingsViewModel) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf(
                             "salad_sand" to "Салат",
-                            "noodle_neon" to "Noodle",
-                            "blue_glass" to "Blue",
-                            "emerald_pulse" to "Emerald",
-                            "graphite_pro" to "Graphite",
                             "aurora_light" to "Light",
+                            "graphite_pro" to "Graphite",
+                            "blue_glass" to "Blue",
                         ).forEach { (id, label) ->
                             FilterChip(
                                 selected = settings.theme == id,
@@ -536,20 +525,14 @@ private fun SettingsScreen(vm: SettingsViewModel) {
                     )
                     Slider(
                         value = settings.uiScalePercent.toFloat(),
-                        onValueChange = { raw ->
-                            val value = when {
-                                raw >= 95f -> 100
-                                raw >= 85f -> 90
-                                else -> 80
-                            }
-                            vm.uiScale(value)
-                        },
-                        valueRange = 80f..100f,
-                        steps = 1,
+                        onValueChange = { raw -> vm.uiScale(pro.noodle.mobile.core.settings.snapScale(raw.toInt())) },
+                        valueRange = 85f..100f,
+                        steps = 2,
                     )
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("80%", style = MaterialTheme.typography.labelSmall)
+                        Text("85%", style = MaterialTheme.typography.labelSmall)
                         Text("90%", style = MaterialTheme.typography.labelSmall)
+                        Text("95%", style = MaterialTheme.typography.labelSmall)
                         Text("100%", style = MaterialTheme.typography.labelSmall)
                     }
 
@@ -558,8 +541,8 @@ private fun SettingsScreen(vm: SettingsViewModel) {
                     Slider(
                         settings.parallelDownloads.toFloat(),
                         { vm.parallel(it.toInt()) },
-                        valueRange = 1f..3f,
-                        steps = 1,
+                        valueRange = 1f..10f,
+                        steps = 8,
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Switch(settings.rememberPlaybackPosition, vm::rememberPosition)
@@ -593,14 +576,20 @@ private fun SettingsScreen(vm: SettingsViewModel) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Switch(settings.backgroundMonitoring, vm::background)
                         Spacer(Modifier.width(8.dp))
-                        Text("Фоновый fingerprint + breakage monitor")
+                        Text("Мониторинг: проверка источников и поиск новых видео")
                     }
                     if (settings.backgroundMonitoring) {
                         Text("Интервал мониторинга: ${settings.monitoringIntervalHours} ч")
+                        Text(
+                            "Раз в столько часов приложение сканирует источники. Колокольчик на главной показывает видео, появившиеся за это окно.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         Slider(
                             settings.monitoringIntervalHours.toFloat(),
                             { vm.monitoringHours(it.toInt()) },
-                            valueRange = 6f..168f,
+                            valueRange = 2f..46f,
+                            steps = 43,
                         )
                     }
                 }
@@ -611,31 +600,39 @@ private fun SettingsScreen(vm: SettingsViewModel) {
         }
         item {
             HorizontalDivider()
-            Text("Core Self-Test", style = MaterialTheme.typography.titleLarge)
-            Text(if (report.passed) "Все проверки ядра пройдены" else "Есть ошибки")
-        }
-        items(report.checks) { c ->
-            ListItem(
-                headlineContent = { Text(c.name) },
-                supportingContent = { if (c.detail.isNotBlank()) Text(c.detail) },
-                leadingContent = { Icon(if (c.passed) Icons.Outlined.CheckCircle else Icons.Outlined.Error, null) },
-            )
-        }
-        item {
-            HorizontalDivider()
-            Text("Диагностика", style = MaterialTheme.typography.titleLarge)
-            Text(
-                "ZIP проходит sanitizer и не включает cookies, Authorization и секретные ключи.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Button(onClick = { exportDiagnostics.launch("noodle-mobile-diagnostics.zip") }) {
-                Icon(Icons.Outlined.BugReport, null)
-                Spacer(Modifier.width(8.dp))
-                Text("Экспортировать ZIP")
+            TextButton(onClick = { devOpen = !devOpen }) {
+                Text(if (devOpen) "Скрыть диагностику ▴" else "Диагностика и самотест ▾")
             }
-            if (diagnosticsMessage.isNotBlank()) {
-                Text(diagnosticsMessage, style = MaterialTheme.typography.bodySmall)
+        }
+        if (devOpen) {
+        item {
+                HorizontalDivider()
+                Text("Core Self-Test", style = MaterialTheme.typography.titleLarge)
+                Text(if (report.passed) "Все проверки ядра пройдены" else "Есть ошибки")
+            }
+            items(report.checks) { c ->
+                ListItem(
+                    headlineContent = { Text(c.name) },
+                    supportingContent = { if (c.detail.isNotBlank()) Text(c.detail) },
+                    leadingContent = { Icon(if (c.passed) Icons.Outlined.CheckCircle else Icons.Outlined.Error, null) },
+                )
+            }
+        item {
+                HorizontalDivider()
+                Text("Диагностика", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "ZIP проходит sanitizer и не включает cookies, Authorization и секретные ключи.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(onClick = { exportDiagnostics.launch("noodle-mobile-diagnostics.zip") }) {
+                    Icon(Icons.Outlined.BugReport, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Экспортировать ZIP")
+                }
+                if (diagnosticsMessage.isNotBlank()) {
+                    Text(diagnosticsMessage, style = MaterialTheme.typography.bodySmall)
+                }
             }
         }
     }

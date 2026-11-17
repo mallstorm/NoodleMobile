@@ -47,23 +47,11 @@ private fun darkPalette(
     scrim = Color(0xFF000000),
 )
 
-private val NoodleNeon = darkPalette(
-    0xFF9C6BFF, 0xFFFFFFFF, 0xFF2D1A55, 0xFFEADDFF,
-    0xFF4FE3C1, 0xFF0D3328, 0xFFB7F5E4,
-    0xFFFFC857, 0xFF3D2E08,
-    0xFF0A0C13, 0xFF11151E, 0xFF1A202B, 0xFF242B38, 0xFF3A4252,
-)
 private val BlueGlass = darkPalette(
     0xFF7AAEFF, 0xFF00224D, 0xFF12305E, 0xFFD7E5FF,
     0xFF7DE0C3, 0xFF0F3A30, 0xFFC1F5E6,
     0xFFFFC46B, 0xFF3B2A06,
     0xFF0C1018, 0xFF131925, 0xFF1C2433, 0xFF263041, 0xFF3B4659,
-)
-private val EmeraldPulse = darkPalette(
-    0xFF5EDBA4, 0xFF00311E, 0xFF0F3D2A, 0xFFC6F7DE,
-    0xFF9AD4FF, 0xFF15324A, 0xFFD3EBFF,
-    0xFFF5C76A, 0xFF3A2C08,
-    0xFF0A1310, 0xFF111C18, 0xFF192722, 0xFF22332C, 0xFF365047,
 )
 private val GraphitePro = darkPalette(
     0xFFC5CFE0, 0xFF1B2230, 0xFF2E3647, 0xFFE3E9F4,
@@ -129,10 +117,8 @@ const val DEFAULT_THEME = "salad_sand"
 fun NoodleTheme(name: String = DEFAULT_THEME, content: @Composable () -> Unit) {
     val colors = when (name) {
         "blue_glass" -> BlueGlass
-        "emerald_pulse" -> EmeraldPulse
         "graphite_pro" -> GraphitePro
         "aurora_light" -> AuroraLight
-        "noodle_neon" -> NoodleNeon
         else -> SaladSand
     }
     val light = colors.background.luminance() > 0.5f

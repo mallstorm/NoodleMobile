@@ -21,6 +21,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -63,13 +64,19 @@ private enum class ResultSort(val title: String) {
 @Composable
 fun NoodleSearchScreen(
     vm: SearchViewModel,
-    onOpenSettings: () -> Unit = {},
 ) {
     val state by vm.state.collectAsState()
-    val recent by vm.recentQueries.collectAsState()
+    val newVm: NewVideosViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    val newState by newVm.state.collectAsState()
+    var showNew by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     state.playback?.let { session ->
         val client = remember(session.sourceKey, session.video.id) { vm.streamingClient(session) }
         PlayerScreen(session, client, vm::closePlayer)
+        return
+    }
+
+    if (showNew) {
+        NewVideosScreen(newVm, vm, onClose = { showNew = false })
         return
     }
 
@@ -136,8 +143,9 @@ fun NoodleSearchScreen(
         if (!landscape) {
             NoodleHeader(
                 errorCount = state.errors.size,
+                newCount = newState.items.size,
                 onStatusClick = { errorDialog = true },
-                onSettingsClick = onOpenSettings,
+                onBellClick = { showNew = true },
             )
         }
 
@@ -307,10 +315,6 @@ fun NoodleSearchScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     )
-                    if (state.query.isBlank() || recent.isNotEmpty()) {
-                        RecentQueries(recent, onPick = vm::searchFor, onRemove = vm::removeRecent, onClear = vm::clearRecent)
-                    }
-                    FilledTonalButton(onClick = onOpenSettings) { Text("Добавить сайт") }
                 }
             }
         } else if (visibleItems.isEmpty() && state.items.isNotEmpty()) {
@@ -469,9 +473,9 @@ private fun SearchField(
         shape = MaterialTheme.shapes.extraLarge,
         colors = OutlinedTextFieldDefaults.colors(
             focusedBorderColor = MaterialTheme.colorScheme.primary,
-            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-            focusedContainerColor = MaterialTheme.colorScheme.surface,
-            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
         ),
     )
 }
@@ -497,59 +501,66 @@ private fun SortMenu(
 @Composable
 private fun NoodleHeader(
     errorCount: Int,
+    newCount: Int,
     onStatusClick: () -> Unit,
-    onSettingsClick: () -> Unit,
+    onBellClick: () -> Unit,
 ) {
     Row(
         Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Box(
+            Modifier
+                .size(46.dp)
+                .background(
+                    Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary)),
+                    shape = RoundedCornerShape(15.dp),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Outlined.PlayArrow, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(28.dp))
+        }
+        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.Bottom) {
                 Text(
                     "Noodle",
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.ExtraBold,
                     color = MaterialTheme.colorScheme.primary,
                 )
                 Text(
                     "Mobile",
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onBackground,
                 )
-                Spacer(Modifier.width(8.dp))
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = MaterialTheme.shapes.large,
-                ) {
-                    Text(
-                        BuildIdentity.VERSION_NAME,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
             }
             Text(
                 "Все источники. Больше контента.",
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
-        BadgedBox(
-            badge = {
-                if (errorCount > 0) Badge { Text(errorCount.coerceAtMost(9).toString()) }
-            },
-        ) {
-            FilledTonalIconButton(onClick = onStatusClick) {
-                Icon(Icons.Outlined.NotificationsNone, "Состояние источников")
+        if (errorCount > 0) {
+            IconButton(onClick = onStatusClick) {
+                Icon(Icons.Outlined.ErrorOutline, "Состояние источников", tint = MaterialTheme.colorScheme.error)
             }
         }
-        Spacer(Modifier.width(6.dp))
-        FilledTonalIconButton(onClick = onSettingsClick) {
-            Icon(Icons.Outlined.Settings, "Настройки")
+        BadgedBox(
+            badge = {
+                if (newCount > 0) Badge(containerColor = MaterialTheme.colorScheme.tertiary, contentColor = MaterialTheme.colorScheme.onTertiary) {
+                    Text(if (newCount > 99) "99+" else newCount.toString())
+                }
+            },
+        ) {
+            FilledTonalIconButton(
+                onClick = onBellClick,
+                colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer),
+            ) {
+                Icon(if (newCount > 0) Icons.Outlined.NotificationsActive else Icons.Outlined.NotificationsNone, "Новые видео")
+            }
         }
     }
 }
@@ -628,7 +639,7 @@ private fun SearchListCard(video: VideoItem, vm: SearchViewModel) {
 }
 
 @Composable
-private fun SearchPreview(video: VideoItem, vm: SearchViewModel, modifier: Modifier = Modifier) {
+internal fun SearchPreview(video: VideoItem, vm: SearchViewModel, modifier: Modifier = Modifier) {
     val bitmap by produceState<android.graphics.Bitmap?>(initialValue = null, key1 = video.thumbnailUrl) {
         value = vm.loadThumbnail(video)
     }
@@ -657,35 +668,19 @@ private fun SearchPreview(video: VideoItem, vm: SearchViewModel, modifier: Modif
             )
         }
 
-        Surface(
-            modifier = Modifier.align(Alignment.TopStart).padding(7.dp),
-            color = Color.Black.copy(alpha = .28f),
-            shape = MaterialTheme.shapes.small,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary),
-        ) {
-            Text(
-                "VIDEO",
-                Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.tertiary,
-                fontWeight = FontWeight.Bold,
-            )
-        }
+        Box(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(44.dp)
+                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .45f)))),
+        )
 
-        IconButton(
-            onClick = {},
-            enabled = false,
-            modifier = Modifier.align(Alignment.TopEnd).size(36.dp),
-        ) {
-            Icon(Icons.Outlined.MoreVert, null, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = .85f))
-        }
-
-        if (video.duration.isNotBlank()) {
+        if (pro.noodle.mobile.core.search.CardEnricher.looksLikeTime(video.duration)) {
             Surface(
                 modifier = Modifier.align(Alignment.BottomEnd).padding(7.dp),
-                color = Color.Black.copy(alpha = .76f),
-                shape = MaterialTheme.shapes.small,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                color = Color.Black.copy(alpha = .72f),
+                shape = RoundedCornerShape(8.dp),
             ) {
                 Text(
                     video.duration,
@@ -748,33 +743,4 @@ private fun parseViewsScore(raw: String): Double {
         else -> 1.0
     }
     return number * multiplier
-}
-
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-@Composable
-private fun RecentQueries(items: List<String>, onPick: (String) -> Unit, onRemove: (String) -> Unit, onClear: () -> Unit) {
-    if (items.isEmpty()) return
-    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Недавние запросы", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            TextButton(onClick = onClear) { Text("Очистить") }
-        }
-        androidx.compose.foundation.layout.FlowRow(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            items.forEach { q ->
-                InputChip(
-                    selected = false,
-                    onClick = { onPick(q) },
-                    label = { Text(q, maxLines = 1) },
-                    leadingIcon = { Icon(Icons.Outlined.History, null, Modifier.size(16.dp)) },
-                    trailingIcon = {
-                        Icon(Icons.Outlined.Close, "Удалить", Modifier.size(16.dp).clickable { onRemove(q) })
-                    },
-                )
-            }
-        }
-    }
 }
