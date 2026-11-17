@@ -338,7 +338,9 @@ class BundledSearchRepository(
         val d = UrlPolicy.evaluateNavigation(url, allowHttp = false, resolveDns = false)
         if (!d.allowed) return null
         val host = runCatching { URI(d.normalizedUrl).host.orEmpty() }.getOrDefault("")
-        if (a.allowedHosts.isNotEmpty() && !UrlPolicy.isHostAllowed(host, a.allowedHosts)) return null
+        // Covers (allowBlank=true callers) live on image CDNs outside the adapter host list; they are
+        // fetched later by ThumbnailFetcher, which still enforces https + public addresses.
+        if (!allowBlank && a.allowedHosts.isNotEmpty() && !UrlPolicy.isHostAllowed(host, a.allowedHosts)) return null
         return d.normalizedUrl
     }
 

@@ -291,7 +291,7 @@ class AdapterProbeService(
     }
 
     private fun result(id:String,name:String,version:String,status:SemanticStatus,query:String,search:Int=0,playback:Int=0,errorCode:String="",message:String="") = AdapterSemanticResult(id,name,version,status,query,search,playback,errorCode,message)
-    private fun normalizeAllowed(raw:String,d:AdapterDefinition,allowBlank:Boolean=false,base:String=d.baseUrl):String? { if(raw.isBlank()) return if(allowBlank) "" else null; val url=EngineParsing.absolute(raw,base); val decision=UrlPolicy.evaluateNavigation(url,allowHttp=false,resolveDns=false); if(!decision.allowed)return null; val host=runCatching{URI(decision.normalizedUrl).host.orEmpty()}.getOrDefault(""); if(d.allowedHosts.isNotEmpty()&&!UrlPolicy.isHostAllowed(host,d.allowedHosts))return null;return decision.normalizedUrl }
+    private fun normalizeAllowed(raw:String,d:AdapterDefinition,allowBlank:Boolean=false,base:String=d.baseUrl):String? { if(raw.isBlank()) return if(allowBlank) "" else null; val url=EngineParsing.absolute(raw,base); val decision=UrlPolicy.evaluateNavigation(url,allowHttp=false,resolveDns=false); if(!decision.allowed)return null; val host=runCatching{URI(decision.normalizedUrl).host.orEmpty()}.getOrDefault(""); if(!allowBlank&&d.allowedHosts.isNotEmpty()&&!UrlPolicy.isHostAllowed(host,d.allowedHosts))return null;return decision.normalizedUrl }
 
     companion object {
         private const val CERTIFICATION_SEARCH_LIMIT = 20
