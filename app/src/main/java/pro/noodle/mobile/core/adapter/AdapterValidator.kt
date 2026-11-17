@@ -41,6 +41,14 @@ object AdapterValidator {
             for (strategy in d.repairStrategies) if (strategy.lowercase() !in setOf("selector_relearn", "resolver_refresh")) return fail("ADAPTER_REPAIR_STRATEGY_UNKNOWN", "Неизвестная repair strategy: $strategy")
         }
 
+        for ((name, rx) in listOf("prefer" to d.streamPrefer, "reject" to d.streamReject) + d.streamExtract.map { "extract" to it }) {
+            if (rx.isBlank()) continue
+            if (rx.length > 600) return fail("ADAPTER_STREAM_REGEX_TOO_LONG", "view.stream.$name длиннее 600 символов.")
+            if (runCatching { Regex(rx) }.isFailure) return fail("ADAPTER_STREAM_REGEX_INVALID", "view.stream.$name не является корректным regex.")
+        }
+        if (d.streamExtract.size > 6) return fail("ADAPTER_STREAM_EXTRACT_TOO_MANY", "view.stream.extract допускает не более 6 выражений.")
+        if (d.streamMinSeconds !in 0..3600) return fail("ADAPTER_STREAM_MIN_SECONDS_INVALID", "view.stream.min_seconds должен быть в диапазоне 0..3600.")
+
         val baseHost = runCatching { URI(d.baseUrl).host.orEmpty().lowercase() }.getOrDefault("")
         if (!UrlPolicy.isHostAllowed(baseHost, d.allowedHosts)) return fail("ADAPTER_BASE_HOST_NOT_ALLOWED", "Домен base_url должен присутствовать в permissions.allowed_hosts.")
 

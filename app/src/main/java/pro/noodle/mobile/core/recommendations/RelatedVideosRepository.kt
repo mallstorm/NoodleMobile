@@ -53,23 +53,16 @@ class RelatedVideosRepository(
         if (url.isBlank()) return@withPermit null
         thumbnailCache[url]?.let { return@withPermit it }
         if (url in thumbnailMisses) return@withPermit null
-        val adapter = search.adapterFor(video) ?: return@withPermit null
-        val result = http.fetchBytes(
-            url = url,
-            policy = NetworkPolicy(
-                allowedHosts = adapter.allowedHosts,
-                allowCookies = adapter.allowCookies,
-                maxResponseBytes = 1536 * 1024,
-            ),
-            sourceKey = adapter.id,
-            accept = "image/avif,image/webp,image/apng,image/*,*/*;q=0.5",
-            referer = adapter.baseUrl,
+        val adapter = search.adapterFor(video)
+        val result = pro.noodle.mobile.core.media.ThumbnailFetcher.fetch(
+            http, video, adapter?.baseUrl.orEmpty(), adapter?.id ?: video.sourceName.ifBlank { "thumbnails" }, adapter?.allowCookies ?: false, 1536 * 1024,
         )
-        if (!result.success || result.bytes.isEmpty()) {
-            thumbnailMisses += url
+        val bytes = result.bytes
+        if (bytes == null || bytes.isEmpty()) {
+            if (result.status != 0) thumbnailMisses += url
             return@withPermit null
         }
-        val bitmap = BitmapFactory.decodeByteArray(result.bytes, 0, result.bytes.size)
+        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
         if (bitmap == null) {
             thumbnailMisses += url
             return@withPermit null

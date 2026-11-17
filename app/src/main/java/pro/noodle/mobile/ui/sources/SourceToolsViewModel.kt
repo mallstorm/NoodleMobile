@@ -51,6 +51,8 @@ data class SourceToolsUiState(
     // Simple «site + query» Studio
     val studioQuery: String = "",
     val autoBusy: Boolean = false,
+    val autoUseAi: Boolean = true,
+    val autoStreamInfo: String = "",
     val autoSteps: List<String> = emptyList(),
     val autoDone: Boolean = false,
     val autoHealthy: Boolean = false,
@@ -175,8 +177,10 @@ class SourceToolsViewModel(app: Application) : AndroidViewModel(app) {
     fun setStudioUrl(value: String) = _state.update { it.copy(studioUrl = value) }
     fun setStudioQuery(value: String) = _state.update { it.copy(studioQuery = value) }
 
+    fun setAutoUseAi(value: Boolean) = _state.update { it.copy(autoUseAi = value) }
+
     fun resetAuto() = _state.update {
-        it.copy(autoBusy = false, autoSteps = emptyList(), autoDone = false, autoHealthy = false, autoSiteName = "", autoAdapterId = "", autoSamples = emptyList(), autoSearchCount = 0, autoPlaybackReady = 0, autoInstalled = false, autoError = "")
+        it.copy(autoBusy = false, autoStreamInfo = "", autoSteps = emptyList(), autoDone = false, autoHealthy = false, autoSiteName = "", autoAdapterId = "", autoSamples = emptyList(), autoSearchCount = 0, autoPlaybackReady = 0, autoInstalled = false, autoError = "")
     }
 
     /** One-button flow: discover → learn → live test → (optionally) install and enable. */
@@ -185,7 +189,7 @@ class SourceToolsViewModel(app: Application) : AndroidViewModel(app) {
         if (st.autoBusy || st.studioUrl.isBlank()) return@launch
         resetAuto()
         _state.update { it.copy(autoBusy = true, error = "") }
-        val result = studio.autoCreate(st.studioUrl, st.studioQuery) { step ->
+        val result = studio.autoCreate(st.studioUrl, st.studioQuery, st.autoUseAi) { step ->
             _state.update { it.copy(autoSteps = (it.autoSteps + step).takeLast(12)) }
         }
         val build = result.build
@@ -197,6 +201,7 @@ class SourceToolsViewModel(app: Application) : AndroidViewModel(app) {
                 autoSiteName = build?.siteName.orEmpty(),
                 autoAdapterId = result.adapterId,
                 autoSamples = build?.samples.orEmpty().take(6).map { s -> StudioSample(s.title, s.thumbnailUrl, s.durationText) },
+                autoStreamInfo = result.streamInfo,
                 autoSearchCount = result.searchCount,
                 autoPlaybackReady = result.playbackReady,
                 autoError = if (result.success && result.healthy) "" else result.message.ifBlank { result.errorCode },

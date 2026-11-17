@@ -140,6 +140,17 @@ internal fun Studio2Dialog(
                         enabled = !state.autoBusy,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                     )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.Checkbox(checked = state.autoUseAi, onCheckedChange = vm::setAutoUseAi, enabled = !state.autoBusy)
+                        Column(Modifier.weight(1f)) {
+                            Text("Проверить потоки нейросетью", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "Studio прогонит несколько видео сайта и найдёт настоящий поток, а не 5-секундное превью. Нейросеть (подключается в расширенном режиме) помогает со сложными плеерами.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                     Button(
                         onClick = vm::autoCreate,
                         enabled = !state.autoBusy && state.studioUrl.isNotBlank(),
@@ -247,6 +258,9 @@ private fun StudioAutoResultCard(state: SourceToolsUiState, onInstall: () -> Uni
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+            if (state.autoStreamInfo.isNotBlank()) {
+                Text(state.autoStreamInfo, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             state.autoSamples.forEach { sample ->
                 Row(verticalAlignment = Alignment.CenterVertically) {

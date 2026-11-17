@@ -56,6 +56,15 @@ class LiveStudioProbeTest {
                     http.fetchTextBlocking(u, NetworkPolicy(emptyList(), allowCookies = true), "live:${d.id}").takeIf { it.success }?.text
                 }) else null
                 line += "\n   view ${net.statusCode} $page -> sources=${resolved?.sources?.size ?: 0} ${resolved?.sources?.firstOrNull()?.let { "${it.protocol} ${it.url.take(90)}" } ?: resolved?.errorCode.orEmpty()}"
+                if (resolved != null && net.success) {
+                    // Real stream or a 5-second preview? Measure like the app does at playback time.
+                    val sel = withTimeoutOrNull(40_000) {
+                        pro.noodle.mobile.core.resolver.StreamSelector(http.streamingClient(NetworkPolicy(emptyList(), allowCookies = true), "live:${d.id}"), resolved.playerPageUrl.ifBlank { page })
+                            .select(resolved.sources, pro.noodle.mobile.core.resolver.DurationText.seconds(item.durationText), pro.noodle.mobile.core.resolver.StreamHints(d.streamPrefer, d.streamReject, d.streamMinSeconds, d.streamExtract), listOf(page to net.text))
+                    }
+                    line += "\n   stream: ${sel?.summary ?: "TIMEOUT"} (expected card duration=${item.durationText})"
+                    sel?.ranked?.take(6)?.forEach { r -> line += "\n      ${r.verdict} ${r.source.url.take(100)} — ${r.facts?.brief().orEmpty()}" }
+                }
             }
             report.appendLine(line)
         }

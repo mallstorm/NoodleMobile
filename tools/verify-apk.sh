@@ -13,7 +13,7 @@ BADGING="$($AAPT2 dump badging "$APK")"
 OUT="${APK_BADGING_OUT:-$PWD/build-certification/APK_BADGING.txt}"
 mkdir -p "$(dirname "$OUT")"
 printf '%s\n' "$BADGING" | tee "$OUT"
-printf '%s\n' "$BADGING" | grep -F "package: name='pro.noodle.mobile' versionCode='110000' versionName='0.11.0'" >/dev/null || { echo "ERROR: APK identity mismatch" >&2; exit 5; }
+printf '%s\n' "$BADGING" | grep -F "package: name='pro.noodle.mobile' versionCode='120000' versionName='0.12.0'" >/dev/null || { echo "ERROR: APK identity mismatch" >&2; exit 5; }
 MIN_SDK="$(printf '%s\n' "$BADGING" | sed -n -e "s/^minSdkVersion:'\([^']*\)'.*/\1/p" -e "s/^sdkVersion:'\([^']*\)'.*/\1/p" | head -1)"
 TARGET_SDK="$(printf '%s\n' "$BADGING" | sed -n "s/^targetSdkVersion:'\([^']*\)'.*/\1/p" | head -1)"
 echo "APK_BADGING_MIN_SDK=${MIN_SDK:-<missing>}"

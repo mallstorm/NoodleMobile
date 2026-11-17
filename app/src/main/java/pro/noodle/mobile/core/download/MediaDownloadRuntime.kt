@@ -41,8 +41,8 @@ object MediaDownloadRuntime {
     /**
      * Streaming playback: cache hit first, otherwise network through the exact SNP policy.
      */
-    fun cacheDataSourceFactory(context: Context, policy: NetworkPolicy, sourceKey: String): DataSource.Factory =
-        holder(context).cacheFactory(policy, sourceKey, readOnly = true).also {
+    fun cacheDataSourceFactory(context: Context, policy: NetworkPolicy, sourceKey: String, referer: String = ""): DataSource.Factory =
+        holder(context).cacheFactory(policy, sourceKey, readOnly = true, referer = referer).also {
             activeStreamingFactory = it
         }
 
@@ -50,8 +50,8 @@ object MediaDownloadRuntime {
     fun activeStreamingDataSourceFactory(): DataSource.Factory? = activeStreamingFactory
 
     /** DownloadHelper preparation must resolve manifests through the exact same SNP sandbox. */
-    fun downloadHelperDataSourceFactory(context: Context, policy: NetworkPolicy, sourceKey: String): DataSource.Factory =
-        holder(context).upstreamFactory(policy, sourceKey)
+    fun downloadHelperDataSourceFactory(context: Context, policy: NetworkPolicy, sourceKey: String, referer: String = ""): DataSource.Factory =
+        holder(context).upstreamFactory(policy, sourceKey, referer)
 
     /** Strict offline playback: a cache miss fails instead of silently reaching the network. */
     fun offlineCacheDataSourceFactory(context: Context): DataSource.Factory = holder(context).offlineFactory()
@@ -74,7 +74,8 @@ object MediaDownloadRuntime {
         private val downloaderFactory = DownloaderFactory { request ->
             val env = DownloadPolicyCodec.decode(request.data)
                 ?: throw IllegalArgumentException("DOWNLOAD_POLICY_MISSING_OR_INVALID")
-            DefaultDownloaderFactory(cacheFactory(env.policy, env.sourceKey, readOnly = false), executor)
+            val referer = SourceReferers.forDownload(context, request.id, env.sourceKey)
+            DefaultDownloaderFactory(cacheFactory(env.policy, env.sourceKey, readOnly = false, referer = referer), executor)
                 .createDownloader(request)
         }
 
@@ -105,14 +106,16 @@ object MediaDownloadRuntime {
             }
         }
 
-        fun upstreamFactory(policy: NetworkPolicy, sourceKey: String): DataSource.Factory {
+        fun upstreamFactory(policy: NetworkPolicy, sourceKey: String, referer: String = ""): DataSource.Factory {
             val client = SecureHttpClient().streamingClient(policy, sourceKey)
             // Keep the exact same User-Agent that was used to obtain signed media URLs.
             // Some CDNs bind short-lived signatures to the request fingerprint.
             val headers = buildMap<String, String> {
                 put("Accept", "video/*,application/vnd.apple.mpegurl,application/dash+xml,*/*;q=0.8")
                 val sourceHost = sourceKey.trim().lowercase()
-                if (sourceHost.contains('.') && sourceHost.none { it.isWhitespace() || it == '/' || it == ':' }) {
+                if (referer.isNotBlank()) {
+                    put("Referer", referer)
+                } else if (sourceHost.contains('.') && sourceHost.none { it.isWhitespace() || it == '/' || it == ':' }) {
                     put("Referer", "https://$sourceHost/")
                 }
             }
@@ -121,10 +124,10 @@ object MediaDownloadRuntime {
                 .setDefaultRequestProperties(headers)
         }
 
-        fun cacheFactory(policy: NetworkPolicy, sourceKey: String, readOnly: Boolean): CacheDataSource.Factory {
+        fun cacheFactory(policy: NetworkPolicy, sourceKey: String, readOnly: Boolean, referer: String = ""): CacheDataSource.Factory {
             val factory = CacheDataSource.Factory()
                 .setCache(cache)
-                .setUpstreamDataSourceFactory(upstreamFactory(policy, sourceKey))
+                .setUpstreamDataSourceFactory(upstreamFactory(policy, sourceKey, referer))
             if (readOnly) factory.setCacheWriteDataSinkFactory(null)
             return factory
         }

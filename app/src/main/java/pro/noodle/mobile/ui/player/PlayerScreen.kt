@@ -81,6 +81,8 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
     var selectedAudio by remember(video.id) { mutableIntStateOf(-1) }
     var selectedText by remember(video.id) { mutableIntStateOf(-1) }
     var pendingDownload by remember { mutableStateOf<MediaSource?>(null) }
+    var pendingSelection by remember { mutableStateOf<AdaptiveDownloadSelection?>(null) }
+    var pendingAsFile by remember { mutableStateOf(false) }
     var showAdaptiveDownloadDialog by remember { mutableStateOf(false) }
     var failedSourceUrls by remember(video.id) { mutableStateOf<Set<String>>(emptySet()) }
     var resolverRecoveryAttempts by remember(video.id) { mutableIntStateOf(0) }
@@ -88,7 +90,11 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
 
     val createDocument = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/*")) { uri ->
         val src = pendingDownload
+        val selection = pendingSelection
+        val asFile = pendingAsFile
         pendingDownload = null
+        pendingSelection = null
+        pendingAsFile = false
         if (uri != null && src != null) {
             runCatching {
                 context.contentResolver.takePersistableUriPermission(
@@ -104,6 +110,9 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
                     activeSession.sourceKey,
                     uri.toString(),
                     video.thumbnailUrl,
+                    adaptiveSelection = selection ?: AdaptiveDownloadSelection(),
+                    referer = activeSession.referer,
+                    asFile = asFile,
                 )
                 withContext(Dispatchers.Main) { message = "Добавлено в загрузки" }
             }
@@ -128,6 +137,7 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
             context.applicationContext,
             activeSession.networkPolicy,
             activeSession.sourceKey,
+            activeSession.referer,
         )
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
@@ -283,16 +293,31 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
         }
     }
 
+    fun isAdaptiveSource(src: MediaSource) = src.protocol.equals("hls", true) ||
+        src.protocol.equals("dash", true) ||
+        src.url.contains(".m3u8", true) ||
+        src.url.contains(".mpd", true)
+
     fun requestDownload() {
-        val adaptive = source.protocol.equals("hls", true) ||
-            source.protocol.equals("dash", true) ||
-            source.url.contains(".m3u8", true) ||
-            source.url.contains(".mpd", true)
-        if (adaptive) {
-            showAdaptiveDownloadDialog = true
-        } else {
-            pendingDownload = source
-            createDocument.launch(safeFileName(video.title, source.url))
+        // A full-length MP4 next to the HLS stream downloads directly (one request, resumable).
+        val direct = if (isAdaptiveSource(source)) {
+            video.sources.firstOrNull { !isAdaptiveSource(it) && (Regex("(\\d{3,4})p").find(it.label)?.groupValues?.get(1)?.toIntOrNull() ?: 720) >= 480 }
+        } else null
+        when {
+            direct != null -> {
+                pendingDownload = direct
+                pendingSelection = null
+                pendingAsFile = false
+                message = "Скачиваю напрямую: ${direct.label.ifBlank { "MP4" }}"
+                createDocument.launch(safeFileName(video.title, direct.url))
+            }
+            isAdaptiveSource(source) -> showAdaptiveDownloadDialog = true
+            else -> {
+                pendingDownload = source
+                pendingSelection = null
+                pendingAsFile = false
+                createDocument.launch(safeFileName(video.title, source.url))
+            }
         }
     }
 
@@ -335,8 +360,16 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
             initialAudio = selectedAudio,
             initialText = selectedText,
             onDismiss = { showAdaptiveDownloadDialog = false },
-            onConfirm = { selection ->
+            canSaveAsFile = source.protocol.equals("hls", true) || source.url.contains(".m3u8", true),
+            onConfirm = { selection, asFile ->
                 showAdaptiveDownloadDialog = false
+                if (asFile) {
+                    pendingDownload = source
+                    pendingSelection = selection
+                    pendingAsFile = true
+                    createDocument.launch(safeFileName(video.title, "video.mp4"))
+                    return@AdaptiveDownloadDialog
+                }
                 ioScope.launch {
                     downloadRepo.enqueue(
                         video.title,
@@ -345,6 +378,7 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
                         activeSession.sourceKey,
                         thumbnailUrl = video.thumbnailUrl,
                         adaptiveSelection = selection,
+                        referer = activeSession.referer,
                     )
                     withContext(Dispatchers.Main) {
                         message = "Офлайн: ${selection.summary()}"
@@ -704,8 +738,10 @@ private fun AdaptiveDownloadDialog(
     initialAudio: Int,
     initialText: Int,
     onDismiss: () -> Unit,
-    onConfirm: (AdaptiveDownloadSelection) -> Unit,
+    canSaveAsFile: Boolean,
+    onConfirm: (AdaptiveDownloadSelection, Boolean) -> Unit,
 ) {
+    var asFile by remember { mutableIntStateOf(if (canSaveAsFile) 0 else 1) }
     var variant by remember { mutableIntStateOf(initialVariant) }
     var audio by remember { mutableIntStateOf(initialAudio) }
     var text by remember { mutableIntStateOf(initialText) }
@@ -714,10 +750,14 @@ private fun AdaptiveDownloadDialog(
     val textNames = listOf("Без субтитров", "Auto") + video.textTracks.map { it.label.ifBlank { it.language.ifBlank { "Track" } } }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Скачать для офлайн") },
+        title = { Text("Скачать видео") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Media3 скачает только выбранные adaptive-дорожки.", style = MaterialTheme.typography.bodySmall)
+                if (canSaveAsFile) {
+                    ChoiceRow("Куда", listOf("Файл MP4 в памяти телефона", "Офлайн внутри приложения"), asFile) { asFile = it }
+                } else {
+                    Text("Media3 скачает только выбранные adaptive-дорожки.", style = MaterialTheme.typography.bodySmall)
+                }
                 ChoiceRow("Качество", qualityNames, variant + 1) { variant = it - 1 }
                 if (video.audioTracks.isNotEmpty()) ChoiceRow("Аудио", audioNames, audio + 1) { audio = it - 1 }
                 if (video.textTracks.isNotEmpty()) ChoiceRow("Субтитры", textNames, text + 1) { text = it - 1 }
@@ -737,7 +777,8 @@ private fun AdaptiveDownloadDialog(
                         audioLanguage = a?.language.orEmpty(),
                         textLanguage = t?.language.orEmpty(),
                         includeSubtitles = textOption >= 1,
-                    )
+                    ),
+                    canSaveAsFile && asFile == 0,
                 )
             }) { Text("Скачать") }
         },

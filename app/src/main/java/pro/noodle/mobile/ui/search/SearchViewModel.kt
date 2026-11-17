@@ -88,23 +88,17 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         if (url.isBlank()) return null
         thumbnailCache.get(url)?.let { return it }
         if (url in thumbnailMisses) return null
-        val adapter = searchRepo.adapterFor(video) ?: return null
-        val result = http.fetchBytes(
-            url = url,
-            policy = pro.noodle.mobile.core.network.NetworkPolicy(
-                adapter.allowedHosts,
-                allowCookies = adapter.allowCookies,
-                maxResponseBytes = THUMBNAIL_MAX_RESPONSE_BYTES,
-            ),
-            sourceKey = adapter.id,
-            accept = "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.5",
-            referer = adapter.baseUrl,
+        val adapter = searchRepo.adapterFor(video)
+        val result = pro.noodle.mobile.core.media.ThumbnailFetcher.fetch(
+            http, video, adapter?.baseUrl.orEmpty(), adapter?.id ?: video.sourceName.ifBlank { "thumbnails" },
+            adapter?.allowCookies ?: false, THUMBNAIL_MAX_RESPONSE_BYTES,
         )
-        if (!result.success || result.bytes.isEmpty()) {
-            thumbnailMisses += url
+        val bytes = result.bytes
+        if (bytes == null || bytes.isEmpty()) {
+            if (result.status != 0) thumbnailMisses += url
             return null
         }
-        val bitmap = withContext(Dispatchers.Default) { decodeThumbnail(result.bytes) }
+        val bitmap = withContext(Dispatchers.Default) { decodeThumbnail(bytes) }
         if (bitmap == null) {
             thumbnailMisses += url
             return null

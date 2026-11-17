@@ -11,7 +11,13 @@ import pro.noodle.mobile.core.model.VideoItem
 import pro.noodle.mobile.core.network.NetworkPolicy
 import pro.noodle.mobile.core.network.SecureHttpClient
 import pro.noodle.mobile.core.resolver.ResolverFetcher
+import pro.noodle.mobile.core.resolver.DeepMediaMiner
+import pro.noodle.mobile.core.resolver.DurationText
 import pro.noodle.mobile.core.resolver.ResolverPipeline
+import pro.noodle.mobile.core.resolver.StreamHints
+import pro.noodle.mobile.core.resolver.StreamSelection
+import pro.noodle.mobile.core.resolver.StreamSelector
+import pro.noodle.mobile.core.resolver.StreamVerdict
 import pro.noodle.mobile.core.security.UrlPolicy
 import pro.noodle.mobile.core.source.SourceRuntimeDiagnosticsStore
 import pro.noodle.mobile.core.web.SandboxedWebExtractor
@@ -21,6 +27,12 @@ data class PlaybackSession(
     val video: VideoItem,
     val networkPolicy: NetworkPolicy,
     val sourceKey: String,
+    /** Page that embeds the player: CDNs with hot-link protection require it on every media request. */
+    val referer: String = "",
+    /** How the chosen stream was judged: verdict + probe facts, e.g. "full • mp4 12:31 148 МБ". */
+    val streamNote: String = "",
+    val streamVerdict: String = "",
+    val expectedSeconds: Int = 0,
 )
 
 data class PlaybackLoadResult(
@@ -73,8 +85,11 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
             usedWeb = true
         }
 
+        val fetchedPages = mutableListOf<Pair<String, String>>()
         val fetcher = ResolverFetcher { url ->
-            fetchResolverText(url, adapter, discoveredHosts)
+            fetchResolverText(url, adapter, discoveredHosts)?.also { body ->
+                synchronized(fetchedPages) { if (fetchedPages.size < 4 && !url.contains(".m3u8", true) && !url.contains(".mpd", true)) fetchedPages += url to body }
+            }
         }
         var resolved = ResolverPipeline.resolve(initialText, initialUrl, adapter.engine, adapter.viewStrategies, fetcher)
         var safeSources = resolved.sources.filter { admitMediaSource(it, adapter, discoveredHosts) }
@@ -96,6 +111,15 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
                 )
                 if (jsResolved.success || jsResolved.sources.isNotEmpty()) resolved = jsResolved
                 safeSources = resolved.sources.filter { admitMediaSource(it, adapter, discoveredHosts) }
+            }
+        }
+
+        if (safeSources.isEmpty()) {
+            // Standard engines found nothing: dig through JSON blobs, escaped strings and atob() payloads.
+            val mined = DeepMediaMiner.mine(initialText, initialUrl, adapter.streamExtract).filter { admitMediaSource(it, adapter, discoveredHosts) }
+            if (mined.isNotEmpty()) {
+                resolved = resolved.copy(success = true, sources = mined, errorCode = "", errorMessage = "")
+                safeSources = mined
             }
         }
 
@@ -122,17 +146,27 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
             )
         }
 
+        // Rank candidates by what they really are: a measured 40-minute stream beats a 5-second
+        // preview, whatever order the page listed them in. Per-site rules learned by Studio apply.
+        val expectedSec = DurationText.seconds(video.duration).takeIf { it > 0 } ?: DurationText.fromPage(initialText)
+        val hints = StreamHints(adapter.streamPrefer, adapter.streamReject, adapter.streamMinSeconds, adapter.streamExtract)
+        val pageBodies = buildList { add(initialUrl to initialText); synchronized(fetchedPages) { addAll(fetchedPages) } }
+        var referer = resolved.playerPageUrl.ifBlank { initialUrl }
+        var selection = selectStreams(safeSources, adapter, referer, expectedSec, hints, pageBodies)
+        if (selection.ranked.isNotEmpty() && selection.ranked.all { it.facts != null && !it.facts.ok && it.facts.status in setOf(401, 403) }) {
+            val alt = adapter.baseUrl.trimEnd('/') + "/"
+            if (!alt.equals(referer, true)) {
+                val retry = selectStreams(safeSources, adapter, alt, expectedSec, hints, pageBodies)
+                if (retry.ranked.any { it.facts?.ok == true }) { selection = retry; referer = alt }
+            }
+        }
+        // Mined/extra candidates may live on CDN hosts that were not seen yet: admit them under the same rules.
+        safeSources = selection.sources.filter { admitMediaSource(it, adapter, discoveredHosts) }
+        if (safeSources.isEmpty()) {
+            diagnostics.recordPlayback(adapter.id, video.watchUrl, "", "blocked_sources", "PLAYBACK_NO_ALLOWED_SOURCE")
+            return@withContext PlaybackLoadResult(false, errorCode = "PLAYBACK_NO_ALLOWED_SOURCE", errorMessage = "Resolver нашёл media URL, но поток не прошёл HTTPS/public-host policy.")
+        }
         val sessionPolicy = policyFor(adapter, discoveredHosts)
-        // Before handing a list to PlayerScreen, cheaply touch the first bytes/manifest of several
-        // candidates through the exact source-isolated HTTP client. Dead 403/404 URLs are pushed to
-        // the end and a confirmed source becomes default. This removes many avoidable red-screen
-        // failures while retaining unprobed fallbacks for Media3.
-        safeSources = prioritizeReachableSources(
-            sources = safeSources,
-            policy = sessionPolicy,
-            sourceKey = adapter.id,
-            referer = resolved.playerPageUrl.ifBlank { initialUrl },
-        )
         val selected = safeSources.firstOrNull { it.isDefault } ?: safeSources.firstOrNull()
         diagnostics.recordPlayback(
             adapter.id,
@@ -157,38 +191,22 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
             audioTracks = resolved.audioTracks,
             textTracks = safeTextTracks,
         )
-        PlaybackLoadResult(true, PlaybackSession(out, sessionPolicy, adapter.id))
+        PlaybackLoadResult(true, PlaybackSession(out, sessionPolicy, adapter.id, referer, selection.summary, selection.best.name.lowercase(), expectedSec))
     }
 
-    private fun prioritizeReachableSources(
+    private suspend fun selectStreams(
         sources: List<MediaSource>,
-        policy: NetworkPolicy,
-        sourceKey: String,
+        adapter: AdapterDefinition,
         referer: String,
-    ): List<MediaSource> {
-        if (sources.size <= 1) return sources
-        val client = http.streamingClient(policy, sourceKey)
-        val scored = sources.mapIndexed { index, source ->
-            val confirmed = if (index < SOURCE_PREFLIGHT_LIMIT) runCatching {
-                val request = Request.Builder()
-                    .url(source.url)
-                    .header("Range", "bytes=0-65535")
-                    .header("Accept", "application/vnd.apple.mpegurl,application/dash+xml,video/*,*/*;q=0.5")
-                    .apply { if (referer.isNotBlank()) header("Referer", referer) }
-                    .build()
-                client.newCall(request).execute().use { response ->
-                    response.isSuccessful || response.code == 206
-                }
-            }.getOrDefault(false) else false
-            Triple(source, confirmed, index)
-        }
-        val ordered = scored.sortedWith(
-            compareByDescending<Triple<MediaSource, Boolean, Int>> { it.second }
-                .thenByDescending { it.first.isDefault }
-                .thenBy { it.third },
-        ).map { it.first }
-        val anyConfirmed = scored.any { it.second }
-        return if (!anyConfirmed) ordered else ordered.mapIndexed { index, source -> source.copy(isDefault = index == 0) }
+        expectedSec: Int,
+        hints: StreamHints,
+        pages: List<Pair<String, String>>,
+    ): StreamSelection {
+        // Probing is read-only and public-HTTPS-only (UrlPolicy); candidate CDN hosts are admitted afterwards.
+        val client = http.streamingClient(NetworkPolicy(emptyList(), allowCookies = adapter.allowCookies), adapter.id)
+        return runCatching {
+            kotlinx.coroutines.withTimeoutOrNull(SELECT_TIMEOUT_MS) { StreamSelector(client, referer).select(sources, expectedSec, hints, pages) }
+        }.getOrNull() ?: StreamSelection(sources, emptyList(), expectedSec, StreamVerdict.UNKNOWN)
     }
 
     private suspend fun fetchWithSafeDiscoveredRedirects(
@@ -307,6 +325,6 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
 
     companion object {
         private const val MAX_DISCOVERED_HOSTS = 8
-        private const val SOURCE_PREFLIGHT_LIMIT = 4
+        private const val SELECT_TIMEOUT_MS = 20_000L
     }
 }

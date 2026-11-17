@@ -31,6 +31,7 @@ class AdaptiveDownloadPlanner(private val context: Context) {
         policy: NetworkPolicy,
         sourceKey: String,
         selection: AdaptiveDownloadSelection,
+        referer: String = "",
     ): AdaptivePlanResult {
         val selected = selection.normalized()
         val parameters = TrackSelectionParameters.Builder()
@@ -58,7 +59,7 @@ class AdaptiveDownloadPlanner(private val context: Context) {
         return withContext(Dispatchers.Main.immediate) {
             val helper = DownloadHelper.Factory()
                 .setRenderersFactory(DefaultRenderersFactory(context))
-                .setDataSourceFactory(MediaDownloadRuntime.downloadHelperDataSourceFactory(context, policy, sourceKey))
+                .setDataSourceFactory(MediaDownloadRuntime.downloadHelperDataSourceFactory(context, policy, sourceKey, referer))
                 .setTrackSelectionParameters(parameters)
                 .create(item)
 

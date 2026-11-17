@@ -35,10 +35,15 @@ class DownloadRepository(private val context: Context) {
         destinationUri: String = "",
         thumbnailUrl: String = "",
         adaptiveSelection: AdaptiveDownloadSelection = AdaptiveDownloadSelection(),
+        referer: String = "",
+        /** HLS only: save as one regular .mp4 file (needs destinationUri) instead of Media3's private offline cache. */
+        asFile: Boolean = false,
     ): String {
         val id = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
-        val adaptive = isAdaptive(source)
+        val hlsFile = asFile && destinationUri.isNotBlank() && isHls(source)
+        val adaptive = isAdaptive(source) && !hlsFile
+        SourceReferers.remember(app, id, sourceKey, referer)
         val selected = adaptiveSelection.normalized()
         val entity = DownloadEntity(
             id = id,
@@ -49,10 +54,10 @@ class DownloadRepository(private val context: Context) {
             allowCookies = policy.allowCookies,
             allowHttp = policy.allowHttp,
             destinationUri = if (adaptive) ADAPTIVE_DESTINATION else destinationUri,
-            mimeType = if (adaptive) adaptiveMime(source) else source.mimeType,
+            mimeType = if (adaptive) adaptiveMime(source) else if (hlsFile) "video/mp4" else source.mimeType,
             state = DownloadState.QUEUED,
             thumbnailUrl = thumbnailUrl,
-            protocol = source.protocol,
+            protocol = if (hlsFile) "hls" else source.protocol,
             videoSelectionLabel = if (adaptive) selected.videoLabel else source.label,
             videoMaxWidth = selected.maxVideoWidth,
             videoMaxHeight = selected.maxVideoHeight,
@@ -136,7 +141,8 @@ class DownloadRepository(private val context: Context) {
         withContext(Dispatchers.Main.immediate) {
             MediaDownloadRuntime.manager(app).maxParallelDownloads = maxParallel
         }
-        when (val plan = planner.plan(id, source, policy, sourceKey, selection)) {
+        val referer = SourceReferers.forDownload(app, id, sourceKey)
+        when (val plan = planner.plan(id, source, policy, sourceKey, selection, referer)) {
             is AdaptivePlanResult.Ready -> DownloadService.sendAddDownload(app, NoodleDownloadService::class.java, plan.request, true)
             is AdaptivePlanResult.Failed -> dao.updateProgress(
                 id,
@@ -187,6 +193,9 @@ class DownloadRepository(private val context: Context) {
             .build()
         WorkManager.getInstance(app).enqueueUniqueWork(workName(id), ExistingWorkPolicy.REPLACE, request)
     }
+
+    fun isHls(source: MediaSource): Boolean =
+        source.protocol.equals("hls", true) || source.url.substringBefore('?').endsWith(".m3u8", true) || source.mimeType.contains("mpegurl", true)
 
     fun isAdaptive(source: MediaSource): Boolean =
         source.protocol.equals("hls", true) || source.protocol.equals("dash", true) ||

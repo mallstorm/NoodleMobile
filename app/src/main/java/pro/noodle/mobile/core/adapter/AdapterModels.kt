@@ -18,6 +18,11 @@ data class AdapterDefinition(
     val allowJavaScript: Boolean = false,
     val allowCookies: Boolean = false,
     val viewStrategies: List<String> = emptyList(),
+    /** Learned by SNP Studio: how to tell the real stream from previews on this site. */
+    val streamPrefer: String = "",
+    val streamReject: String = "",
+    val streamMinSeconds: Int = 0,
+    val streamExtract: List<String> = emptyList(),
     val searchUrlTemplate: String = "",
     /** Optional template used for page >= 1; must contain {query} and {page}. */
     val searchPageTemplate: String = "",

@@ -35,11 +35,13 @@ class DownloadWorker(appContext: Context, params: WorkerParameters) : CoroutineW
         }
         if(!admitted) return Result.retry()
         ensureChannel(); setForeground(foreground(item.title, item.downloadedBytes, item.totalBytes,0L,-1L))
+        if(item.destinationUri!=DownloadRepository.ADAPTIVE_DESTINATION && (item.protocol.equals("hls",true) || item.sourceUrl.substringBefore('?').endsWith(".m3u8",true))) return doHls(id,item)
         val partial=partialFile(applicationContext,id); partial.parentFile?.mkdirs()
         var offset=if(partial.exists())partial.length() else 0L
         val policy=NetworkPolicy(item.allowedHosts.lines().filter{it.isNotBlank()},allowHttp=item.allowHttp,allowCookies=item.allowCookies,maxResponseBytes=4*1024*1024)
         val client=SecureHttpClient().streamingClient(policy,item.sourceKey)
-        val request=Request.Builder().url(item.sourceUrl).apply{if(offset>0)header("Range","bytes=$offset-")}.header("User-Agent","${BuildIdentity.USER_AGENT} Download").build()
+        val referer=SourceReferers.forDownload(applicationContext,id,item.sourceKey)
+        val request=Request.Builder().url(item.sourceUrl).apply{if(offset>0)header("Range","bytes=$offset-"); if(referer.isNotBlank())header("Referer",referer)}.header("User-Agent",BuildIdentity.USER_AGENT).header("Accept","*/*").build()
         val response=try{client.newCall(request).execute()}catch(e:Exception){
             dao.updateProgress(id,DownloadState.FAILED,offset,item.totalBytes,"DOWNLOAD_IO",e.message?:e.javaClass.simpleName,System.currentTimeMillis()); return Result.retry()
         }
@@ -104,6 +106,53 @@ class DownloadWorker(appContext: Context, params: WorkerParameters) : CoroutineW
             dao.markCompleted(id,offset,if(total>0)total else offset,localPath,System.currentTimeMillis())
             return Result.success()
         }
+    }
+
+    /** HLS → single regular file (MP4 after remux, raw TS as a fallback). */
+    private suspend fun doHls(id:String,item:pro.noodle.mobile.core.storage.DownloadEntity):Result {
+        val referer=SourceReferers.forDownload(applicationContext,id,item.sourceKey)
+        val client=SecureHttpClient().streamingClient(NetworkPolicy(emptyList(),allowCookies=item.allowCookies),item.sourceKey)
+        val dl=HlsFileDownloader(client,referer)
+        suspend fun fail(code:String,msg:String,bytes:Long=0L){ dao.updateProgress(id,DownloadState.FAILED,bytes,-1,code,msg,System.currentTimeMillis()) }
+        val plan=try { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){ dl.plan(item.sourceUrl,item.videoMaxHeight) } }
+        catch(e:HlsFileDownloader.Failure){ fail(e.code,e.message.orEmpty()); return Result.failure() }
+        catch(e:Exception){ fail("HLS_PLAN_IO",e.message?:e.javaClass.simpleName); return Result.retry() }
+        val partial=partialFile(applicationContext,id); partial.parentFile?.mkdirs()
+        val idxFile=File(partial.path+".idx")
+        var start=if(partial.exists()) (idxFile.takeIf{it.exists()}?.readText()?.trim()?.toIntOrNull() ?: 0) else 0
+        if(start<=0 || start>=plan.segments.size){ start=0; partial.delete() }
+        val startedAt=System.currentTimeMillis(); val startBytes=if(start>0)partial.length() else 0L
+        try {
+            java.io.FileOutputStream(partial,start>0).buffered(256*1024).use { out ->
+                dl.run(plan,out,start,stopped={isStopped}) { next,written ->
+                    out.flush(); idxFile.writeText(next.toString())
+                    val bytes=startBytes+written
+                    val estTotal=if(next>0) bytes*plan.segments.size/next else -1L
+                    val speed=written*1000L/(System.currentTimeMillis()-startedAt).coerceAtLeast(1L)
+                    val eta=if(speed>0 && estTotal>bytes)(estTotal-bytes)/speed else -1L
+                    dao.updateProgress(id,DownloadState.RUNNING,bytes,estTotal,"","",System.currentTimeMillis())
+                    setForeground(foreground(item.title,bytes,estTotal,speed,eta))
+                }
+            }
+        } catch(e:java.util.concurrent.CancellationException){
+            val requested=dao.get(id)?.state
+            if(requested!=DownloadState.PAUSED && requested!=DownloadState.CANCELED)dao.updateState(id,DownloadState.QUEUED,System.currentTimeMillis())
+            return if(requested==DownloadState.PAUSED||requested==DownloadState.CANCELED)Result.failure() else Result.retry()
+        } catch(e:HlsFileDownloader.Failure){ fail(e.code,e.message.orEmpty(),partial.length()); return Result.failure() }
+        catch(e:Exception){ fail("HLS_IO",e.message?:e.javaClass.simpleName,partial.length()); return Result.retry() }
+        idxFile.delete()
+        val rawSize=partial.length()
+        if(rawSize<=0){ fail("DOWNLOAD_EMPTY_FILE","Сервер не передал данные."); return Result.failure() }
+        val remuxed=File(partial.path+".mp4")
+        val ok=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){ MediaRemuxer.toMp4(partial,remuxed) }
+        val finalFile=if(ok) remuxed else partial
+        val size=finalFile.length()
+        val localPath=try { finalizeFile(item.destinationUri,finalFile,id,item.sourceUrl) } catch(e:Exception){ fail("DOWNLOAD_FINALIZE_FAILED",e.message?:e.javaClass.simpleName,size); return Result.failure() }
+        partial.delete(); remuxed.delete()
+        if(!ok && localPath.startsWith("content://")) runCatching { android.provider.DocumentsContract.renameDocument(applicationContext.contentResolver,Uri.parse(localPath),(item.title.replace(Regex("[^\\p{L}\\p{N}._ -]+"),"_").trim().take(80).ifBlank{"video"})+(if(plan.fmp4)".mp4" else ".ts")) }
+        if(!verifyFinal(localPath,size)){ fail("DOWNLOAD_INTEGRITY_FAILED","Финальный файл не прошёл проверку размера.",size); return Result.failure() }
+        dao.markCompleted(id,size,size,localPath,System.currentTimeMillis())
+        return Result.success()
     }
 
     private fun verifyFinal(localPath:String,expected:Long):Boolean {

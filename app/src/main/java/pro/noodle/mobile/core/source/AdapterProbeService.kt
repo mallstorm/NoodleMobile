@@ -126,6 +126,10 @@ class AdapterProbeService(
                 if (firstError == null) firstError = resolved.errorCode.ifBlank { "SNP_SEMANTIC_PLAYBACK_ERROR" } to "Карточка ${index + 1}/${samples.size}: ${resolved.errorMessage.ifBlank { "Медиапоток не разрешён." }}"
                 continue
             }
+            if (resolved.session.streamVerdict == "preview") {
+                if (firstError == null) firstError = "SNP_PREVIEW_ONLY" to "Карточка ${index + 1}/${samples.size}: найден только короткий превью-ролик, а не само видео (${resolved.session.streamNote})."
+                continue
+            }
             val media3 = probeMedia3Ready(resolved.session)
             if (!media3.success) {
                 if (firstError == null) firstError = media3.errorCode.ifBlank { "SNP_MEDIA3_NOT_READY" } to "Карточка ${index + 1}/${samples.size}: реальная загрузка видео не прошла. ${media3.message}"
@@ -188,6 +192,7 @@ class AdapterProbeService(
                 context.applicationContext,
                 session.networkPolicy,
                 session.sourceKey,
+                session.referer,
             )
         }.getOrElse { error ->
             return@withContext Media3ProbeResult(false, "SNP_MEDIA3_FACTORY_ERROR", "${error.javaClass.simpleName}: ${error.message}")

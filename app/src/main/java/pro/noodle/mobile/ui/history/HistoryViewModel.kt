@@ -41,16 +41,13 @@ class HistoryViewModel(app: Application) : AndroidViewModel(app) {
         if (url.isBlank()) return null
         thumbnailCache[url]?.let { return it }
         if (url in thumbnailMisses) return null
-        val adapter = sources.adapterFor(video) ?: return null
-        val result = http.fetchBytes(
-            url = url,
-            policy = NetworkPolicy(adapter.allowedHosts, allowCookies = adapter.allowCookies, maxResponseBytes = 3 * 1024 * 1024),
-            sourceKey = adapter.id,
-            accept = "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.5",
-            referer = adapter.baseUrl,
+        val adapter = sources.adapterFor(video)
+        val result = pro.noodle.mobile.core.media.ThumbnailFetcher.fetch(
+            http, video, adapter?.baseUrl.orEmpty(), adapter?.id ?: video.sourceName.ifBlank { "thumbnails" }, adapter?.allowCookies ?: false,
         )
-        if (!result.success || result.bytes.isEmpty()) { thumbnailMisses += url; return null }
-        val bitmap = BitmapFactory.decodeByteArray(result.bytes, 0, result.bytes.size)
+        val bytes = result.bytes
+        if (bytes == null || bytes.isEmpty()) { if (result.status != 0) thumbnailMisses += url; return null }
+        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
         if (bitmap == null) { thumbnailMisses += url; return null }
         thumbnailCache[url] = bitmap
         return bitmap

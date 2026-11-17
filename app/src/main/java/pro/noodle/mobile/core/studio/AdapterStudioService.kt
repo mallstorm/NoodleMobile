@@ -47,6 +47,8 @@ data class StudioAutoResult(
     val playbackReady: Int = 0,
     val errorCode: String = "",
     val message: String = "",
+    /** Human summary: real stream found, download type, covers, AI. */
+    val streamInfo: String = "",
 )
 
 class AdapterStudioService(context: Context) {
@@ -64,8 +66,13 @@ class AdapterStudioService(context: Context) {
      * Simple Studio: site + query → learned SNP → real Media3 live test. When static resolving
      * fails the adapter is retried with the sandboxed browser player enabled.
      */
-    suspend fun autoCreate(url: String, query: String, onProgress: (String) -> Unit = {}): StudioAutoResult = withContext(Dispatchers.IO) {
-        val build = runCatching { autoBuilder.build(url, query, onProgress) }.getOrElse { e ->
+    suspend fun autoCreate(url: String, query: String, useAi: Boolean = true, onProgress: (String) -> Unit = {}): StudioAutoResult = withContext(Dispatchers.IO) {
+        val provider = ai.selectedProvider()
+        val aiReady = useAi && provider != StudioAiProvider.LOCAL && runCatching { ai.status(provider).connected }.getOrDefault(false)
+        val streamAi: pro.noodle.mobile.core.studio.auto.StreamAi? = if (aiReady) pro.noodle.mobile.core.studio.auto.StreamAi { system, user ->
+            runCatching { ai.complete(provider, ai.selectedModel(provider), system, user).json }.getOrNull()
+        } else null
+        val build = runCatching { autoBuilder.build(url, query, onProgress, streamAi) }.getOrElse { e ->
             return@withContext StudioAutoResult(false, errorCode = "AUTO_BUILD_CRASH", message = "${e.javaClass.simpleName}: ${e.message}")
         }
         if (!build.success) return@withContext StudioAutoResult(false, build = build, json = build.adapterJson, errorCode = build.errorCode, message = build.message, testDetails = build.report())
@@ -80,6 +87,16 @@ class AdapterStudioService(context: Context) {
         }
         val counts = Regex("search=(\\d+) • playback=(\\d+)").find(test.testDetails)
         val healthy = test.testStatus == SemanticStatus.HEALTHY.wireName
+        val stream = build.stream
+        val streamInfo = buildList {
+            stream?.let {
+                add(it.summary)
+                if (it.evidence.isNotEmpty()) add("Уверенность выбора настоящего потока: ${it.confidence}%.")
+                if (it.aiUsed) add("Нейросеть участвовала: ${it.aiNote.ifBlank { "правила уточнены" }}.")
+                else if (it.confidence < 100 && it.evidence.isNotEmpty() && !aiReady) add("Совет: подключите нейросеть в расширенном режиме — она разберёт сложные плееры сама.")
+            }
+            if (build.thumbTotal > 0) add("Обложки: загружено ${build.thumbOk} из ${build.thumbTotal}.")
+        }.joinToString("\n")
         StudioAutoResult(
             success = true,
             healthy = healthy,
@@ -90,6 +107,7 @@ class AdapterStudioService(context: Context) {
             testDetails = test.testDetails + "\n\n" + build.report(),
             searchCount = counts?.groupValues?.get(1)?.toIntOrNull() ?: build.samples.size,
             playbackReady = counts?.groupValues?.get(2)?.toIntOrNull() ?: 0,
+            streamInfo = streamInfo,
             message = if (healthy) "Готово: сайт подключён, поиск и видео работают." else "Адаптер собран, но проверка в плеере не пройдена: ${test.testDetails.substringBefore('\n')}",
         )
     }

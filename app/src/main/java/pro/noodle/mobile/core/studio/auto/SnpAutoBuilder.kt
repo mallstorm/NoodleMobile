@@ -17,6 +17,7 @@ import pro.noodle.mobile.core.network.NetworkPolicy
 import pro.noodle.mobile.core.network.SecureHttpClient
 import pro.noodle.mobile.core.resolver.ResolverFetcher
 import pro.noodle.mobile.core.resolver.ResolverPipeline
+import pro.noodle.mobile.core.resolver.StreamHints
 import pro.noodle.mobile.core.version.BuildIdentity
 import java.net.URI
 import java.net.URLDecoder
@@ -58,6 +59,9 @@ data class AutoBuildResult(
     val errorCode: String = "",
     val message: String = "",
     val log: List<String> = emptyList(),
+    val stream: StreamLearning? = null,
+    val thumbOk: Int = 0,
+    val thumbTotal: Int = 0,
 ) {
     val playbackOk: Int get() = playback.count { it.ok }
     fun report(): String = buildString {
@@ -70,6 +74,8 @@ data class AutoBuildResult(
         appendLine("link_pattern=$linkPattern")
         appendLine("search_url=$searchUrl")
         appendLine("samples=${samples.size} playback_ok=$playbackOk/${playback.size} needs_js=$needsJavaScript")
+        appendLine("thumbnails_ok=$thumbOk/$thumbTotal")
+        stream?.let { append(it.report()) }
         samples.take(5).forEach { appendLine("  • ${it.title.take(70)} | ${it.watchPath} | thumb=${it.thumbnailUrl.isNotBlank()} | ${it.durationText}") }
         playback.forEach { appendLine("  ▶ ${if (it.ok) "OK" else "FAIL"} ${it.pageUrl} — ${it.detail}") }
         appendLine("candidates:")
@@ -96,7 +102,7 @@ data class AutoBuildResult(
  */
 class SnpAutoBuilder(private val http: SecureHttpClient = SecureHttpClient()) {
 
-    suspend fun build(rawUrl: String, rawQuery: String, onProgress: (String) -> Unit = {}): AutoBuildResult = coroutineScope {
+    suspend fun build(rawUrl: String, rawQuery: String, onProgress: (String) -> Unit = {}, ai: StreamAi? = null): AutoBuildResult = coroutineScope {
         val log = mutableListOf<String>()
         fun step(msg: String) { log += msg; onProgress(msg) }
         val query = rawQuery.trim().ifBlank { "video" }
@@ -187,9 +193,24 @@ class SnpAutoBuilder(private val http: SecureHttpClient = SecureHttpClient()) {
         val pageTemplate = findPageTemplate(html, best, base, siteHosts, query, pattern, items)
         if (pageTemplate.isNotBlank()) step("Страницы: $pageTemplate") else step("Пагинация не подтверждена — будет только первая страница")
 
-        val allowed = linkedSetOf<String>().apply { addAll(siteHosts); addAll(mediaHosts.filter { !AutoCards.sameSite(it, root) }.take(12)) }
+        // Covers: they live on image CDNs. Verify they really load with the Referer the app will send.
+        val thumbItems = spread(items.filter { it.thumbnailUrl.isNotBlank() }, 4)
+        val thumbOk = if (thumbItems.isEmpty()) 0 else thumbItems.map { item ->
+            async { runCatching { pro.noodle.mobile.core.media.ThumbnailFetcher.fetch(http, item.thumbnailUrl, base, item.watchPath, SOURCE_KEY, true, 1536 * 1024).ok }.getOrDefault(false) }
+        }.awaitAll().count { it }
+        step(if (thumbItems.isEmpty()) "Обложки: у карточек их нет" else "Обложки: загружено $thumbOk из ${thumbItems.size}")
+        val imageHosts = items.mapNotNull { hostOf(it.thumbnailUrl).takeIf { h -> h.isNotBlank() } }.filter { !AutoCards.sameSite(it, root) }.distinct().take(6)
+
+        // Several real videos: measure every stream, learn which one is the full video, keep the rule.
+        var learning: StreamLearning? = null
+        if (okCount > 0) {
+            learning = withTimeoutOrNull(LEARN_TIMEOUT_MS) { StreamLearner(http, VIEW_STRATEGIES, ENGINE).learn(items, SOURCE_KEY, ai) { step(it) } }
+            learning?.let { step(it.summary + if (it.hints.isEmpty) "" else " Правила сохранены в адаптер.") }
+        }
+
+        val allowed = linkedSetOf<String>().apply { addAll(siteHosts); addAll(mediaHosts.filter { !AutoCards.sameSite(it, root) }.take(12)); addAll(imageHosts) }
         val adapterId = root.replace(Regex("[^a-z0-9._-]"), "-").trim('-').take(120)
-        val json = adapterJson(adapterId, siteName, base, best.template, pageTemplate, best.pattern, query, allowed.toList(), needsJs)
+        val json = adapterJson(adapterId, siteName, base, best.template, pageTemplate, best.pattern, query, allowed.toList(), needsJs, learning?.hints)
         val validation = AdapterValidator.validate(json)
         if (!validation.isValid) {
             return@coroutineScope AutoBuildResult(false, adapterJson = json, siteName = siteName, baseUrl = base, candidates = probes, log = log, errorCode = validation.errorCode, message = "Сгенерированный SNP не прошёл проверку схемы: ${validation.errorMessage}")
@@ -210,7 +231,12 @@ class SnpAutoBuilder(private val http: SecureHttpClient = SecureHttpClient()) {
             needsJavaScript = needsJs,
             candidates = probes,
             log = log,
+            stream = learning,
+            thumbOk = thumbOk,
+            thumbTotal = thumbItems.size,
             message = when {
+                okCount > 0 && learning != null && learning.evidence.isNotEmpty() && learning.confidence == 0 -> "Поиск работает, но настоящий поток уверенно найти не удалось — возможно, воспроизводятся только короткие превью."
+                okCount > 0 && thumbItems.isNotEmpty() && thumbOk == 0 -> "Адаптер готов, но обложки не загружаются (сайт блокирует картинки) — карточки будут без картинок."
                 okCount > 0 -> "Адаптер готов: поиск и воспроизведение подтверждены."
                 else -> "Поиск работает; поток спрятан в JavaScript — включён режим браузера для плеера."
             },
@@ -370,7 +396,7 @@ class SnpAutoBuilder(private val http: SecureHttpClient = SecureHttpClient()) {
 
     // ---------------------------------------------------------------- adapter JSON
 
-    private fun adapterJson(id: String, name: String, base: String, template: String, pageTemplate: String, pattern: String, query: String, hosts: List<String>, js: Boolean): String {
+    private fun adapterJson(id: String, name: String, base: String, template: String, pageTemplate: String, pattern: String, query: String, hosts: List<String>, js: Boolean, hints: StreamHints? = null): String {
         val search = linkedMapOf<String, JsonValue>(
             "url_template" to JsonValue.Str(template),
             "link_pattern" to JsonValue.Str(pattern),
@@ -392,7 +418,16 @@ class SnpAutoBuilder(private val http: SecureHttpClient = SecureHttpClient()) {
             "capabilities" to JsonValue.Obj(linkedMapOf("search" to JsonValue.Bool(true), "pagination" to JsonValue.Bool(pageTemplate.isNotBlank()), "direct_url" to JsonValue.Bool(true), "embedded_playback" to JsonValue.Bool(true))),
             "permissions" to JsonValue.Obj(linkedMapOf("allowed_hosts" to JsonValue.Arr(hosts.map { JsonValue.Str(it) }), "allow_javascript" to JsonValue.Bool(js), "allow_cookies" to JsonValue.Bool(true))),
             "search" to JsonValue.Obj(search),
-            "view" to JsonValue.Obj(linkedMapOf("strategies" to JsonValue.Arr(VIEW_STRATEGIES.map { JsonValue.Str(it) }))),
+            "view" to JsonValue.Obj(linkedMapOf<String, JsonValue>("strategies" to JsonValue.Arr(VIEW_STRATEGIES.map { JsonValue.Str(it) })).apply {
+                if (hints != null && !hints.isEmpty) {
+                    val st = linkedMapOf<String, JsonValue>()
+                    if (hints.prefer.isNotBlank()) st["prefer"] = JsonValue.Str(hints.prefer)
+                    if (hints.reject.isNotBlank()) st["reject"] = JsonValue.Str(hints.reject)
+                    if (hints.minSeconds > 0) st["min_seconds"] = JsonValue.Num(hints.minSeconds.toDouble())
+                    if (hints.extract.isNotEmpty()) st["extract"] = JsonValue.Arr(hints.extract.map { JsonValue.Str(it) })
+                    put("stream", JsonValue.Obj(st))
+                }
+            }),
             "health" to JsonValue.Obj(linkedMapOf("query" to JsonValue.Str(query), "min_results" to JsonValue.Num(1.0), "require_playback" to JsonValue.Bool(true), "auto_repair" to JsonValue.Bool(false))),
             "repair" to JsonValue.Obj(linkedMapOf("enabled" to JsonValue.Bool(false), "mode" to JsonValue.Str("conservative"), "failure_threshold" to JsonValue.Num(3.0), "cooldown_minutes" to JsonValue.Num(60.0), "auto_quarantine" to JsonValue.Bool(false), "strategies" to JsonValue.Arr(listOf(JsonValue.Str("resolver_refresh"))))),
         )).toJson(pretty = true)
@@ -423,6 +458,7 @@ class SnpAutoBuilder(private val http: SecureHttpClient = SecureHttpClient()) {
         private const val MIN_CARDS = 3
         private const val PLAYBACK_SAMPLES = 3
         private const val MAX_ATTEMPTS = 5
+        private const val LEARN_TIMEOUT_MS = 90_000L
         val VIEW_STRATEGIES = listOf("primary", "jwplayer", "videojs", "player_config", "generic_html5", "oembed", "iframe", "hls", "dash")
         private val SEARCH_FIELD_NAMES = setOf("q", "s", "k", "query", "search", "search_query", "searchtext", "search_text", "keyword", "keywords", "term", "text", "story", "searchword", "find", "w")
 
