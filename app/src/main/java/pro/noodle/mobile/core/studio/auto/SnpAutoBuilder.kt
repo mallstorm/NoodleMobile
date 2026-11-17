@@ -258,7 +258,14 @@ class SnpAutoBuilder(private val http: SecureHttpClient = SecureHttpClient()) {
 
     private suspend fun probeSearch(label: String, template: String, declared: Boolean, base: String, hosts: Set<String>, query: String, homeHrefs: Set<String>): AutoSearchCandidate {
         val url = render(template, base, query, 1)
-        val net = http.fetchText(url, policy(hosts), SOURCE_KEY)
+        var net = http.fetchText(url, policy(hosts), SOURCE_KEY)
+        // Sites rate-limit rapid probing (HTTP 429/503): wait and retry before giving the route up.
+        var attempt = 0
+        while (!net.success && (net.statusCode == 429 || net.statusCode == 503) && attempt < 2) {
+            kotlinx.coroutines.delay(2_500L * (attempt + 1))
+            net = http.fetchText(url, policy(hosts), SOURCE_KEY)
+            attempt++
+        }
         if (!net.success) return AutoSearchCandidate(label, template, url, net.statusCode, error = net.errorCode)
         val all = CardLearner.learnAll(net.text, net.finalUrl.ifBlank { url }, query)
         val learned = all.firstOrNull()

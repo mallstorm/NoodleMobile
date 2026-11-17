@@ -93,6 +93,12 @@ object AutoCards {
             out += EngineSearchItem(remote, href, title.ifBlank { remote.replace('-', ' ').replace('_', ' ') }, thumb, duration, views)
             if (out.size >= max) break
         }
+        // Navigation pages that share the card URL shape ("Поиск по сайту", "Топ 100"…) have neither a
+        // preview nor a duration. Drop them as soon as the page clearly has real video cards.
+        if (out.count { it.thumbnailUrl.isNotBlank() } >= 3) {
+            val real = out.filter { it.thumbnailUrl.isNotBlank() || it.durationText.isNotBlank() }
+            if (real.size >= 3) return real
+        }
         return out
     }
 
