@@ -124,7 +124,7 @@ class BundledSearchRepository(
         val result = try {
             networkSemaphore.withPermit {
                 withTimeoutOrNull(RELATED_SEARCH_TIMEOUT_MS) {
-                    searchOne(adapter, query, page, maxPerSource.coerceIn(4, 12))
+                    searchOne(adapter, query, page, maxPerSource.coerceIn(4, 32))
                 }
             } ?: (emptyList<VideoItem>() to SourceSearchError(
                 adapter.id,
@@ -166,7 +166,7 @@ class BundledSearchRepository(
         val engine = RuntimeEngineRegistry.find(adapter.engine) ?: return SearchBatch(emptyList(), emptyList())
         val finalUrl = net.finalUrl.ifBlank { watch }
         val finalBase = originOf(finalUrl, adapter.baseUrl)
-        val maximum = maxPerSource.coerceIn(4, 20)
+        val maximum = maxPerSource.coerceIn(4, 40)
         val parsed = runCatching {
             val request = adapter.searchRequest("", -1, maximum)
             val inferred = engine.parseSearch(net.text, request.copy(baseUrl = finalBase))

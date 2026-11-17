@@ -1,5 +1,11 @@
 package pro.noodle.mobile.ui
 
+import android.app.Activity
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
@@ -80,6 +86,26 @@ private val AuroraLight = lightColorScheme(
     error = Color(0xFFC62839), onError = Color(0xFFFFFFFF),
 )
 
+/** Салатовый + голубоватый + песочный, с тёплым оранжевым акцентом. */
+private val SaladSand = lightColorScheme(
+    primary = Color(0xFF4E8E1E), onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFD9F2A6), onPrimaryContainer = Color(0xFF173300),
+    secondary = Color(0xFF2B7C9B), onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFCFEBF4), onSecondaryContainer = Color(0xFF00313F),
+    tertiary = Color(0xFFD9722B), onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFFFDDBE), onTertiaryContainer = Color(0xFF3A1A00),
+    background = Color(0xFFF7F1E1), onBackground = Color(0xFF26251B),
+    surface = Color(0xFFFFFBEE), onSurface = Color(0xFF26251B),
+    surfaceVariant = Color(0xFFE9E5CF), onSurfaceVariant = Color(0xFF515043),
+    surfaceContainerLowest = Color(0xFFFFFFFA), surfaceContainerLow = Color(0xFFFBF5E4),
+    surfaceContainer = Color(0xFFF3ECD8), surfaceContainerHigh = Color(0xFFEDE6CE), surfaceContainerHighest = Color(0xFFE6DFC5),
+    outline = Color(0xFF7C7A66), outlineVariant = Color(0xFFD6D0B4),
+    error = Color(0xFFBA2B2B), onError = Color(0xFFFFFFFF),
+    errorContainer = Color(0xFFFFDAD4), onErrorContainer = Color(0xFF410002),
+    inverseSurface = Color(0xFF34332A), inverseOnSurface = Color(0xFFF7F1E1), inversePrimary = Color(0xFFA6D86C),
+    scrim = Color(0xFF000000),
+)
+
 private val NoodleShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp),
     small = RoundedCornerShape(12.dp),
@@ -97,14 +123,31 @@ private val NoodleTypography = Typography().run {
     )
 }
 
+const val DEFAULT_THEME = "salad_sand"
+
 @Composable
-fun NoodleTheme(name: String = "noodle_neon", content: @Composable () -> Unit) {
+fun NoodleTheme(name: String = DEFAULT_THEME, content: @Composable () -> Unit) {
     val colors = when (name) {
         "blue_glass" -> BlueGlass
         "emerald_pulse" -> EmeraldPulse
         "graphite_pro" -> GraphitePro
         "aurora_light" -> AuroraLight
-        else -> NoodleNeon
+        "noodle_neon" -> NoodleNeon
+        else -> SaladSand
+    }
+    val light = colors.background.luminance() > 0.5f
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as? Activity)?.window ?: return@SideEffect
+            @Suppress("DEPRECATION")
+            window.statusBarColor = colors.background.toArgb()
+            @Suppress("DEPRECATION")
+            window.navigationBarColor = colors.background.toArgb()
+            val ctl = WindowCompat.getInsetsController(window, view)
+            ctl.isAppearanceLightStatusBars = light
+            ctl.isAppearanceLightNavigationBars = light
+        }
     }
     MaterialTheme(colorScheme = colors, shapes = NoodleShapes, typography = NoodleTypography, content = content)
 }

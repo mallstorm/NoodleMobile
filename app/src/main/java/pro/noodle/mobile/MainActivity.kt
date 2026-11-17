@@ -512,6 +512,7 @@ private fun SettingsScreen(vm: SettingsViewModel) {
                     Text("Тема", fontWeight = FontWeight.SemiBold)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf(
+                            "salad_sand" to "Салат",
                             "noodle_neon" to "Noodle",
                             "blue_glass" to "Blue",
                             "emerald_pulse" to "Emerald",

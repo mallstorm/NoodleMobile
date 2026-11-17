@@ -34,15 +34,19 @@ internal fun RelatedVideosSection(
     var loading by remember(currentVideo.id, currentVideo.watchUrl) { mutableStateOf(true) }
     var error by remember(currentVideo.id, currentVideo.watchUrl) { mutableStateOf("") }
     var items by remember(currentVideo.id, currentVideo.watchUrl) { mutableStateOf<List<VideoItem>>(emptyList()) }
+    var shown by remember(currentVideo.id, currentVideo.watchUrl) { mutableStateOf(12) }
 
     LaunchedEffect(currentVideo.id, currentVideo.watchUrl) {
         loading = true
         error = ""
         // Give Media3 the network first. Related cards start shortly after playback preparation.
         delay(1_200)
-        runCatching { repository.load(currentVideo) }
-            .onSuccess { items = it }
-            .onFailure { error = it.message.orEmpty() }
+        runCatching {
+            repository.loadProgressive(currentVideo) { partial ->
+                items = partial
+                if (partial.isNotEmpty()) loading = false
+            }
+        }.onSuccess { items = it }.onFailure { error = it.message.orEmpty() }
         loading = false
     }
 
@@ -77,7 +81,8 @@ internal fun RelatedVideosSection(
             }
         }
 
-        if (loading) {
+        val visible = items.take(shown)
+        if (loading && items.isEmpty()) {
             LinearProgressIndicator(Modifier.fillMaxWidth())
         } else if (items.isEmpty()) {
             Text(
@@ -86,11 +91,11 @@ internal fun RelatedVideosSection(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else if (columns == 1) {
-            items.forEach { video ->
+            visible.forEach { video ->
                 RelatedListCard(video, repository, onOpen)
             }
         } else {
-            items.chunked(2).forEach { rowItems ->
+            visible.chunked(2).forEach { rowItems ->
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -102,6 +107,12 @@ internal fun RelatedVideosSection(
                     }
                     if (rowItems.size == 1) Spacer(Modifier.weight(1f))
                 }
+            }
+        }
+        if (loading && items.isNotEmpty()) LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (items.size > shown) {
+            OutlinedButton(onClick = { shown += 12 }, modifier = Modifier.fillMaxWidth()) {
+                Text("Показать ещё (${items.size - shown})")
             }
         }
     }

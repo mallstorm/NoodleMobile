@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -71,6 +72,24 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     private var resolveJob: Job? = null
     private var nextPage = 1
     private var lastPagingFinishedAtMs = 0L
+    private var emptyStreak = 0
+    private var pagingFailures = 0
+
+    private fun prefetchLoop(g: Long) {
+        viewModelScope.launch {
+            var rounds = 0
+            while (g == generation && rounds < PREFETCH_ROUNDS) {
+                val st = _state.value
+                if (!st.hasMore || st.items.size >= PREFETCH_TARGET) break
+                if (st.loadingMore) { delay(300); rounds++; continue }
+                lastPagingFinishedAtMs = 0L
+                loadMore()
+                delay(250)
+                while (g == generation && _state.value.loadingMore) delay(200)
+                rounds++
+            }
+        }
+    }
 
     /**
      * Thumbnails used to be retained forever as full-size ARGB bitmaps. A single compressed
@@ -143,6 +162,8 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         pagingJob?.cancel()
         resolveJob?.cancel()
         nextPage = 1
+        emptyStreak = 0
+        pagingFailures = 0
         lastPagingFinishedAtMs = 0L
         thumbnailCache.evictAll()
         thumbnailMisses.clear()
@@ -162,7 +183,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 // Adapter verification, package hashing and HTML parsing are blocking/CPU-heavy.
                 // Never execute them on the Compose/UI dispatcher.
-                val batch = withContext(Dispatchers.IO) { searchRepo.search(q) }
+                val batch = withContext(Dispatchers.IO) { searchRepo.search(q, maxPerSource = INITIAL_PER_SOURCE) }
                 if (g != generation) return@launch
                 val ranked = withContext(Dispatchers.IO) { rankItems(batch.items, q) }
                 if (g != generation) return@launch
@@ -171,10 +192,13 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
                         loading = false,
                         items = ranked,
                         errors = batch.errors,
-                        hasMore = batch.items.isNotEmpty(),
+                        hasMore = true,
                         message = if (batch.items.isEmpty()) "Ничего не найдено" else "",
                     )
                 }
+                // Лента должна быть «предзагружена»: сразу дотягиваем следующие страницы,
+                // пока не наберётся комфортный запас карточек.
+                if (batch.items.isNotEmpty()) prefetchLoop(g)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (e: Exception) {
@@ -217,6 +241,9 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
                 val seen = old.mapTo(HashSet()) { stableKey(it) }
                 val fresh = incoming.filter { seen.add(stableKey(it)) }
                 nextPage = startPage + PAGE_BURST
+                val cleanEmpty = fresh.isEmpty() && batches.all { it.second.errors.isEmpty() }
+                if (fresh.isNotEmpty()) emptyStreak = 0 else if (cleanEmpty) emptyStreak++ else emptyStreak = emptyStreak.coerceAtLeast(0)
+                if (fresh.isEmpty() && !cleanEmpty) pagingFailures++ else pagingFailures = 0
                 val pagingErrors = batches.flatMap { it.second.errors }
                     .distinctBy { "${it.sourceId}|${it.errorCode}|${it.message}" }
                 val ranked = withContext(Dispatchers.IO) { rankItems(old + fresh, q) }
@@ -227,8 +254,8 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
                         loadingMore = false,
                         items = ranked,
                         errors = (it.errors + pagingErrors).distinctBy { e -> "${e.sourceId}|${e.errorCode}|${e.message}" },
-                        hasMore = fresh.isNotEmpty(),
-                        message = if (fresh.isEmpty()) "Больше результатов на следующих страницах не найдено" else "",
+                        hasMore = emptyStreak < MAX_EMPTY_STREAK && (fresh.isNotEmpty() || pagingFailures < MAX_FAILED_STREAK),
+                        message = if (emptyStreak >= MAX_EMPTY_STREAK) "Больше результатов на следующих страницах не найдено" else "",
                     )
                 }
             } catch (cancelled: CancellationException) {
@@ -236,9 +263,11 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: Exception) {
                 if (g != generation) return@launch
                 lastPagingFinishedAtMs = SystemClock.elapsedRealtime()
+                pagingFailures++
                 _state.update {
                     it.copy(
                         loadingMore = false,
+                        hasMore = pagingFailures < MAX_FAILED_STREAK,
                         message = "Ошибка догрузки: ${e.message ?: e.javaClass.simpleName}",
                     )
                 }
@@ -334,9 +363,14 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
 
     companion object {
         private const val MAX_RECENT = 12
-        private const val PAGE_BURST = 1
-        private const val PAGE_SIZE = 18
-        private const val PAGING_COOLDOWN_MS = 1_500L
+        private const val INITIAL_PER_SOURCE = 40
+        private const val PREFETCH_TARGET = 60
+        private const val PREFETCH_ROUNDS = 4
+        private const val MAX_EMPTY_STREAK = 2
+        private const val MAX_FAILED_STREAK = 4
+        private const val PAGE_BURST = 2
+        private const val PAGE_SIZE = 24
+        private const val PAGING_COOLDOWN_MS = 400L
         private const val THUMBNAIL_CACHE_KB = 16 * 1024
         private const val THUMBNAIL_MAX_RESPONSE_BYTES = 2 * 1024 * 1024
         private const val THUMBNAIL_TARGET_MAX_DIMENSION = 512

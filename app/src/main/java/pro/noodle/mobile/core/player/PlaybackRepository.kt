@@ -45,6 +45,7 @@ data class PlaybackLoadResult(
 )
 
 class PlaybackRepository(context: Context, private val http: SecureHttpClient = SecureHttpClient()) {
+    private val ruleStore = StreamRuleStore(context.applicationContext)
     private val webExtractor = SandboxedWebExtractor(context.applicationContext)
     private val diagnostics = SourceRuntimeDiagnosticsStore(context.applicationContext)
 
@@ -151,7 +152,9 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
         // Rank candidates by what they really are: a measured 40-minute stream beats a 5-second
         // preview, whatever order the page listed them in. Per-site rules learned by Studio apply.
         val expectedSec = DurationText.seconds(video.duration).takeIf { it > 0 } ?: DurationText.fromPage(initialText)
-        val hints = StreamHints(adapter.streamPrefer, adapter.streamReject, adapter.streamMinSeconds, adapter.streamExtract)
+        val userReject = ruleStore.rejectFor(adapter.id)
+        val rejectRule = listOf(adapter.streamReject, userReject).filter { it.isNotBlank() }.joinToString("|")
+        val hints = StreamHints(adapter.streamPrefer, rejectRule, adapter.streamMinSeconds, adapter.streamExtract)
         val pageBodies = buildList { add(initialUrl to initialText); synchronized(fetchedPages) { addAll(fetchedPages) } }
         var referer = resolved.playerPageUrl.ifBlank { initialUrl }
         var selection = selectStreams(safeSources, adapter, referer, expectedSec, hints, pageBodies, exhaustive)

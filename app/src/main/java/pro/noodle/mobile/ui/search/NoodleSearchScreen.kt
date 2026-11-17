@@ -108,11 +108,23 @@ fun NoodleSearchScreen(
         }
             .distinctUntilChanged()
             .collect { lastVisible ->
-                val threshold = if (landscape && gridMode) 12 else 6
+                val threshold = if (landscape && gridMode) 18 else 12
                 if (visibleItems.isNotEmpty() && lastVisible >= visibleItems.lastIndex - threshold) {
                     vm.loadMore()
                 }
             }
+    }
+
+    // Страховка: если догрузка была пропущена из-за паузы между запросами, повторяем проверку,
+    // пока пользователь находится близко к концу списка.
+    LaunchedEffect(gridMode, state.hasMore, landscape) {
+        while (state.hasMore) {
+            kotlinx.coroutines.delay(800)
+            val last = if (gridMode) gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+            else listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+            val threshold = if (landscape && gridMode) 18 else 12
+            if (visibleItems.isNotEmpty() && last >= visibleItems.lastIndex - threshold) vm.loadMore()
+        }
     }
 
     Column(

@@ -267,6 +267,16 @@ private fun SourceDetailsDialog(d: SourceDetails, onDismiss: () -> Unit) {
                         }
                     }
                     HorizontalDivider()
+                    if (d.userRules.isNotBlank()) {
+                        Text("Правила «не то видео» (добавлены вами)", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                        Text(d.userRules, style = MaterialTheme.typography.bodySmall, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                    }
+                    Text("Журнал воспроизведения (последние 20)", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                    Text(
+                        d.playbackLog.ifBlank { "Пока пусто." },
+                        style = MaterialTheme.typography.bodySmall, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    )
+                    HorizontalDivider()
                 }
                 item {
                     Detail("ID", d.adapterId)

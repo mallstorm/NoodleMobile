@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.map
 internal val Context.noodleSettingsStore by preferencesDataStore("noodle_settings")
 
 data class AppSettings(
-    val theme: String = "noodle_neon",
+    val theme: String = "salad_sand",
     val uiScalePercent: Int = 100,
     val parallelDownloads: Int = 2,
     val backgroundMonitoring: Boolean = true,
@@ -24,7 +24,7 @@ data class AppSettings(
 
 class AppSettingsRepository(private val context: Context) {
     private object Keys {
-        val theme = stringPreferencesKey("theme")
+        val theme = stringPreferencesKey("theme_skin2")
         val uiScalePercent = intPreferencesKey("ui_scale_percent")
         val parallelDownloads = intPreferencesKey("parallel_downloads")
         val backgroundMonitoring = booleanPreferencesKey("background_monitoring")
@@ -39,7 +39,7 @@ class AppSettingsRepository(private val context: Context) {
 
     val settings: Flow<AppSettings> = context.noodleSettingsStore.data.map { p ->
         AppSettings(
-            theme = p[Keys.theme] ?: "noodle_neon",
+            theme = p[Keys.theme] ?: "salad_sand",
             uiScalePercent = (p[Keys.uiScalePercent] ?: 100).let { raw ->
                 when {
                     raw >= 95 -> 100

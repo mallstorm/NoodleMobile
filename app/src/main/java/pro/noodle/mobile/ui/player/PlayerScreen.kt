@@ -14,6 +14,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -45,6 +46,8 @@ import pro.noodle.mobile.core.model.VideoItem
 import pro.noodle.mobile.core.network.SecureHttpClient
 import pro.noodle.mobile.core.player.PlaybackRepository
 import pro.noodle.mobile.core.player.PlaybackSession
+import pro.noodle.mobile.core.player.PlaybackLogStore
+import pro.noodle.mobile.core.player.StreamRuleStore
 import pro.noodle.mobile.core.search.BundledSearchRepository
 import pro.noodle.mobile.core.settings.AppSettings
 import pro.noodle.mobile.core.settings.AppSettingsRepository
@@ -88,6 +91,13 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
     var failedSourceUrls by remember(video.id) { mutableStateOf<Set<String>>(emptySet()) }
     var resolverRecoveryAttempts by remember(video.id) { mutableIntStateOf(0) }
     var handoffPositionMs by remember(video.id) { mutableLongStateOf(0L) }
+    var audioOnly by remember { mutableStateOf(false) }
+    var showStreamReport by remember { mutableStateOf(false) }
+    var networkRetries by remember(video.id) { mutableIntStateOf(0) }
+    var attemptStartMs by remember { mutableLongStateOf(0L) }
+    var liveDurationMs by remember(video.id) { mutableLongStateOf(0L) }
+    val ruleStore = remember { StreamRuleStore(context.applicationContext) }
+    val logStore = remember { PlaybackLogStore(context.applicationContext) }
 
     val createDocument = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/*")) { uri ->
         val src = pendingDownload
@@ -152,6 +162,12 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
         ExoPlayer.Builder(context)
             .setLoadControl(loadControl)
             .setMediaSourceFactory(DefaultMediaSourceFactory(factory))
+            .setAudioAttributes(
+                androidx.media3.common.AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(),
+                true,
+            )
+            .setHandleAudioBecomingNoisy(true)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
     }
 
@@ -181,6 +197,7 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
 
     fun mediaItemFor(s: MediaSource): MediaItem {
         val builder = MediaItem.Builder().setUri(Uri.parse(s.url))
+            .setMediaMetadata(androidx.media3.common.MediaMetadata.Builder().setTitle(video.title).setArtist(video.sourceName).build())
         if (s.mimeType.isNotBlank()) builder.setMimeType(s.mimeType)
         val subtitles = video.textTracks.map { t ->
             MediaItem.SubtitleConfiguration.Builder(Uri.parse(t.url))
@@ -204,6 +221,7 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
             ?: restoredPosition
         val wasPlaying = player.playWhenReady
         player.setMediaItem(mediaItemFor(source), old.coerceAtLeast(0))
+        attemptStartMs = android.os.SystemClock.elapsedRealtime()
         player.prepare()
         player.playWhenReady = firstLoad || wasPlaying || old == 0L
         handoffPositionMs = 0L
@@ -224,10 +242,92 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
         }
     }
 
+    LaunchedEffect(player) {
+        while (true) {
+            liveDurationMs = player.duration.takeIf { it != C.TIME_UNSET && it > 0L } ?: liveDurationMs
+            kotlinx.coroutines.delay(1_000)
+        }
+    }
+
+    fun humanError(error: PlaybackException): String {
+        val reason = when (error.errorCode) {
+            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "нет связи с сервером видео"
+            PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> "сервер видео отказал в доступе или поток устарел"
+            PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND -> "файл видео не найден"
+            PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
+            PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED,
+            PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED -> "файл повреждён или формат не поддерживается"
+            PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+            PlaybackException.ERROR_CODE_DECODING_FAILED -> "устройство не смогло декодировать видео"
+            else -> error.message.orEmpty().ifBlank { "ошибка воспроизведения" }
+        }
+        return "Не удалось воспроизвести: $reason (${error.errorCodeName})"
+    }
+
+    fun reResolve(exhaustive: Boolean, why: String) {
+        message = why
+        ioScope.launch {
+            val adapter = searchRepo.adapterFor(video)
+            if (adapter == null) {
+                withContext(Dispatchers.Main) { message = "SNP источника не найден для повторного разрешения." }
+                return@launch
+            }
+            val fresh = playbackRepo.resolve(video.copy(sources = emptyList()), adapter, exhaustive)
+            withContext(Dispatchers.Main) {
+                if (fresh.success && fresh.session != null && fresh.session.video.sources.isNotEmpty()) {
+                    handoffPositionMs = player.currentPosition.coerceAtLeast(handoffPositionMs)
+                    activeSession = fresh.session
+                    selectedIndex = fresh.session.video.sources.indexOfFirst { it.isDefault }.takeIf { it >= 0 } ?: 0
+                    failedSourceUrls = emptySet()
+                    message = "Поток обновлён, продолжаю."
+                } else {
+                    message = "Не удалось найти другой поток: ${fresh.errorCode} ${fresh.errorMessage}".trim()
+                }
+            }
+        }
+    }
+
+    /** «Это превью / не то видео»: запоминаем правило в адаптере и без ошибок переключаемся на следующий поток. */
+    fun rejectCurrentStream() {
+        val badUrl = source.url
+        val pattern = ruleStore.addReject(activeSession.sourceKey, badUrl)
+        logStore.add(activeSession.sourceKey, video.title, badUrl, -1.0, "помечено как «не то видео»" + if (pattern != null) " → правило добавлено" else "")
+        runtimeDiagnostics.recordPlayback(activeSession.sourceKey, video.watchUrl, badUrl, "user_rejected", "USER_REJECTED_STREAM")
+        handoffPositionMs = player.currentPosition.coerceAtLeast(0L)
+        val failed = failedSourceUrls + badUrl
+        failedSourceUrls = failed
+        val next = video.sources.indices.firstOrNull { it != selectedIndex && video.sources[it].url !in failed }
+        if (next != null) {
+            message = "Поток помечен как не то видео, пробую другой…"
+            selectedIndex = next
+        } else {
+            reResolve(true, "Поток помечен как не то видео, ищу другой глубже…")
+        }
+    }
+
     DisposableEffect(player, source.url, selectedIndex) {
         val listener = object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 handoffPositionMs = player.currentPosition.coerceAtLeast(0L)
+                logStore.add(activeSession.sourceKey, video.title, source.url, -1.0, "ошибка ${error.errorCodeName}")
+                val isNetwork = error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+                    error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT
+                if (isNetwork && networkRetries < 3) {
+                    networkRetries++
+                    message = "Связь прервалась, повторяю ($networkRetries/3)…"
+                    val resumeAt = handoffPositionMs
+                    ioScope.launch {
+                        kotlinx.coroutines.delay(1_500L * networkRetries)
+                        withContext(Dispatchers.Main) {
+                            attemptStartMs = android.os.SystemClock.elapsedRealtime()
+                            player.seekTo(resumeAt)
+                            player.prepare()
+                            player.play()
+                        }
+                    }
+                    return
+                }
                 runtimeDiagnostics.recordPlayback(
                     activeSession.sourceKey,
                     video.watchUrl,
@@ -241,7 +341,7 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
                     index != selectedIndex && video.sources[index].url !in newlyFailed
                 }
                 if (next != null) {
-                    message = "Автовосстановление: текущий поток недоступен, переключаюсь на источник ${next + 1}/${video.sources.size}…"
+                    message = "Переключаюсь на другой поток (${next + 1}/${video.sources.size})…"
                     selectedIndex = next
                     return
                 }
@@ -266,18 +366,21 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
                                 failedSourceUrls = emptySet()
                                 message = "Потоки обновлены, воспроизведение восстановлено."
                             } else {
-                                message = "${fresh.errorCode.ifBlank { error.errorCodeName }}: ${fresh.errorMessage.ifBlank { error.message.orEmpty().ifBlank { "ошибка воспроизведения" } }}"
+                                message = humanError(error)
                             }
                         }
                     }
                     return
                 }
 
-                message = "${error.errorCodeName}: ${error.message.orEmpty().ifBlank { "ошибка воспроизведения" }}"
+                message = humanError(error)
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_READY) {
+                    networkRetries = 0
+                    if (message.startsWith("Связь прервалась") || message.startsWith("Переключаюсь")) message = ""
+                    liveDurationMs = player.duration.takeIf { it != C.TIME_UNSET && it > 0L } ?: liveDurationMs
                     // A valid HTTP stream may still be a five-second hover preview.
                     // Prefer another candidate instead of declaring playback successful.
                     if (EngineParsing.isPreviewDuration(video.duration, player.duration)) {
@@ -285,6 +388,7 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
                             activeSession.sourceKey, video.watchUrl, source.url,
                             "media3_preview", "MEDIA3_PREVIEW_ONLY",
                         )
+                        logStore.add(activeSession.sourceKey, video.title, source.url, -1.0, "превью ${formatClock(player.duration.coerceAtLeast(0L))} — отброшено")
                         val rejected = failedSourceUrls + source.url
                         failedSourceUrls = rejected
                         val next = video.sources.indices.firstOrNull { index ->
@@ -299,6 +403,11 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
                         return
                     }
                     runtimeDiagnostics.recordPlayback(activeSession.sourceKey, video.watchUrl, source.url, "media3_ready")
+                    logStore.add(
+                        activeSession.sourceKey, video.title, source.url,
+                        (android.os.SystemClock.elapsedRealtime() - attemptStartMs).coerceAtLeast(0L) / 1000.0,
+                        "играет, ${formatClock(player.duration.coerceAtLeast(0L))}, вердикт ${activeSession.streamVerdict.ifBlank { "?" }}",
+                    )
                 }
             }
         }
@@ -372,6 +481,48 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
                 }
             }
         }
+    }
+
+    if (showStreamReport) {
+        val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+        val reportText = buildString {
+            appendLine("Источник: ${video.sourceName} (${activeSession.sourceKey})")
+            appendLine("Видео: ${video.title}")
+            appendLine("Страница: ${video.watchUrl}")
+            appendLine("Поток: ${source.url}")
+            appendLine("Вердикт: ${activeSession.streamVerdict.ifBlank { "не определён" }}")
+            if (activeSession.expectedSeconds > 0) appendLine("Ожидалось: ${formatClock(activeSession.expectedSeconds * 1000L)}")
+            appendLine("Реально: ${formatClock(liveDurationMs)}")
+            if (activeSession.streamNote.isNotBlank()) appendLine("Проверка: ${activeSession.streamNote}")
+            if (activeSession.streamDetails.isNotBlank()) { appendLine(); appendLine(activeSession.streamDetails) }
+            val rules = ruleStore.rules(activeSession.sourceKey)
+            if (rules.isNotEmpty()) { appendLine(); appendLine("Правила «не то видео»:"); rules.forEach { appendLine("  $it") } }
+            val log = logStore.dump(activeSession.sourceKey)
+            if (log.isNotBlank()) { appendLine(); appendLine("Журнал:"); appendLine(log) }
+        }
+        AlertDialog(
+            onDismissRequest = { showStreamReport = false },
+            title = { Text("Какой поток играет") },
+            text = {
+                androidx.compose.foundation.text.selection.SelectionContainer {
+                    Text(
+                        reportText,
+                        modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showStreamReport = false; rejectCurrentStream() }) { Text("Это превью / не то видео") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(reportText)) }) { Text("Копировать") }
+                    TextButton(onClick = { showStreamReport = false }) { Text("Закрыть") }
+                }
+            },
+        )
     }
 
     if (showAdaptiveDownloadDialog) {
@@ -474,6 +625,10 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
             onOpenSettings = { showPlaybackSettings = true },
             activity = activity,
             modifier = Modifier.fillMaxSize(),
+            onDownload = { requestDownload() },
+            audioOnly = audioOnly,
+            onAudioOnlyChange = { audioOnly = it },
+            title = video.title,
         )
         return
     }
@@ -487,6 +642,10 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
             onOpenSettings = { showPlaybackSettings = true },
             activity = activity,
             modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
+            onDownload = { requestDownload() },
+            audioOnly = audioOnly,
+            onAudioOnlyChange = { audioOnly = it },
+            title = video.title,
         )
 
         LazyColumn(
@@ -511,6 +670,17 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
                     ).filterNotNull().joinToString(" • ").ifBlank { video.sourceName },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            item {
+                StreamBadge(
+                    verdict = activeSession.streamVerdict,
+                    durationMs = liveDurationMs,
+                    format = formatLabel(source),
+                    size = Regex("""\d[\d.,]*\s?[КкМмГгKkMmGg][БбBb]""").find(activeSession.streamNote)?.value.orEmpty(),
+                    onClick = { showStreamReport = true },
+                    onReject = { rejectCurrentStream() },
                 )
             }
 
@@ -596,6 +766,41 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
                 )
             }
         }
+    }
+}
+
+private fun formatLabel(src: MediaSource): String = when {
+    src.protocol.equals("hls", true) || src.url.contains(".m3u8", true) -> "HLS"
+    src.protocol.equals("dash", true) || src.url.contains(".mpd", true) -> "DASH"
+    src.url.contains(".webm", true) || src.mimeType.contains("webm", true) -> "WEBM"
+    else -> "MP4"
+}
+
+@Composable
+private fun StreamBadge(
+    verdict: String,
+    durationMs: Long,
+    format: String,
+    size: String,
+    onClick: () -> Unit,
+    onReject: () -> Unit,
+) {
+    val (label, container, content) = when (verdict.lowercase()) {
+        "full" -> Triple("Полное", MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer)
+        "preview" -> Triple("Превью", MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.onErrorContainer)
+        else -> Triple("Не проверено", MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Surface(onClick = onClick, shape = MaterialTheme.shapes.large, color = container, contentColor = content, modifier = Modifier.weight(1f, fill = false)) {
+            Text(
+                listOfNotNull(label, durationMs.takeIf { it > 0L }?.let(::formatClock), format, size.takeIf { it.isNotBlank() }).joinToString(" · "),
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        TextButton(onClick = onReject) { Text("Это превью / не то") }
     }
 }
 

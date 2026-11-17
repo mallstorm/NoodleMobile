@@ -325,12 +325,17 @@ class SnpAutoBuilder(private val http: SecureHttpClient = SecureHttpClient()) {
             if (guesses.size >= 4) break
         }
         val s = best.template
-        if (s.contains('?')) guesses += "$s&page={page}" else {
+        if (s.contains('?')) {
+            guesses += "$s&page={page}"
+            guesses += "$s&search_start={page}"   // DLE
+            guesses += "$s&cstart={page}"
+            guesses += "$s&p={page}"
+        } else {
             guesses += "$s?page={page}"
             guesses += s.trimEnd('/') + "/{page}/"
             guesses += s.trimEnd('/') + "/page/{page}/"
         }
-        for (g in guesses.take(7)) {
+        for (g in guesses.take(10)) {
             val url = render(g, base, query, 2)
             val net = withTimeoutOrNull(PROBE_TIMEOUT_MS) { http.fetchText(url, policy(hosts), SOURCE_KEY) } ?: continue
             if (!net.success) continue

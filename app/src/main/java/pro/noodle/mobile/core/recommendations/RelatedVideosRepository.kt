@@ -21,6 +21,47 @@ class RelatedVideosRepository(
     private val relatedCache = ConcurrentHashMap<String, List<VideoItem>>()
     private val thumbnailSlots = Semaphore(2)
 
+    /**
+     * Прогрессивная загрузка: список растёт по мере готовности источников
+     * (страница просмотра → тот же сайт по запросам и страницам → остальные источники).
+     */
+    suspend fun loadProgressive(current: VideoItem, target: Int = 48, onUpdate: (List<VideoItem>) -> Unit): List<VideoItem> {
+        val currentKey = current.watchUrl.lowercase()
+        val acc = LinkedHashMap<String, VideoItem>()
+        fun add(items: List<VideoItem>) {
+            var changed = false
+            for (v in items) {
+                if (v.watchUrl.isBlank() || v.watchUrl.lowercase() == currentKey) continue
+                val k = "${v.sourceBaseUrl}|${v.remoteId}|${v.watchUrl}".lowercase()
+                if (acc.putIfAbsent(k, v) == null) changed = true
+            }
+            if (changed) onUpdate(acc.values.sortedByDescending { relevanceScore(current, it) })
+        }
+        add(runCatching { search.relatedFromWatchPage(current, 40) }.getOrNull()?.items.orEmpty())
+        val queries = RelatedQueryPlanner.expanded(current)
+        for ((i, q) in queries.withIndex()) {
+            if (acc.size >= target) break
+            for (page in 1..2) {
+                if (acc.size >= target) break
+                val batch = runCatching {
+                    search.searchSameSource(video = current, query = q, page = if (page == 1) -1 else page, maxPerSource = 24)
+                }.getOrNull()?.items.orEmpty()
+                add(batch)
+                if (batch.isEmpty()) break
+            }
+            if (i == 1 && acc.size < target) {
+                // Параллельно подтягиваем другие источники по лучшему запросу.
+                add(runCatching { search.search(queries.first(), maxPerSource = 12) }.getOrNull()?.items.orEmpty())
+            }
+        }
+        if (acc.size < target) {
+            queries.take(2).forEach { q -> add(runCatching { search.search(q, maxPerSource = 16) }.getOrNull()?.items.orEmpty()) }
+        }
+        val result = acc.values.sortedByDescending { relevanceScore(current, it) }
+        if (result.isNotEmpty()) relatedCache[current.watchUrl.ifBlank { current.id }.lowercase()] = result
+        return result
+    }
+
     suspend fun load(current: VideoItem, limit: Int = 8): List<VideoItem> {
         val cacheKey = current.watchUrl.ifBlank { current.id }.lowercase()
         relatedCache[cacheKey]?.let { return it.take(limit.coerceIn(4, 12)) }

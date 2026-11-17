@@ -14,8 +14,8 @@ android {
         minSdk = 28
         targetSdk = 37
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 120600
-        versionName = "0.12.6"
+        versionCode = 130000
+        versionName = "0.13.0"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
@@ -84,6 +84,7 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-hls:1.10.1")
     implementation("androidx.media3:media3-exoplayer-dash:1.10.1")
     implementation("androidx.media3:media3-ui:1.10.1")
+    implementation("androidx.media3:media3-session:1.10.1")
     implementation("androidx.media3:media3-datasource-okhttp:1.10.1")
     implementation("androidx.media3:media3-database:1.10.1")
     implementation("androidx.media3:media3-exoplayer-workmanager:1.10.1")
