@@ -20,9 +20,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import pro.noodle.mobile.core.newvideos.NewEntry
-import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
 
 /** Лента «Новое»: ролики, которые приложение обнаружило на источниках за выбранное окно (2–46 ч). */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -36,7 +34,7 @@ fun NewVideosScreen(newVm: NewVideosViewModel, searchVm: SearchViewModel, onClos
             Column(Modifier.weight(1f)) {
                 Text("Новое за ${st.windowHours} ч", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text(
-                    if (st.lastScanMs > 0) "Сканировали в ${SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(st.lastScanMs))} • источников с видео: ${st.sources}"
+                    if (st.lastScanMs > 0) "Сканировали в ${android.text.format.DateFormat.getTimeFormat(androidx.compose.ui.platform.LocalContext.current).format(Date(st.lastScanMs))} • источников с видео: ${st.sources}"
                     else "Ещё не сканировали",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
