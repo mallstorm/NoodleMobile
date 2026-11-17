@@ -69,8 +69,9 @@ class AdapterStudioService(context: Context) {
     suspend fun autoCreate(url: String, query: String, useAi: Boolean = true, onProgress: (String) -> Unit = {}): StudioAutoResult = withContext(Dispatchers.IO) {
         val provider = ai.selectedProvider()
         val aiReady = useAi && provider != StudioAiProvider.LOCAL && runCatching { ai.status(provider).connected }.getOrDefault(false)
-        val streamAi: pro.noodle.mobile.core.studio.auto.StreamAi? = if (aiReady) pro.noodle.mobile.core.studio.auto.StreamAi { system, user ->
-            runCatching { ai.complete(provider, ai.selectedModel(provider), system, user).json }.getOrNull()
+        val streamAi: pro.noodle.mobile.core.studio.auto.StreamAi? = if (aiReady) object : pro.noodle.mobile.core.studio.auto.StreamAi {
+            override suspend fun ask(system: String, user: String): String? =
+                runCatching { ai.complete(provider, ai.selectedModel(provider), system, user).json }.getOrNull()
         } else null
         val build = runCatching { autoBuilder.build(url, query, onProgress, streamAi) }.getOrElse { e ->
             return@withContext StudioAutoResult(false, errorCode = "AUTO_BUILD_CRASH", message = "${e.javaClass.simpleName}: ${e.message}")

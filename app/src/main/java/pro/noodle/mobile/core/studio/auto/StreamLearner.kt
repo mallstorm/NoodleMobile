@@ -27,7 +27,7 @@ import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 
 /** One question to the model: returns the raw reply text, or null when AI is unavailable. */
-fun interface StreamAi {
+interface StreamAi {
     suspend fun ask(system: String, user: String): String?
 }
 
@@ -196,12 +196,12 @@ class StreamLearner(private val http: SecureHttpClient, private val strategies: 
         var prefer = ""
         var reject = ""
         if (decoys.isNotEmpty()) {
-            val tf = truths.map(::features)
-            val df = decoys.map(::features)
+            val tf = truths.map { features(it) }
+            val df = decoys.map { features(it) }
             val onlyTruth = tf.reduce { a, b -> a intersect b } - df.fold(emptySet<String>()) { a, b -> a union b }
             val onlyDecoy = df.reduce { a, b -> a intersect b } - tf.fold(emptySet<String>()) { a, b -> a union b }
-            prefer = onlyTruth.sortedBy(::priority).firstOrNull()?.let(::toRegex).orEmpty()
-            reject = onlyDecoy.sortedBy(::priority).firstOrNull()?.let(::toRegex).orEmpty()
+            prefer = onlyTruth.sortedBy { priority(it) }.firstOrNull()?.let { toRegex(it) }.orEmpty()
+            reject = onlyDecoy.sortedBy { priority(it) }.firstOrNull()?.let { toRegex(it) }.orEmpty()
             log += "Отличие настоящего от превью: prefer='$prefer' reject='$reject'"
         }
         val decoyMax = evidence.flatMap { e -> e.candidates.filter { it.decoy && !it.truth && it.facts.durationSec >= 0 }.map { it.facts.durationSec } }.maxOrNull()
