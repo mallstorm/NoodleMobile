@@ -262,7 +262,7 @@ object Mp4Duration {
 object DurationText {
     private val iso = Regex("P(?:T)?(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+(?:\\.\\d+)?)S)?", RegexOption.IGNORE_CASE)
     private val clock = Regex("(?<![\\d:])(\\d{1,2}):(\\d{2})(?::(\\d{2}))?(?![\\d:])")
-    private val words = Regex("(\\d+)\\s*(h|ч|m|min|мин|s|sec|сек)\\b", RegexOption.IGNORE_CASE)
+    private val words = Regex("(\\d+)\\s*(h|ч|m|min|мин|s|sec|сек)(?!\\p{L})", RegexOption.IGNORE_CASE)
 
     fun seconds(text: String): Int {
         val t = text.trim()
