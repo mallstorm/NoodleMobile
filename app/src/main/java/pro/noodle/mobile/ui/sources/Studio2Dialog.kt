@@ -164,7 +164,7 @@ internal fun Studio2Dialog(
                     }
 
                     if (state.autoSteps.isNotEmpty()) StudioSteps(state.autoSteps, state.autoBusy)
-                    if (state.autoDone) StudioAutoResultCard(state, onInstall = { vm.installAuto(onSaved) }, onAdvanced = { advanced = true })
+                    if (state.autoDone) StudioAutoResultCard(state, onInstall = { vm.installAuto(onSaved) }, onAdvanced = { advanced = true }, onAgent = { if (state.studioConnected && state.studioProvider != StudioAiProvider.LOCAL && state.studioModel.isNotBlank()) vm.aiDiagnose() else advanced = true })
 
                     HorizontalDivider()
                     TextButton(onClick = { advanced = !advanced }, modifier = Modifier.fillMaxWidth()) {
@@ -234,7 +234,7 @@ private fun StudioSteps(steps: List<String>, busy: Boolean) {
 }
 
 @Composable
-private fun StudioAutoResultCard(state: SourceToolsUiState, onInstall: () -> Unit, onAdvanced: () -> Unit) {
+private fun StudioAutoResultCard(state: SourceToolsUiState, onInstall: () -> Unit, onAdvanced: () -> Unit, onAgent: () -> Unit) {
     val ok = state.autoHealthy
     val accent = if (ok) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error
     ElevatedCard(Modifier.fillMaxWidth()) {
@@ -274,9 +274,16 @@ private fun StudioAutoResultCard(state: SourceToolsUiState, onInstall: () -> Uni
             when {
                 state.autoInstalled -> Text("Сайт уже участвует в общем поиске. Его можно отключить в списке источников.", style = MaterialTheme.typography.bodySmall)
                 ok -> Button(onClick = onInstall, enabled = !state.autoBusy, modifier = Modifier.fillMaxWidth()) { Text("Добавить сайт в поиск") }
-                else -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (state.studioJson.isNotBlank()) OutlinedButton(onClick = onInstall, enabled = !state.autoBusy) { Text("Всё равно добавить") }
-                    FilledTonalButton(onClick = onAdvanced) { Text("Расширенный режим") }
+                else -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = onAgent, enabled = !state.autoBusy, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Outlined.AutoAwesome, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Разобрать ошибку нейросетью")
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (state.studioJson.isNotBlank()) OutlinedButton(onClick = onInstall, enabled = !state.autoBusy) { Text("Всё равно добавить") }
+                        FilledTonalButton(onClick = onAdvanced) { Text("Расширенный режим") }
+                    }
                 }
             }
             if (state.studioTestDetails.isNotBlank()) {
@@ -303,6 +310,28 @@ private fun StudioAdvancedSection(state: SourceToolsUiState, vm: SourceToolsView
         minLines = 3,
         maxLines = 6,
     )
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("AI-агент: детальный разбор ошибки", fontWeight = FontWeight.SemiBold)
+            Text(
+                "Нейросеть получит отчёт и текущий адаптер, сама откроет сайт, найдёт поиск, карточки, обложки и потоки, поправит adapter.json и проверит его реальным тестом плеера. Задание писать не нужно.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            val ready = state.studioConnected && state.studioProvider != StudioAiProvider.LOCAL && state.studioModel.isNotBlank()
+            Button(
+                onClick = vm::aiDiagnose,
+                enabled = ready && !state.autoBusy && state.studioUrl.isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.Outlined.AutoAwesome, null)
+                Spacer(Modifier.width(8.dp))
+                Text(if (state.autoBusy) "AI работает…" else "Детально разобрать ошибку нейросетью")
+            }
+            if (!ready) Text("Ниже выберите Kilo Code или Cline, войдите и выберите модель.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+            if (state.autoSteps.isNotEmpty() && state.autoBusy) StudioSteps(state.autoSteps, true)
+        }
+    }
         Text("Обработка", fontWeight = FontWeight.SemiBold)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             StudioAiProvider.entries.forEach { provider ->

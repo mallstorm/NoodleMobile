@@ -371,7 +371,7 @@ internal fun PlayerVideoSurface(
                         )
                     }
                     val seekable = durationMs > 0L && player.isCurrentMediaItemSeekable
-                    Slider(
+                    pro.noodle.mobile.ui.NoodleSlider(
                         value = (if (scrubbing) scrubPosition else positionMs).coerceIn(0L, durationMs.coerceAtLeast(1L)).toFloat(),
                         onValueChange = { value ->
                             if (!scrubbing) {
@@ -396,7 +396,10 @@ internal fun PlayerVideoSurface(
                         },
                         enabled = seekable,
                         valueRange = 0f..durationMs.coerceAtLeast(1L).toFloat(),
-                        modifier = Modifier.fillMaxWidth().height(28.dp).align(Alignment.BottomCenter),
+                        modifier = Modifier.fillMaxWidth().height(32.dp).align(Alignment.BottomCenter),
+                        thumbSize = 18.dp,
+                        ringWidth = 5.dp,
+                        trackHeight = 5.dp,
                     )
                 }
             }

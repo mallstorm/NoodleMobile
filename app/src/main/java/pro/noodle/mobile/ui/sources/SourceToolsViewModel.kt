@@ -16,6 +16,7 @@ import pro.noodle.mobile.core.catalog.MarketplaceRepository
 import pro.noodle.mobile.core.catalog.TrustedCatalogKey
 import pro.noodle.mobile.core.catalog.VerifiedCatalog
 import pro.noodle.mobile.core.studio.AdapterStudioService
+import pro.noodle.mobile.core.studio.agent.StudioAiAgent
 import pro.noodle.mobile.core.studio.StudioAiCandidateRepairService
 import pro.noodle.mobile.core.studio.StudioAiModel
 import pro.noodle.mobile.core.studio.StudioAiProvider
@@ -73,6 +74,7 @@ class SourceToolsViewModel(app: Application) : AndroidViewModel(app) {
     private val studio = AdapterStudioService(app)
     private val studioBrowser = StudioBrowserRecoveryService(app)
     private val studioAiRepair = StudioAiCandidateRepairService(app)
+    private val studioAgent = StudioAiAgent(app)
     private val studioBackup = StudioBackupService(app)
     private val studioAi = StudioAiRouter(app)
     private val initialProvider = studioAi.selectedProvider()
@@ -209,6 +211,38 @@ class SourceToolsViewModel(app: Application) : AndroidViewModel(app) {
                 studioTestStatus = result.testStatus,
                 studioTestDetails = result.testDetails,
                 studioMessage = result.message,
+            )
+        }
+    }
+
+    /** AI-агент: получает отчёт, сам ходит на сайт через инструменты приложения, правит адаптер и подтверждает реальным тестом. */
+    fun aiDiagnose() = viewModelScope.launch {
+        val st = _state.value
+        if (st.autoBusy || st.studioUrl.isBlank()) return@launch
+        if (st.studioProvider == StudioAiProvider.LOCAL || !st.studioConnected || st.studioModel.isBlank()) {
+            _state.update { it.copy(error = "Для разбора нейросетью войдите в Kilo Code или Cline и выберите модель (Расширенный режим).") }
+            return@launch
+        }
+        _state.update { it.copy(autoBusy = true, autoDone = false, autoHealthy = false, autoSteps = listOf("AI-агент запущен: ${st.studioProvider.title}"), autoError = "", error = "") }
+        val r = studioAgent.run(
+            provider = st.studioProvider, model = st.studioModel, targetUrl = st.studioUrl, query = st.studioQuery,
+            currentJson = st.studioJson, report = st.studioTestDetails.ifBlank { st.studioMessage },
+            userTask = st.studioInstruction,
+        ) { step -> _state.update { it.copy(autoSteps = (it.autoSteps + step).takeLast(12)) } }
+        val counts = Regex("search=(\\d+) • playback=(\\d+)").find(r.testDetails)
+        _state.update {
+            it.copy(
+                autoBusy = false,
+                autoDone = true,
+                autoHealthy = r.healthy,
+                autoSearchCount = counts?.groupValues?.get(1)?.toIntOrNull() ?: it.autoSearchCount,
+                autoPlaybackReady = counts?.groupValues?.get(2)?.toIntOrNull() ?: it.autoPlaybackReady,
+                autoStreamInfo = "AI: ${r.model} • шагов: ${r.toolCalls}",
+                autoError = if (r.healthy) "" else r.summary,
+                studioJson = r.json.ifBlank { it.studioJson },
+                studioTestStatus = r.testStatus,
+                studioMessage = r.summary,
+                studioTestDetails = "AI: ${r.summary}\n\n${r.testDetails}\n\n--- ЖУРНАЛ AI-АГЕНТА ---\n${r.transcript.takeLast(24_000)}",
             )
         }
     }

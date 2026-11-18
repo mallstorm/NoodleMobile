@@ -27,6 +27,7 @@ import java.util.Date
 @Composable
 fun NewVideosScreen(newVm: NewVideosViewModel, searchVm: SearchViewModel, onClose: () -> Unit) {
     val st by newVm.state.collectAsState()
+    val play by searchVm.state.collectAsState()
     BackHandler(onBack = onClose)
     Column(Modifier.fillMaxSize().padding(horizontal = 14.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -45,6 +46,18 @@ fun NewVideosScreen(newVm: NewVideosViewModel, searchVm: SearchViewModel, onClos
         if (st.scanning) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 6.dp))
         if (st.message.isNotBlank() && !st.scanning) {
             Text(st.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+        }
+        // Раньше при нажатии на ролик экран «Новое» не показывал ни загрузку, ни ошибку — казалось, что нажатие не работает.
+        if (play.resolving) {
+            LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 6.dp))
+            Text("Открываю видео…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
+        } else if (play.message.isNotBlank()) {
+            ElevatedCard(Modifier.fillMaxWidth().padding(top = 6.dp), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                Row(Modifier.padding(start = 12.dp, top = 6.dp, bottom = 6.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Не удалось открыть: ${play.message}", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                    TextButton(onClick = searchVm::clearMessage) { Text("Скрыть") }
+                }
+            }
         }
         Spacer(Modifier.height(8.dp))
         if (st.items.isEmpty()) {

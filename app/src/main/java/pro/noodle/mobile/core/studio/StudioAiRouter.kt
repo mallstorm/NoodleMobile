@@ -142,6 +142,27 @@ class StudioAiRouter(context: Context) {
         systemPrompt: String,
         userPrompt: String,
     ): StudioAiReply = withContext(Dispatchers.IO) {
+        val reply = chat(
+            provider, model,
+            listOf("system" to systemPrompt, "user" to userPrompt),
+            maxTokens = 7000,
+        )
+        val adapterJson = extractJsonObject(reply.json)
+            ?: throw IllegalStateException("AI не вернул JSON-объект adapter.json")
+        StudioAiReply(adapterJson, reply.model)
+    }
+
+    /**
+     * Multi-turn chat over the provider's OpenAI-compatible gateway. Returns the raw assistant text
+     * (in [StudioAiReply.json]) so callers can implement their own protocol on top (agent loop).
+     */
+    suspend fun chat(
+        provider: StudioAiProvider,
+        model: String,
+        messages: List<Pair<String, String>>,
+        maxTokens: Int = 4000,
+        temperature: Double = 0.1,
+    ): StudioAiReply = withContext(Dispatchers.IO) {
         require(provider != StudioAiProvider.LOCAL) { "Для локального режима AI-вызов не требуется" }
         val chosen = model.trim().ifBlank {
             modelCatalog(provider).firstOrNull()?.id.orEmpty()
@@ -162,17 +183,14 @@ class StudioAiRouter(context: Context) {
             StudioAiProvider.CLINE -> CLINE_OPENAI_BASE
             StudioAiProvider.LOCAL -> error("Локальный режим")
         }
+        val array = JSONArray()
+        messages.forEach { (role, content) -> array.put(JSONObject().put("role", role).put("content", content)) }
         val body = JSONObject()
             .put("model", chosen)
-            .put("temperature", 0.1)
+            .put("temperature", temperature)
             .put("stream", false)
-            .put("max_tokens", 7000)
-            .put(
-                "messages",
-                JSONArray()
-                    .put(JSONObject().put("role", "system").put("content", systemPrompt))
-                    .put(JSONObject().put("role", "user").put("content", userPrompt)),
-            )
+            .put("max_tokens", maxTokens)
+            .put("messages", array)
         val builder = Request.Builder()
             .url("${base.trimEnd('/')}/chat/completions")
             .header("Authorization", "Bearer $auth")
@@ -189,9 +207,7 @@ class StudioAiRouter(context: Context) {
         }
         val content = messageContent(response.json)
         if (content.isBlank()) throw IllegalStateException("${provider.title} вернул пустой ответ")
-        val adapterJson = extractJsonObject(content)
-            ?: throw IllegalStateException("AI не вернул JSON-объект adapter.json")
-        StudioAiReply(adapterJson, chosen)
+        StudioAiReply(content, chosen)
     }
 
     private fun beginKiloLogin(): StudioDeviceLogin {

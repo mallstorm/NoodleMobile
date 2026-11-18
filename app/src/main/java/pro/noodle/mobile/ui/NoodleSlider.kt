@@ -28,6 +28,11 @@ fun NoodleSlider(
     modifier: Modifier = Modifier,
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
     steps: Int = 0,
+    enabled: Boolean = true,
+    onValueChangeFinished: (() -> Unit)? = null,
+    thumbSize: androidx.compose.ui.unit.Dp = 26.dp,
+    ringWidth: androidx.compose.ui.unit.Dp = 6.dp,
+    trackHeight: androidx.compose.ui.unit.Dp = 8.dp,
 ) {
     val scheme = MaterialTheme.colorScheme
     Slider(
@@ -36,13 +41,15 @@ fun NoodleSlider(
         modifier = modifier,
         valueRange = valueRange,
         steps = steps,
+        enabled = enabled,
+        onValueChangeFinished = onValueChangeFinished,
         thumb = {
             Box(
                 Modifier
-                    .size(26.dp)
+                    .size(thumbSize)
                     .shadow(4.dp, CircleShape)
                     .background(scheme.surface, CircleShape)
-                    .border(BorderStroke(6.dp, scheme.primary), CircleShape),
+                    .border(BorderStroke(ringWidth, if (enabled) scheme.primary else scheme.outline), CircleShape),
             )
         },
         track = { state ->
@@ -51,7 +58,7 @@ fun NoodleSlider(
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .height(8.dp)
+                    .height(trackHeight)
                     .clip(CircleShape)
                     .background(scheme.primaryContainer.copy(alpha = .55f)),
             ) {

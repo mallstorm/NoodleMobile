@@ -340,6 +340,8 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     fun streamingClient(session: PlaybackSession): OkHttpClient =
         http.streamingClient(session.networkPolicy, session.sourceKey)
 
+    fun clearMessage() = _state.update { it.copy(message = "") }
+
     fun closePlayer() {
         resolveJob?.cancel()
         _state.update { it.copy(playback = null, resolving = false) }
