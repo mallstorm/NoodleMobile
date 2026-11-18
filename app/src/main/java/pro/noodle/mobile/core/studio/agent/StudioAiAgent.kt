@@ -183,6 +183,7 @@ class StudioAiAgent(context: Context) {
         "fetch_page" -> fetchPage(args)
         "list_cards" -> listCards(args, query)
         "find_streams" -> findStreams(args)
+        "sniff_page" -> sniffPage(args)
         "run_adapter_test" -> {
             val json = adapterArg(args) ?: return "ERROR: args.adapter_json is required"
             val v = certify(json)
@@ -200,7 +201,7 @@ class StudioAiAgent(context: Context) {
                 items.take(10).forEach { appendLine("- ${it.title.take(70)} | ${it.watchUrl} | cover=${it.thumbnailUrl.take(90)} | ${it.duration}") }
             }
         }
-        else -> "UNKNOWN TOOL '$tool'. Available: fetch_page, list_cards, find_streams, search_only, run_adapter_test, finish, give_up."
+        else -> "UNKNOWN TOOL '$tool'. Available: fetch_page, list_cards, find_streams, sniff_page, search_only, run_adapter_test, finish, give_up."
     }
 
     private fun adapterArg(args: JSONObject): String? = when (val a = args.opt("adapter_json")) {
@@ -319,6 +320,35 @@ class StudioAiAgent(context: Context) {
         return out.toString()
     }
 
+    /** Запускает страницу в скрытом браузере (JS + autoplay + клик по play) и возвращает потоки, которые плеер запросил сам. */
+    private suspend fun sniffPage(args: JSONObject): String {
+        val url = args.optString("url").trim()
+        if (!url.startsWith("https://", true)) return "ERROR: args.url must be an absolute https URL of a watch page (or player iframe)"
+        val def = pro.noodle.mobile.core.adapter.AdapterDefinition(
+            id = "sniff", name = "sniff", baseUrl = url, engine = "generic_html5",
+            allowedHosts = emptyList(), allowJavaScript = true, allowCookies = true,
+        )
+        val res = withTimeoutOrNull(30_000) { pro.noodle.mobile.core.web.SandboxedWebExtractor(app).extract(url, def, timeoutMs = 16_000) }
+            ?: return "ERROR: browser timeout 30s"
+        if (!res.success) return "BROWSER ERROR ${res.errorCode}: ${res.errorMessage}"
+        val out = StringBuilder("BROWSER final=${res.finalUrl} • DOM ${res.html.length} chars\n")
+        out.appendLine("REQUESTED BY THE PLAYER (media-like requests; the file itself was not downloaded):")
+        if (res.capturedMedia.isEmpty()) out.appendLine("  none — the player did not start by itself (needs a real click/login/age gate, or the video lives in a cross-origin iframe: sniff_page the iframe URL directly).")
+        res.capturedMedia.take(12).forEach { out.appendLine("  ${it.take(240)}") }
+        val mined = runCatching { DeepMediaMiner.mine(res.html, res.finalUrl.ifBlank { url }, emptyList(), 16) }.getOrDefault(emptyList())
+        val urls = (res.capturedMedia + mined.map { it.url }).distinct().take(8)
+        if (urls.isNotEmpty()) {
+            val client = http.streamingClient(policy(), keyFor(url))
+            val facts = coroutineScope {
+                urls.map { u -> async(Dispatchers.IO) { u to (withTimeoutOrNull(10_000) { StreamProbe(client, url).probe(MediaSource(url = u)) }) } }.awaitAll()
+            }
+            out.appendLine("PROBED:")
+            facts.forEach { (u, f) -> out.appendLine("- ${f?.brief() ?: "timeout"}\n    ${u.take(220)}") }
+        }
+        out.appendLine("Hint: set permissions.allow_javascript=true and allow_cookies=true in the adapter — then the app opens the watch page in the same hidden browser at playback time and picks these streams up automatically. Add the CDN hosts to allowed_hosts only if the test reports host blocked.")
+        return out.toString()
+    }
+
     // ------------------------------------------------------------------ protocol
 
     private data class Action(val tool: String, val args: JSONObject, val thought: String)
@@ -355,6 +385,7 @@ class StudioAiAgent(context: Context) {
     private fun stepTitle(tool: String, args: JSONObject): String = when (tool) {
         "fetch_page" -> "AI открывает страницу: ${args.optString("url").removePrefix("https://").take(60)}"
         "list_cards" -> "AI ищет карточки: ${args.optString("url").removePrefix("https://").take(60)}"
+        "sniff_page" -> "AI запускает плеер в браузере: ${args.optString("url").removePrefix("https://").take(55)}"
         "find_streams" -> "AI ищет потоки: ${args.optString("url").removePrefix("https://").take(60)}"
         "search_only" -> "AI проверяет поиск адаптера…"
         "run_adapter_test" -> "AI прогоняет адаптер через плеер…"
@@ -400,6 +431,9 @@ class StudioAiAgent(context: Context) {
 - find_streams {"url":"<watch page or iframe URL>", "extract":["<regex with group 1 = media URL>", ...]}
   Mines the page and its first iframes for mp4/m3u8/mpd/webm URLs (JSON keys, atob, escaped slashes, playerjs) and probes each with
   the app's StreamProbe: HTTP status, content-type, size, duration, hls/dash, live/encrypted. Use it to tell preview from full video.
+- sniff_page {"url":"<watch page or iframe URL>"}
+  Opens the page in the app's hidden browser: runs JavaScript, starts the player (autoplay, clicks Play) and records the media URLs the
+  page requests itself. Use it when find_streams says NO MEDIA URLS (stream built by JS, encrypted/packed config, token API, balancer iframe).
 - search_only {"adapter_json":{...}, "query":"..."}
   Quick search stage with a candidate adapter (no playback): number of cards, covers, durations.
 - run_adapter_test {"adapter_json":{...}}

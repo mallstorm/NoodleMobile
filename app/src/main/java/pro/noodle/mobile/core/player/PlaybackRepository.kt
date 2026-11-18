@@ -67,6 +67,12 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
         var initialText = page.text
         var initialUrl = page.finalUrl.ifBlank { video.watchUrl }
         var usedWeb = false
+        var webHtml = ""
+        fun rememberHosts(urls: List<String>) {
+            urls.forEach { u ->
+                if (u.startsWith("https://", true)) runCatching { android.net.Uri.parse(u).host?.lowercase()?.trimEnd('.') }.getOrNull()?.takeIf { it.isNotBlank() }?.let { discoveredHosts += it }
+            }
+        }
 
         if (!page.success) {
             if (!adapter.allowJavaScript) {
@@ -86,6 +92,8 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
             initialText = extracted.html
             initialUrl = extracted.finalUrl.ifBlank { video.watchUrl }
             usedWeb = true
+            webHtml = extracted.html
+            rememberHosts(extracted.capturedMedia)
         }
 
         val fetchedPages = mutableListOf<Pair<String, String>>()
@@ -105,6 +113,8 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
                 additionalAllowedHosts = discoveredHosts,
             )
             if (extracted.success) {
+                webHtml = extracted.html
+                rememberHosts(extracted.capturedMedia)
                 val jsResolved = ResolverPipeline.resolve(
                     extracted.html,
                     extracted.finalUrl.ifBlank { initialUrl },
@@ -119,7 +129,7 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
 
         if (safeSources.isEmpty()) {
             // Standard engines found nothing: dig through JSON blobs, escaped strings and atob() payloads.
-            val mined = DeepMediaMiner.mine(initialText, initialUrl, adapter.streamExtract).filter { admitMediaSource(it, adapter, discoveredHosts) }
+            val mined = DeepMediaMiner.mine(if (webHtml.isBlank() || webHtml == initialText) initialText else initialText + "\n" + webHtml, initialUrl, adapter.streamExtract).filter { admitMediaSource(it, adapter, discoveredHosts) }
             if (mined.isNotEmpty()) {
                 resolved = resolved.copy(success = true, sources = mined, errorCode = "", errorMessage = "")
                 safeSources = mined

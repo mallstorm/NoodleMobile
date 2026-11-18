@@ -105,3 +105,11 @@ Every reply must be exactly ONE JSON object and nothing else (no markdown fences
 `{"thought":"<short reasoning>","tool":"<tool name>","args":{...}}`
 For `finish`, put the full adapter object in `args.adapter_json` (an object, not a string) and a short Russian
 `args.summary` for the user (what was wrong, what you changed, what the live test showed).
+
+## Hard sites: when find_streams finds nothing
+
+Escalate in this order; never give up before step 3:
+1. `fetch_page` with grep `(m3u8|mp4|mediaDefinitions|setVideo|eval\(function|file\s*:|source|iframe)` — the app already unpacks `eval(function(p,a,c,k,e,d)…)`, `fromCharCode`, `\xNN` strings, base64, `mediaDefinitions` (videoUrl per quality) and `html5player.setVideoHLS/UrlHigh/UrlLow`, so a stream hidden that way is found by `find_streams`.
+2. If the player sits in a cross-origin iframe, take the iframe URL from `IFRAMES:` and run `find_streams` / `sniff_page` on it directly.
+3. `sniff_page` on the watch page (or iframe): the hidden browser runs JS, starts the player, and records every media request. This is the universal fallback for tokenised APIs, balancers (Kodik/Alloha/Collaps-style iframes), PlayerJS-encrypted `file:"#2…"` values and streams built by JavaScript. If it finds the stream, set `allow_javascript:true` and `allow_cookies:true` in the adapter; at playback the app repeats the same browser run automatically.
+4. Streams that exist only after a login, captcha or age gate cannot be reached: say so in `give_up` with the exact reason.

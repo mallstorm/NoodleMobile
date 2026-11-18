@@ -29,6 +29,8 @@ class SandboxedWebExtractor(private val context: Context) {
         adapter: AdapterDefinition,
         timeoutMs: Long = 12_000,
         additionalAllowedHosts: Set<String> = emptySet(),
+        /** Запускать плеер (autoplay + клик по play) и записывать потоки, которые страница запрашивает сама. */
+        sniff: Boolean = true,
     ): WebExtractResult = mutex.withLock {
         if (!adapter.allowJavaScript) {
             return WebExtractResult(false, errorCode = "WEB_JS_NOT_ALLOWED", errorMessage = "SNP не разрешает JavaScript.")
@@ -37,7 +39,7 @@ class SandboxedWebExtractor(private val context: Context) {
             return WebExtractResult(false, errorCode = "WEB_URL_BLOCKED", errorMessage = "URL не прошёл SNP/security policy.")
         }
         try {
-            withTimeout(timeoutMs) { extractOnMain(url, adapter, additionalAllowedHosts) }
+            withTimeout(timeoutMs + if (sniff) SNIFF_EXTRA_MS else 0L) { extractOnMain(url, adapter, additionalAllowedHosts, sniff) }
         } catch (_: TimeoutCancellationException) {
             WebExtractResult(false, errorCode = "WEB_TIMEOUT", errorMessage = "JavaScript extraction превысил ${timeoutMs} мс.")
         } catch (e: Exception) {
@@ -50,6 +52,7 @@ class SandboxedWebExtractor(private val context: Context) {
         url: String,
         adapter: AdapterDefinition,
         additionalAllowedHosts: Set<String>,
+        sniff: Boolean,
     ): WebExtractResult = withContext(Dispatchers.Main.immediate) {
         suspendCancellableCoroutine { cont ->
             val cookies = CookieManager.getInstance()
@@ -65,6 +68,7 @@ class SandboxedWebExtractor(private val context: Context) {
                 javaScriptCanOpenWindowsAutomatically = false
                 setSupportMultipleWindows(false)
                 loadsImagesAutomatically = false
+                if (sniff) mediaPlaybackRequiresUserGesture = false
                 mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
                 if (Build.VERSION.SDK_INT >= 26) safeBrowsingEnabled = true
             }
@@ -72,6 +76,7 @@ class SandboxedWebExtractor(private val context: Context) {
             CookieManager.getInstance().setAcceptThirdPartyCookies(web, false)
             var finished = false
             var challengeWaits = 0
+            val captured = java.util.Collections.synchronizedSet(LinkedHashSet<String>())
             fun close(result: WebExtractResult) {
                 if (finished) return
                 finished = true
@@ -97,8 +102,14 @@ class SandboxedWebExtractor(private val context: Context) {
                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest): Boolean =
                     !allowed(request.url.toString(), adapter, additionalAllowedHosts, resolveDns = true)
 
-                override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest): WebResourceResponse? =
-                    if (allowed(request.url.toString(), adapter, additionalAllowedHosts, resolveDns = true)) null else blockedResponse()
+                override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest): WebResourceResponse? {
+                    val u = request.url.toString()
+                    val media = sniff && looksLikeMediaRequest(u, request.requestHeaders)
+                    if (media && captured.size < 24 && u.startsWith("https://", true)) captured.add(u)
+                    // Сам поток не качаем: нам нужен только его адрес.
+                    if (media) return blockedResponse()
+                    return if (allowed(u, adapter, additionalAllowedHosts, resolveDns = true)) null else blockedResponse()
+                }
 
                 override fun onReceivedSslError(
                     view: WebView?,
@@ -126,21 +137,40 @@ class SandboxedWebExtractor(private val context: Context) {
                         )
                         return
                     }
-                    view.postDelayed({
-                        if (finished) return@postDelayed
+                    fun finishNow() {
+                        if (finished) return
                         view.evaluateJavascript(RUNTIME_DOM_SCRIPT) { encoded ->
                             val html = decodeJsString(encoded)
                             // JS-проверка браузера: заглушка сама перезагрузит страницу — ждём настоящий DOM.
                             if (pro.noodle.mobile.core.network.CookieChallenge.looksLikeChallenge(html) && challengeWaits++ < 5) return@evaluateJavascript
+                            val seen = synchronized(captured) { captured.toList() }
+                            val withSniff = if (seen.isEmpty()) html else html + "\n<!--NOODLE_RUNTIME_MEDIA\n" + seen.joinToString("\n") + "\n-->"
                             close(
                                 if (html.isNotBlank()) {
-                                    WebExtractResult(true, finalUrl = url, html = html)
+                                    WebExtractResult(true, finalUrl = url, html = withSniff, capturedMedia = seen)
                                 } else {
                                     WebExtractResult(false, errorCode = "WEB_EMPTY_DOM", errorMessage = "WebView не вернул DOM.")
                                 }
                             )
                         }
-                    }, 900L)
+                    }
+                    if (!sniff) {
+                        view.postDelayed({ finishNow() }, 900L)
+                        return
+                    }
+                    // Запускаем плеер и ждём, пока страница сама запросит поток (до ~5 с).
+                    fun poll(attempt: Int) {
+                        view.postDelayed({
+                            if (finished) return@postDelayed
+                            when {
+                                captured.isNotEmpty() && attempt >= 1 -> view.postDelayed({ finishNow() }, 600L)
+                                attempt >= 6 -> finishNow()
+                                else -> { view.evaluateJavascript(ACTIVATE_SCRIPT, null); poll(attempt + 1) }
+                            }
+                        }, 800L)
+                    }
+                    view.postDelayed({ if (!finished) view.evaluateJavascript(ACTIVATE_SCRIPT, null) }, 300L)
+                    poll(0)
                 }
             }
             cont.invokeOnCancellation {
@@ -205,6 +235,37 @@ class SandboxedWebExtractor(private val context: Context) {
 
     companion object {
         private val mutex = Mutex()
+        private const val SNIFF_EXTRA_MS = 7_000L
+        private val mediaExt = Regex("\\.(?:mp4|m4v|webm|m3u8|mpd|m4s|ts|mov)(?:[?#]|$)", RegexOption.IGNORE_CASE)
+        private val imageExt = Regex("\\.(?:jpe?g|png|webp|gif|svg|ico|css|js|woff2?|ttf|vtt|srt)(?:[?#]|$)", RegexOption.IGNORE_CASE)
+
+        /** Запрос плеера за медиа: по расширению, по типичным путям CDN или по заголовку Range (его шлёт <video>). */
+        internal fun looksLikeMediaRequest(url: String, headers: Map<String, String>?): Boolean {
+            if (imageExt.containsMatchIn(url.substringBefore('#'))) return false
+            if (mediaExt.containsMatchIn(url)) return true
+            val u = url.lowercase()
+            if (u.contains("/get_file/") || u.contains("/videoplayback") || u.contains("/hls/") && u.contains("m3u8")) return true
+            return headers?.keys?.any { it.equals("Range", true) } == true
+        }
+
+        private val ACTIVATE_SCRIPT = """
+            (function() {
+              function run(doc) {
+                try {
+                  var sel = ['.vjs-big-play-button','.jw-icon-display','.jw-display-icon-container','.plyr__control--overlaid',
+                    '.fp-play','.ytp-large-play-button','.play-btn','.play-button','.btn-play','.big-play','.video-play',
+                    '[class*="play-btn"]','[class*="playBtn"]','[class*="PlayButton"]','[aria-label*="Play" i]','[title*="Play" i]',
+                    '[title*="Смотреть" i]','[title*="Воспроизвести" i]','#play','.play'];
+                  sel.forEach(function(s) { try { doc.querySelectorAll(s).forEach(function(e, i) { if (i < 2) e.click(); }); } catch (e) {} });
+                  doc.querySelectorAll('video').forEach(function(v) {
+                    try { v.muted = true; v.setAttribute('playsinline', ''); var p = v.play(); if (p && p.catch) p.catch(function(){}); } catch (e) {}
+                  });
+                } catch (e) {}
+              }
+              run(document);
+              try { document.querySelectorAll('iframe').forEach(function(f) { try { if (f.contentDocument) run(f.contentDocument); } catch (e) {} }); } catch (e) {}
+            })();
+        """.trimIndent()
 
         private val RUNTIME_DOM_SCRIPT = """
             (function() {
@@ -243,4 +304,6 @@ data class WebExtractResult(
     val html: String = "",
     val errorCode: String = "",
     val errorMessage: String = "",
+    /** Адреса потоков, которые страница реально запросила (в порядке появления). */
+    val capturedMedia: List<String> = emptyList(),
 )

@@ -106,6 +106,14 @@ object DeepMediaMiner {
         Regex("[\"']contentUrl[\"']\\s*:\\s*[\"']([^\"']+)[\"']", RegexOption.IGNORE_CASE),
     )
 
+    /** Блок «NOODLE_RUNTIME_MEDIA», который скрытый браузер дописывает к DOM: потоки, реально запрошенные плеером. */
+    private val runtimeBlock = Regex("<!--NOODLE_RUNTIME_MEDIA\\n([\\s\\S]*?)\\n-->")
+    /** Pornhub/RedTube/YouPorn-подобные: "mediaDefinitions":[{"format":"hls","quality":"720","videoUrl":"…"}]. */
+    private val mediaDef = Regex("\\{[^{}]*?\"videoUrl\"\\s*:\\s*\"([^\"]+)\"[^{}]*?\\}", RegexOption.IGNORE_CASE)
+    private val mediaDefQuality = Regex("\"quality\"\\s*:\\s*\"?(\\d{3,4})", RegexOption.IGNORE_CASE)
+    /** xvideos/xnxx-подобные: html5player.setVideoHLS('…'), setVideoUrlHigh('…'), setVideoUrlLow('…'). */
+    private val setVideo = Regex("setVideo(HLS|UrlHigh|UrlLow|Url)\\(\\s*['\"]([^'\"]+)['\"]\\s*\\)")
+
     /** PlayerJS "file" may hold "[720p]url1,[480p]url2" or "url1 or url2". */
     fun playerjsFiles(value: String): List<Pair<String, String>> {
         if (value.startsWith("#")) return emptyList() // PlayerJS-encrypted value: not decodable here
@@ -119,7 +127,7 @@ object DeepMediaMiner {
 
     fun corpus(raw: String): String {
         val sb = StringBuilder(raw.length + 1024)
-        val base = raw.replace("\\/", "/").replace("\\u0026", "&", true).replace("\\u002F", "/", true).replace("&amp;", "&")
+        val base = JsDeobfuscator.expand(raw).replace("\\/", "/").replace("\\u0026", "&", true).replace("\\u002F", "/", true).replace("&amp;", "&")
         sb.append(base)
         if (base.contains("%2F", true) && base.contains("%3A", true)) {
             Regex("https?%3A%2F%2F[^\"'<>\\s\\\\]+", RegexOption.IGNORE_CASE).findAll(base).take(40).forEach { sb.append('\n').append(EngineParsing.urlDecode(it.value)) }
@@ -150,14 +158,14 @@ object DeepMediaMiner {
         if (raw.isBlank()) return emptyList()
         val text = corpus(raw)
         val out = linkedMapOf<String, Pair<String, MediaSource>>()
-        fun add(candidate: String, strongHit: Boolean = false, label: String = "", variant: String = "url в коде") {
+        fun add(candidate: String, strongHit: Boolean = false, label: String = "", variant: String = "url в коде", force: Boolean = false) {
             val url = EngineParsing.absolute(candidate.trim().trim('"', '\'', ' '), pageUrl)
             if (!url.startsWith("http", true) || out.size >= limit) return
             val path = url.substringBefore('?').lowercase()
             val looksMedia = path.endsWith(".mp4") || path.endsWith(".m3u8") || path.endsWith(".mpd") || path.endsWith(".webm") || path.endsWith(".m4v") ||
                 path.contains("/get_file/") || path.contains("/videoplayback") || path.contains("/stream/") || path.contains("/hls/")
             val notMedia = Regex("\\.(?:jpe?g|png|webp|gif|svg|js|css|html?|php|vtt|srt|xml|json)$").containsMatchIn(path)
-            if (!(looksMedia || (strongHit && !notMedia))) return
+            if (!(looksMedia || force || (strongHit && !notMedia))) return
             if (EngineParsing.isPreviewClip(url)) return
             if (path.endsWith(".jpg") || path.endsWith(".png") || path.endsWith(".webp")) return
             out.putIfAbsent(url.lowercase(), variant to MediaSource(
@@ -178,6 +186,16 @@ object DeepMediaMiner {
         for (pattern in extract) {
             val re = runCatching { Regex(pattern, setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)) }.getOrNull() ?: continue
             re.findAll(text).take(8).forEach { m -> add(if (m.groupValues.size > 1 && m.groupValues[1].isNotBlank()) m.groupValues[1] else m.value, variant = "правило сайта") }
+        }
+        runtimeBlock.findAll(text).forEach { b ->
+            b.groupValues[1].lines().map { it.trim() }.filter { it.startsWith("http") }.take(32).forEach { add(it, strongHit = true, variant = "перехват в браузере", force = true) }
+        }
+        if (text.contains("videoUrl", true)) mediaDef.findAll(text).take(24).forEach { m ->
+            val q = mediaDefQuality.find(m.value)?.groupValues?.get(1).orEmpty()
+            add(m.groupValues[1], strongHit = true, label = if (q.isNotBlank()) "${q}p" else "", variant = "mediaDefinitions")
+        }
+        if (text.contains("setVideo")) setVideo.findAll(text).take(8).forEach { m ->
+            add(m.groupValues[2], strongHit = true, label = when (m.groupValues[1]) { "HLS" -> "HLS"; "UrlHigh" -> "высокое"; "UrlLow" -> "низкое"; else -> "" }, variant = "setVideo*")
         }
         kvs.findAll(text).forEach { add(it.groupValues[1].removePrefix("function/0/"), strongHit = true, variant = "KVS flashvars") }
         jw.findAll(text).forEach { add(it.groupValues[1], strongHit = true, variant = "JW sources") }
