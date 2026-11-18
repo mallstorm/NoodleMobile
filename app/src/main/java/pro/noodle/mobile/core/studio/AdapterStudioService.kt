@@ -80,6 +80,15 @@ class AdapterStudioService(context: Context) {
         var json = build.adapterJson
         onProgress("Финальная проверка в плеере (Media3)…")
         var test = testJson(json)
+        var retries = 0
+        while (retries < 2 && test.testStatus == SemanticStatus.SEARCH_FAILED.wireName &&
+            listOf("io_error", "connection", "timeout", "429", "503").any { it in test.testDetails.lowercase() }
+        ) {
+            retries++
+            onProgress("Сайт оборвал соединение — повторяю проверку ($retries/2)…")
+            kotlinx.coroutines.delay(5_000L * retries)
+            test = testJson(json)
+        }
         if (test.testStatus == SemanticStatus.PLAYBACK_FAILED.wireName && !build.needsJavaScript) {
             onProgress("Плеер не открыл поток напрямую — пробую через встроенный браузер…")
             val withJs = json.replace("\"allow_javascript\": false", "\"allow_javascript\": true").replace("\"allow_javascript\":false", "\"allow_javascript\":true")

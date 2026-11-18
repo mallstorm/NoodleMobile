@@ -106,7 +106,15 @@ class AdapterProbeService(
 
     suspend fun validateDefinition(d: AdapterDefinition, queryOverride: String = ""): AdapterSemanticResult {
         val query = queryOverride.trim().ifBlank { d.healthQuery.trim().ifBlank { "video" } }
-        val search = searchOne(d, query, CERTIFICATION_SEARCH_LIMIT)
+        // Сайты часто рвут соединение после серии быстрых запросов (как только что делала Studio):
+        // временные сетевые ошибки повторяем с паузой, а не засчитываем как поломку.
+        var search = searchOne(d, query, CERTIFICATION_SEARCH_LIMIT)
+        var attempt = 1
+        while (search.second != null && isTransient(search.second!!) && attempt < 4) {
+            kotlinx.coroutines.delay(2_500L * attempt)
+            search = searchOne(d, query, CERTIFICATION_SEARCH_LIMIT)
+            attempt++
+        }
         if (search.second != null) return result(d.id,d.name,d.adapterVersion,SemanticStatus.SEARCH_FAILED,query,errorCode=search.second!!.first,message=search.second!!.second)
         if (search.first.size < d.healthMinResults) return result(d.id,d.name,d.adapterVersion,SemanticStatus.NO_RESULTS,query,search.first.size,errorCode=if(search.first.isEmpty()) "SNP_SEMANTIC_NO_RESULTS" else "SNP_SEMANTIC_MIN_RESULTS",message="Получено ${search.first.size}, требуется минимум ${d.healthMinResults}.")
         if (!d.healthRequirePlayback) return result(d.id,d.name,d.adapterVersion,SemanticStatus.HEALTHY,query,search.first.size,message="Поиск прошёл успешно.")
@@ -352,6 +360,11 @@ class AdapterProbeService(
             lastError = null
         }
         return emptyList<VideoItem>() to lastError
+    }
+
+    private fun isTransient(err: Pair<String, String>): Boolean {
+        val t = (err.first + " " + err.second).lowercase()
+        return listOf("io_error", "connection", "timeout", "timed out", "reset", "closed", "429", "503", "502", "504", "unreachable").any { it in t }
     }
 
     private fun result(id:String,name:String,version:String,status:SemanticStatus,query:String,search:Int=0,playback:Int=0,errorCode:String="",message:String="") = AdapterSemanticResult(id,name,version,status,query,search,playback,errorCode,message)
