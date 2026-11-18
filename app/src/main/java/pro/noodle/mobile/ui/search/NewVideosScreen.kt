@@ -7,7 +7,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.NotificationsNone
+import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -15,6 +17,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -75,19 +78,47 @@ fun NewVideosScreen(newVm: NewVideosViewModel, searchVm: SearchViewModel, onClos
                 }
             }
         } else {
+            val unviewed = st.items.count { it.video.id !in st.viewed }
+            Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = st.grouped, onClick = newVm::toggleGrouped, label = { Text("По сайтам") })
+                FilterChip(selected = st.onlyUnviewed, onClick = newVm::toggleOnlyUnviewed, label = { Text("Новые: $unviewed") })
+                Spacer(Modifier.weight(1f))
+                if (unviewed > 0) TextButton(onClick = newVm::markAllViewed) { Text("Всё просмотрено") }
+            }
+            val shownItems = st.items.filter { !st.onlyUnviewed || it.video.id !in st.viewed }
+            val open: (NewEntry) -> Unit = { e -> newVm.markViewed(e.video); searchVm.open(e.video) }
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(st.items, key = { it.video.id + it.seenAtMs }) { e -> NewVideoRow(e, searchVm) }
+                if (st.grouped) {
+                    shownItems.groupBy { it.video.sourceName.ifBlank { "Без названия" } }.forEach { (source, list) ->
+                        item(key = "h:$source") {
+                            Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text("$source • ${list.size}", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                val muted = source in st.muted
+                                IconButton(onClick = { newVm.toggleMute(source) }) {
+                                    Icon(
+                                        if (muted) Icons.Outlined.NotificationsOff else Icons.Outlined.NotificationsActive,
+                                        if (muted) "Уведомления выключены" else "Уведомления включены",
+                                        tint = if (muted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                            }
+                        }
+                        items(list, key = { it.video.id + it.seenAtMs }) { e -> NewVideoRow(e, searchVm, e.video.id in st.viewed, open) }
+                    }
+                } else {
+                    items(shownItems, key = { it.video.id + it.seenAtMs }) { e -> NewVideoRow(e, searchVm, e.video.id in st.viewed, open) }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun NewVideoRow(e: NewEntry, vm: SearchViewModel) {
+private fun NewVideoRow(e: NewEntry, vm: SearchViewModel, viewed: Boolean, onOpen: (NewEntry) -> Unit) {
     val v = e.video
     ElevatedCard(
-        onClick = { vm.open(v) },
-        modifier = Modifier.fillMaxWidth(),
+        onClick = { onOpen(e) },
+        modifier = Modifier.fillMaxWidth().alpha(if (viewed) 0.6f else 1f),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
@@ -99,7 +130,7 @@ private fun NewVideoRow(e: NewEntry, vm: SearchViewModel) {
                 Text(v.sourceName, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, maxLines = 1)
                 Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = RoundedCornerShape(10.dp)) {
                     Text(
-                        "добавлено ${ago(e.seenAtMs)}",
+                        "добавлено ${ago(e.seenAtMs)}" + if (viewed) " • просмотрено" else "",
                         Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onTertiaryContainer,

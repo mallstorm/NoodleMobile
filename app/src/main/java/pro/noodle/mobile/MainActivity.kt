@@ -19,6 +19,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
@@ -263,16 +266,23 @@ private fun FavoritesScreen(vm: FavoritesViewModel = viewModel()) {
         }
         items(state.items, key = { it.favoriteKey }) { v ->
             ElevatedCard(onClick = { vm.open(v) }, modifier = Modifier.fillMaxWidth()) {
-                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.Favorite, null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(v.title, fontWeight = FontWeight.SemiBold, maxLines = 2)
-                        Text(
-                            v.sourceName,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    val bitmap by androidx.compose.runtime.produceState<android.graphics.Bitmap?>(initialValue = null, key1 = v.thumbnailUrl) {
+                        value = vm.loadThumbnail(v)
+                    }
+                    Surface(modifier = Modifier.size(width = 136.dp, height = 82.dp), shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceVariant) {
+                        Box(Modifier.fillMaxSize()) {
+                            if (bitmap != null) androidx.compose.foundation.Image(bitmap!!.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                            else Icon(Icons.Outlined.PlayCircle, null, Modifier.align(Alignment.Center).size(30.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Icon(Icons.Outlined.Favorite, null, Modifier.align(Alignment.TopStart).padding(5.dp).size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                            if (v.duration.isNotBlank()) Surface(Modifier.align(Alignment.BottomEnd).padding(5.dp), shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp), color = androidx.compose.ui.graphics.Color.Black.copy(alpha = .6f)) {
+                                Text(v.duration, Modifier.padding(horizontal = 6.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall, color = androidx.compose.ui.graphics.Color.White)
+                            }
+                        }
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(v.title, fontWeight = FontWeight.SemiBold, maxLines = 3, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        Text(v.sourceName, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                     }
                     IconButton(onClick = { vm.remove(v) }) { Icon(Icons.Outlined.Delete, "Удалить") }
                 }
@@ -408,6 +418,16 @@ private fun MoreScreen(settingsVm: SettingsViewModel) {
     val studioRequest = pro.noodle.mobile.ui.sources.StudioRequest.pending
     LaunchedEffect(studioRequest) { if (studioRequest != null) page = MorePage.STUDIO }
     BackHandler(enabled = page != MorePage.MENU) { page = MorePage.MENU }
+    val backupContext = LocalContext.current
+    val backupScope = rememberCoroutineScope()
+    var backupMessage by remember { mutableStateOf("") }
+    var backupBusy by remember { mutableStateOf(false) }
+    val exportBackup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri != null) { backupBusy = true; backupScope.launch { backupMessage = pro.noodle.mobile.core.backup.BackupService(backupContext).export(uri).message; backupBusy = false } }
+    }
+    val importBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) { backupBusy = true; backupScope.launch { backupMessage = pro.noodle.mobile.core.backup.BackupService(backupContext).restore(uri).message; backupBusy = false } }
+    }
     when (page) {
         MorePage.SOURCES, MorePage.STUDIO -> Column(Modifier.fillMaxSize()) {
             Row(
@@ -475,6 +495,24 @@ private fun MoreScreen(settingsVm: SettingsViewModel) {
                         leadingContent = { Icon(Icons.Outlined.Settings, null, tint = MaterialTheme.colorScheme.tertiary) },
                         trailingContent = { Icon(Icons.Outlined.ChevronRight, null) },
                     )
+                }
+            }
+            item {
+                ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Резервная копия", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Избранное, история, добавленные сайты и настройки — одним файлом. Входы в нейросети не сохраняются.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilledTonalButton(onClick = { exportBackup.launch("noodle-backup.zip") }, enabled = !backupBusy) { Text("Экспорт") }
+                            OutlinedButton(onClick = { importBackup.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }, enabled = !backupBusy) { Text("Импорт") }
+                        }
+                        if (backupBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                        if (backupMessage.isNotBlank()) Text(backupMessage, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
         }

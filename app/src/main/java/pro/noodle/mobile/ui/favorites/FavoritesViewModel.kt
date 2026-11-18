@@ -22,6 +22,22 @@ class FavoritesViewModel(app:Application):AndroidViewModel(app){
     private val playbackRepo=PlaybackRepository(app,http)
     private val mutable=MutableStateFlow(FavoritesUiState())
     val state:StateFlow<FavoritesUiState> = combine(user.favorites(),mutable){items,s->s.copy(items=items)}.stateIn(viewModelScope,SharingStarted.WhileSubscribed(5_000),FavoritesUiState())
+    private val thumbs=java.util.concurrent.ConcurrentHashMap<String,android.graphics.Bitmap>()
+    private val thumbMisses=java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    suspend fun loadThumbnail(v:VideoItem):android.graphics.Bitmap?{
+        val url=v.thumbnailUrl.trim()
+        if(url.isBlank()) return null
+        thumbs[url]?.let{return it}
+        if(url in thumbMisses) return null
+        val a=sources.adapterFor(v)
+        val r=pro.noodle.mobile.core.media.ThumbnailFetcher.fetch(http,v,a?.baseUrl.orEmpty(),a?.id?:v.sourceName.ifBlank{"thumbnails"},a?.allowCookies?:false)
+        val bytes=r.bytes
+        if(bytes==null||bytes.isEmpty()){if(r.status!=0)thumbMisses+=url;return null}
+        val bmp=android.graphics.BitmapFactory.decodeByteArray(bytes,0,bytes.size)
+        if(bmp==null){thumbMisses+=url;return null}
+        thumbs[url]=bmp
+        return bmp
+    }
     fun remove(v:VideoItem)=viewModelScope.launch{user.removeFavorite(v)}
     fun open(v:VideoItem){val a=sources.adapterFor(v)?:run{mutable.update{it.copy(message="SNP источника не найден")};return};mutable.update{it.copy(resolving=true,message="")};viewModelScope.launch{user.saveHistory(v,0L,0L);val r=playbackRepo.resolve(v,a);mutable.update{if(r.success&&r.session!=null)it.copy(resolving=false,playback=r.session) else it.copy(resolving=false,message="${r.errorCode}: ${r.errorMessage}")}}}
     fun closePlayer(){mutable.update{it.copy(playback=null,resolving=false)}}

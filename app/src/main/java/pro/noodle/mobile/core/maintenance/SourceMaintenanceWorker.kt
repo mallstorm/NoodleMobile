@@ -45,7 +45,8 @@ class SourceMaintenanceWorker(appContext: Context, params: WorkerParameters) : C
             }
         }
         val found = runCatching { pro.noodle.mobile.core.newvideos.NewVideosScanner(applicationContext).scan() }.getOrDefault(0)
-        if (found > 0) SourceAlerts.notifyNew(applicationContext, found, settings.monitoringIntervalHours)
+        val notifiable = pro.noodle.mobile.core.newvideos.NewVideosStore(applicationContext).lastNotifiable
+        if (found > 0 && notifiable > 0) SourceAlerts.notifyNew(applicationContext, notifiable, settings.monitoringIntervalHours)
         return Result.success()
     }
 }

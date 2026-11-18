@@ -63,6 +63,21 @@ class NewVideosStore(context: Context) {
 
     @Synchronized fun seen(): MutableSet<String> = prefs.getString(KEY_SEEN, "").orEmpty().split('\n').filter { it.isNotBlank() }.toMutableSet()
     @Synchronized fun saveSeen(set: Collection<String>) { prefs.edit().putString(KEY_SEEN, set.toList().takeLast(MAX_SEEN).joinToString("\n")).apply() }
+    // Просмотренные ролики (по id) и источники, для которых отключены уведомления.
+    @Synchronized fun viewed(): Set<String> = prefs.getString(KEY_VIEWED, "").orEmpty().split('\n').filter { it.isNotBlank() }.toSet()
+    @Synchronized fun markViewed(ids: Collection<String>) {
+        val all = LinkedHashSet(viewed()); all.addAll(ids)
+        prefs.edit().putString(KEY_VIEWED, all.toList().takeLast(4000).joinToString("\n")).apply()
+    }
+    @Synchronized fun muted(): Set<String> = prefs.getStringSet(KEY_MUTED, emptySet()).orEmpty().toSet()
+    @Synchronized fun setMuted(source: String, on: Boolean) {
+        val set = muted().toMutableSet(); if (on) set.add(source) else set.remove(source)
+        prefs.edit().putStringSet(KEY_MUTED, set).apply()
+    }
+    /** Сколько новых роликов найдено последним сканированием на источниках с включёнными уведомлениями. */
+    var lastNotifiable: Int
+        get() = prefs.getInt("last_notifiable", 0)
+        set(v) { prefs.edit().putInt("last_notifiable", v).apply() }
     fun hasBaseline(sourceId: String) = prefs.getBoolean("base_$sourceId", false)
     fun setBaseline(sourceId: String) { prefs.edit().putBoolean("base_$sourceId", true).apply() }
     var lastScanMs: Long
@@ -73,7 +88,7 @@ class NewVideosStore(context: Context) {
         set(v) { prefs.edit().putInt(KEY_SRC, v).apply() }
 
     private companion object {
-        const val KEY_ITEMS = "items"; const val KEY_SEEN = "seen"; const val KEY_LAST = "last_scan"; const val KEY_SRC = "last_sources"
+        const val KEY_VIEWED = "viewed"; const val KEY_MUTED = "muted"; const val KEY_ITEMS = "items"; const val KEY_SEEN = "seen"; const val KEY_LAST = "last_scan"; const val KEY_SRC = "last_sources"
         const val MAX_SEEN = 12_000
     }
 }
@@ -113,13 +128,15 @@ class NewVideosScanner(private val context: Context) {
         val seen = store.seen()
         val entries = store.entries().toMutableList()
         var found = 0
+        var notifiable = 0
+        val muted = store.muted()
         for ((d, items) in results) {
             if (items.isEmpty()) continue
             val baseline = store.hasBaseline(d.id)
             for (v in items) {
                 val key = (d.id + "|" + v.watchUrl).lowercase()
                 if (!seen.add(key)) continue
-                if (baseline) { entries += NewEntry(v, now); found++ }
+                if (baseline) { entries += NewEntry(v, now); found++; if (d.name !in muted) notifiable++ }
             }
             store.setBaseline(d.id)
         }
@@ -128,6 +145,7 @@ class NewVideosScanner(private val context: Context) {
         store.saveEntries(kept)
         store.saveSeen(seen)
         store.lastScanMs = now
+        store.lastNotifiable = notifiable
         store.lastSources = results.count { it.second.isNotEmpty() }
         found
     }

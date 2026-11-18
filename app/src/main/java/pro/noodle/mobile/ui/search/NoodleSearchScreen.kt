@@ -144,7 +144,7 @@ fun NoodleSearchScreen(
         if (!landscape) {
             NoodleHeader(
                 errorCount = state.errors.size,
-                newCount = newState.items.size,
+                newCount = newState.items.count { it.video.id !in newState.viewed },
                 onStatusClick = { errorDialog = true },
                 onBellClick = { showNew = true },
             )

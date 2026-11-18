@@ -719,7 +719,6 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
                     }
                     PlayerActionButton(Icons.Outlined.Download, "Скачать") { requestDownload() }
                     PlayerActionButton(Icons.Outlined.Share, "Поделиться") { shareVideo() }
-                    PlayerActionButton(Icons.Outlined.MoreHoriz, "Ещё") { showPlaybackSettings = true }
                 }
             }
 

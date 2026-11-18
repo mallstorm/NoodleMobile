@@ -20,6 +20,10 @@ data class NewVideosState(
     val lastScanMs: Long = 0L,
     val sources: Int = 0,
     val message: String = "",
+    val viewed: Set<String> = emptySet(),
+    val muted: Set<String> = emptySet(),
+    val grouped: Boolean = false,
+    val onlyUnviewed: Boolean = false,
 )
 
 class NewVideosViewModel(app: Application) : AndroidViewModel(app) {
@@ -45,9 +49,15 @@ class NewVideosViewModel(app: Application) : AndroidViewModel(app) {
     private fun reload() {
         val cutoff = System.currentTimeMillis() - _state.value.windowHours * 3600_000L
         _state.update { st ->
-            st.copy(items = store.entries().filter { it.seenAtMs >= cutoff }.sortedByDescending { it.seenAtMs }, lastScanMs = store.lastScanMs, sources = store.lastSources)
+            st.copy(items = store.entries().filter { it.seenAtMs >= cutoff }.sortedByDescending { it.seenAtMs }, lastScanMs = store.lastScanMs, sources = store.lastSources, viewed = store.viewed(), muted = store.muted())
         }
     }
+
+    fun toggleGrouped() = _state.update { it.copy(grouped = !it.grouped) }
+    fun toggleOnlyUnviewed() = _state.update { it.copy(onlyUnviewed = !it.onlyUnviewed) }
+    fun markViewed(video: pro.noodle.mobile.core.model.VideoItem) { store.markViewed(listOf(video.id)); reload() }
+    fun markAllViewed() { store.markViewed(_state.value.items.map { it.video.id }); reload() }
+    fun toggleMute(source: String) { store.setMuted(source, source !in store.muted()); reload() }
 
     fun scan() {
         if (_state.value.scanning) return

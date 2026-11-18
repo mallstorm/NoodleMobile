@@ -59,21 +59,23 @@ internal fun RelatedVideosSection(
                 modifier = Modifier.weight(1f),
             )
             Surface(
-                shape = MaterialTheme.shapes.large,
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant,
             ) {
                 Row {
-                    IconButton(onClick = { onColumnsChange(1) }) {
+                    IconButton(onClick = { onColumnsChange(1) }, modifier = Modifier.size(34.dp)) {
                         Icon(
                             Icons.Outlined.ViewList,
                             "1 колонка",
+                            Modifier.size(18.dp),
                             tint = if (columns == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    IconButton(onClick = { onColumnsChange(2) }) {
+                    IconButton(onClick = { onColumnsChange(2) }, modifier = Modifier.size(34.dp)) {
                         Icon(
                             Icons.Outlined.GridView,
                             "2 колонки",
+                            Modifier.size(18.dp),
                             tint = if (columns != 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
