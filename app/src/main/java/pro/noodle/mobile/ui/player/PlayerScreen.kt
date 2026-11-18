@@ -783,7 +783,21 @@ private fun StreamBadge(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        TextButton(onClick = onReject) { Text("Это превью / не то") }
+        var open by remember { mutableStateOf(false) }
+        androidx.compose.animation.AnimatedVisibility(open) {
+            TextButton(onClick = { open = false; onReject() }) { Text("Это превью / не то") }
+        }
+        Surface(
+            onClick = { open = !open },
+            shape = androidx.compose.foundation.shape.CircleShape,
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(34.dp),
+        ) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Icon(if (open) Icons.Outlined.Close else Icons.Outlined.MoreHoriz, "Ещё", Modifier.size(18.dp))
+            }
+        }
     }
 }
 

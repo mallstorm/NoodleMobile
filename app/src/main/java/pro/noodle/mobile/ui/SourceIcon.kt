@@ -37,7 +37,7 @@ fun SourceIcon(baseUrl: String, name: String, size: Dp = 42.dp, modifier: Modifi
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             val bmp = icon
             if (bmp != null) {
-                Image(bmp, contentDescription = name, contentScale = ContentScale.Fit, modifier = Modifier.size(size * 0.72f))
+                Image(bmp, contentDescription = name, contentScale = ContentScale.Fit, filterQuality = androidx.compose.ui.graphics.FilterQuality.High, modifier = Modifier.size(if (bmp.width >= 96) size * 0.82f else size * 0.5f))
             } else {
                 Text(
                     name.trim().firstOrNull()?.uppercase().orEmpty().ifBlank { "•" },

@@ -21,13 +21,13 @@ object SourceIcons {
     private val memory = LruCache<String, Bitmap>(48)
     private val misses = HashSet<String>()
     private val linkRe = Regex("<link\\b[^>]*>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
-    private const val TARGET = 128
+    private const val TARGET = 256
 
     suspend fun load(context: Context, baseUrl: String): Bitmap? = withContext(Dispatchers.IO) {
         val host = runCatching { URI(baseUrl).host.orEmpty() }.getOrDefault("").removePrefix("www.")
         if (host.isBlank()) return@withContext null
         memory.get(host)?.let { return@withContext it }
-        val file = File(File(context.applicationContext.filesDir, "source_icons").apply { mkdirs() }, "$host.png")
+        val file = File(File(context.applicationContext.filesDir, "source_icons").apply { mkdirs() }, "$host.v2.png")
         if (file.exists() && file.length() > 0) {
             BitmapFactory.decodeFile(file.absolutePath)?.let { memory.put(host, it); return@withContext it }
         }
@@ -66,15 +66,39 @@ object SourceIcons {
             }
         }
         val origin = runCatching { URI(pageUrl).let { "${it.scheme}://${it.host}" } }.getOrDefault(base)
+        // Web App Manifest обычно содержит самые крупные иконки (192/512 px).
+        if (home.success) {
+            val manifestHref = linkRe.findAll(home.text.take(200_000)).map { it.value }
+                .firstOrNull { EngineParsing.attr(it, "rel").equals("manifest", true) }
+                ?.let { EngineParsing.attr(it, "href") }.orEmpty()
+            if (manifestHref.isNotBlank()) {
+                val mUrl = EngineParsing.absolute(manifestHref, pageUrl)
+                val m = http.fetchText(mUrl, NetworkPolicy(emptyList(), maxResponseBytes = 300_000, maxRedirects = 3), key)
+                if (m.success) runCatching {
+                    val arr = org.json.JSONObject(m.text).optJSONArray("icons")
+                    if (arr != null) for (i in 0 until arr.length()) {
+                        val o = arr.getJSONObject(i)
+                        val src = o.optString("src")
+                        if (src.isBlank() || src.endsWith(".svg", true)) continue
+                        val size = o.optString("sizes").substringBefore('x').substringBefore(' ').toIntOrNull() ?: 0
+                        candidates.putIfAbsent(EngineParsing.absolute(src, m.finalUrl.ifBlank { mUrl }), 800 + size.coerceAtMost(512))
+                    }
+                }
+            }
+        }
         candidates.putIfAbsent("$origin/apple-touch-icon.png", 900)
+        candidates.putIfAbsent("$origin/apple-touch-icon-precomposed.png", 890)
         candidates.putIfAbsent("$origin/favicon.ico", 1)
-        for ((url, _) in candidates.entries.sortedByDescending { it.value }.take(6)) {
-            val r = http.fetchBytes(url, NetworkPolicy(emptyList(), maxResponseBytes = 600_000, maxRedirects = 4), key, accept = "image/png,image/x-icon,image/vnd.microsoft.icon,image/*;q=0.8,*/*;q=0.3", referer = "$origin/")
+        // Скачиваем лучшие кандидаты и берём самый крупный по пикселям — тогда иконка получается чёткой.
+        var best: Bitmap? = null
+        for ((url, _) in candidates.entries.sortedByDescending { it.value }.take(8)) {
+            val r = http.fetchBytes(url, NetworkPolicy(emptyList(), maxResponseBytes = 900_000, maxRedirects = 4), key, accept = "image/png,image/x-icon,image/vnd.microsoft.icon,image/*;q=0.8,*/*;q=0.3", referer = "$origin/")
             if (!r.success || r.bytes.size < 80) continue
             val bmp = decode(r.bytes) ?: continue
-            return bmp
+            if (best == null || bmp.width > best.width) best = bmp
+            if (best.width >= 180) break
         }
-        return null
+        return best
     }
 
     private fun decode(bytes: ByteArray): Bitmap? {

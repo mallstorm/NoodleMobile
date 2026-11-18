@@ -182,7 +182,7 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
         )
 
         val out = video.copy(
-            title = resolved.title.ifBlank { video.title },
+            title = pickTitle(video.title, resolved.title),
             thumbnailUrl = resolved.thumbnailUrl
                 .takeIf { it.isBlank() || isCurrentlyAllowed(it, adapter, discoveredHosts) }
                 .orEmpty()
@@ -303,6 +303,21 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
         if (!decision.allowed) return false
         val host = hostOf(decision.normalizedUrl) ?: return false
         return adapter.allowedHosts.isEmpty() || UrlPolicy.isHostAllowed(host, adapter.allowedHosts)
+    }
+
+    /**
+     * Название карточки из поиска надёжнее, чем <title> страницы просмотра («Videos», «Watch», имя сайта).
+     * Название со страницы берём только если у карточки его нет или оно похоже на слаг из URL.
+     */
+    private fun pickTitle(card: String, page: String): String {
+        val c = card.trim()
+        val p = page.trim()
+        if (c.isBlank()) return p
+        if (p.isBlank()) return c
+        val generic = setOf("video", "videos", "watch", "player", "видео", "смотреть", "home", "главная")
+        if (p.lowercase() in generic || p.length < 4) return c
+        val slugLike = !c.contains(' ') && (c.contains('-') || c.contains('_'))
+        return if (slugLike) p else c
     }
 
     private fun isCurrentlyAllowed(
