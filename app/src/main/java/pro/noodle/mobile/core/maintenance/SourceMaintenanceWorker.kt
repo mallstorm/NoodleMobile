@@ -40,8 +40,22 @@ class SourceMaintenanceWorker(appContext: Context, params: WorkerParameters) : C
             val notified = prefs.getBoolean("notified_${d.id}", false)
             prefs.edit().putInt("fail_${d.id}", failures).putBoolean("notified_${d.id}", if (ok) false else notified).apply()
             if (!ok && failures >= 2 && !notified) {
-                SourceAlerts.notifyBroken(applicationContext, d.id, d.name, d.baseUrl, d.healthQuery)
-                prefs.edit().putBoolean("notified_${d.id}", true).apply()
+                // Сначала ищем зеркало: чаще всего сайт просто переехал на другой домен.
+                val moved = runCatching { pro.noodle.mobile.core.source.MirrorFinder(applicationContext).findAndAdopt(d) }.getOrNull()
+                when {
+                    moved != null && moved.adopted.isNotBlank() -> {
+                        SourceAlerts.notifyMirror(applicationContext, d.id, "${d.name}: новый адрес", moved.message)
+                        prefs.edit().putInt("fail_${d.id}", 0).putBoolean("notified_${d.id}", false).apply()
+                    }
+                    moved != null && moved.suggested.isNotEmpty() -> {
+                        SourceAlerts.notifyMirror(applicationContext, d.id, "${d.name}: найдено возможное зеркало", moved.message + " Откройте «Источники → ⋮ → Зеркала и домен».")
+                        prefs.edit().putBoolean("notified_${d.id}", true).apply()
+                    }
+                    else -> {
+                        SourceAlerts.notifyBroken(applicationContext, d.id, d.name, d.baseUrl, d.healthQuery)
+                        prefs.edit().putBoolean("notified_${d.id}", true).apply()
+                    }
+                }
             }
         }
         val found = runCatching { pro.noodle.mobile.core.newvideos.NewVideosScanner(applicationContext).scan() }.getOrDefault(0)
@@ -71,6 +85,26 @@ object SourceAlerts {
             .setAutoCancel(true)
             .build()
         nm.notify(7001, n)
+    }
+
+    fun notifyMirror(context: Context, id: String, title: String, text: String) {
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) return
+        val nm = context.getSystemService(android.app.NotificationManager::class.java)
+        nm.createNotificationChannel(android.app.NotificationChannel(CHANNEL, "Состояние источников", android.app.NotificationManager.IMPORTANCE_DEFAULT))
+        val open = android.content.Intent(context, pro.noodle.mobile.MainActivity::class.java)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        val pi = android.app.PendingIntent.getActivity(context, ("m" + id).hashCode(), open, android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
+        val n = android.app.Notification.Builder(context, CHANNEL)
+            .setSmallIcon(android.R.drawable.stat_notify_sync)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setStyle(android.app.Notification.BigTextStyle().bigText(text))
+            .setContentIntent(pi)
+            .setAutoCancel(true)
+            .build()
+        nm.notify(("m" + id).hashCode(), n)
     }
 
     const val CHANNEL = "noodle_sources"

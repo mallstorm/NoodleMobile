@@ -19,6 +19,7 @@ data class RuntimeAdapter(
 
 class RuntimeAdapterRepository(private val context: Context) {
     val paths = AdapterStorePaths(File(context.filesDir, "adapters"))
+    private val mirrors = MirrorStore(context)
 
     init {
         paths.ensure()
@@ -29,7 +30,7 @@ class RuntimeAdapterRepository(private val context: Context) {
         val file = File(dir, "adapter.json")
         val text = runCatching { file.readText(Charsets.UTF_8) }.getOrNull() ?: return@mapNotNull null
         val validation = AdapterValidator.validate(text)
-        val d = validation.definition?.takeIf { validation.isValid } ?: return@mapNotNull null
+        val d = validation.definition?.takeIf { validation.isValid }?.let { mirrors.apply(it) } ?: return@mapNotNull null
         RuntimeAdapter(
             definition = d,
             directory = dir,

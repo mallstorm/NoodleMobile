@@ -245,11 +245,14 @@ class BundledSearchRepository(
             }
     }
 
+    private val mirrorStore = pro.noodle.mobile.core.source.MirrorStore(context.applicationContext)
+
     private suspend fun searchOne(
         a: AdapterDefinition,
         q: String,
         page: Int,
         max: Int,
+        mirrorDepth: Int = 0,
     ): Pair<List<VideoItem>, SourceSearchError?> {
         val engine = RuntimeEngineRegistry.find(a.engine)
             ?: return emptyList<VideoItem>() to SourceSearchError(a.id, a.name, "ENGINE_NOT_IMPLEMENTED", "Runtime engine ${a.engine} отсутствует.")
@@ -296,6 +299,19 @@ class BundledSearchRepository(
             if (items.isNotEmpty()) return items to null
         }
         if (page >= 2 && (pastLastPage || hadSuccessfulResponse)) return emptyList<VideoItem>() to null
+        // Основной домен не отвечает вовсе: пробуем уже проверенное зеркало этого же сайта и переключаемся на него.
+        if (!hadSuccessfulResponse && mirrorDepth == 0 && page < 2) {
+            val own = pro.noodle.mobile.core.source.MirrorStore.originOf(a.baseUrl)
+            val alt = mirrorStore.known(a.id).firstOrNull { !it.equals(own, true) }
+            if (alt != null) {
+                val moved = searchOne(mirrorStore.preview(a, alt), q, page, max, mirrorDepth = 1)
+                if (moved.first.isNotEmpty()) {
+                    mirrorStore.switchTo(a.id, own, alt, "основной домен не отвечал, включено зеркало ${pro.noodle.mobile.core.source.MirrorStore.hostOf(alt)}")
+                    adapterSnapshot = emptyList()
+                    return moved
+                }
+            }
+        }
         if (hadSuccessfulResponse) return emptyList<VideoItem>() to SourceSearchError(a.id, a.name, "SEARCH_PARSED_ZERO", "Источник ответил, но текущий SNP не распознал ни одной видеокарточки.")
         return emptyList<VideoItem>() to (lastError ?: SourceSearchError(a.id, a.name, "SEARCH_FAILED", "Не удалось получить результаты поиска."))
     }

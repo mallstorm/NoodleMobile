@@ -1,5 +1,8 @@
 package pro.noodle.mobile.ui.sources
 
+import kotlinx.coroutines.launch
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
 import androidx.compose.material.icons.outlined.FactCheck
 import androidx.compose.material.icons.outlined.AddLink
@@ -35,6 +38,7 @@ fun SourceCenterScreen(
     val toolState by tools.state.collectAsState()
     var exportId by remember { mutableStateOf("") }
     var showMarketplace by remember { mutableStateOf(false) }
+    var mirrorFor by remember { mutableStateOf("") }
     var showStudio by remember(openStudio) { mutableStateOf(openStudio) }
     var showKeys by remember { mutableStateOf(false) }
 
@@ -102,6 +106,7 @@ fun SourceCenterScreen(
                                 showStudio = true
                             }
                             "details" -> vm.showDetails(item.adapterId)
+                            "mirrors" -> mirrorFor = item.adapterId
                             "health" -> vm.health(item.adapterId)
                             "semantic" -> vm.semantic(item.adapterId)
                             "fingerprint" -> vm.fingerprint(item.adapterId)
@@ -125,6 +130,7 @@ fun SourceCenterScreen(
     }
 
     state.details?.let { SourceDetailsDialog(it, vm::closeDetails) }
+    if (mirrorFor.isNotBlank()) MirrorDialog(mirrorFor, onClose = { mirrorFor = ""; vm.reload() })
     if (state.historyFor.isNotBlank()) {
         HistoryDialog(state.historyFor, state.history, vm::closeHistory) { snapshot ->
             vm.restore(state.historyFor, snapshot)
@@ -185,6 +191,7 @@ private fun SourceCard(
                         SourceMenuAction("Перенастроить (Studio)", "reconfigure", { menu = false }, onAction)
                         SourceMenuAction("Подробности", "details", { menu = false }, onAction)
                         HorizontalDivider()
+                        SourceMenuAction("Зеркала и домен", "mirrors", { menu = false }, onAction)
                         SourceMenuAction("Проверить доступность", "health", { menu = false }, onAction)
                         SourceMenuAction("Проверить поиск и видео (подробно)", "semantic", { menu = false }, onAction)
                         SourceMenuAction("Fingerprint", "fingerprint", { menu = false }, onAction)
@@ -470,4 +477,75 @@ private fun StatusLine(name: String, value: String) {
 @Composable
 private fun SourceMenuAction(label: String, key: String, dismiss: () -> Unit, onAction: (String) -> Unit) {
     DropdownMenuItem(text = { Text(label) }, onClick = { dismiss(); onAction(key) })
+}
+
+/** Домен источника: активный адрес, известные зеркала, поиск нового адреса после переезда, ручной ввод. */
+@Composable
+private fun MirrorDialog(adapterId: String, onClose: () -> Unit) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val store = remember { pro.noodle.mobile.core.source.MirrorStore(ctx) }
+    val finder = remember { pro.noodle.mobile.core.source.MirrorFinder(ctx) }
+    var def by remember { mutableStateOf<pro.noodle.mobile.core.adapter.AdapterDefinition?>(null) }
+    var tick by remember { mutableStateOf(0) }
+    var busy by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf("") }
+    var manual by remember { mutableStateOf("") }
+    LaunchedEffect(adapterId, tick) {
+        def = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { pro.noodle.mobile.core.source.RuntimeAdapterRepository(ctx).find(adapterId)?.definition }
+    }
+    val d = def
+    fun run(block: suspend () -> pro.noodle.mobile.core.source.MirrorOutcome) {
+        if (busy) return
+        busy = true; message = ""
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val r = runCatching { block() }.getOrElse { pro.noodle.mobile.core.source.MirrorOutcome(message = "Ошибка: ${it.message}") }
+            message = r.message; busy = false; tick++
+        }
+    }
+    AlertDialog(
+        onDismissRequest = { if (!busy) onClose() },
+        title = { Text("Зеркала и домен") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (d == null) { Text("Загружаю…"); return@Column }
+                val own = pro.noodle.mobile.core.source.MirrorStore.originOf(d.baseUrl)
+                Text("Сейчас: ${pro.noodle.mobile.core.source.MirrorStore.hostOf(own)}", fontWeight = FontWeight.SemiBold)
+                store.note(adapterId).takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                Text(
+                    "Если сайт переехал или недоступен, приложение само ищет новый адрес: смотрит, куда ведёт прежний, что пишет сама страница, и проверяет находку поиском и открытием видео.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(onClick = { run { finder.findAndAdopt(d) { message = it } } }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Найти зеркало или новый адрес") }
+                val known = (store.known(adapterId) + store.history(adapterId)).filter { !it.equals(own, true) }.distinct()
+                if (known.isNotEmpty()) {
+                    Text("Известные зеркала", fontWeight = FontWeight.SemiBold)
+                    known.forEach { o ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(pro.noodle.mobile.core.source.MirrorStore.hostOf(o), Modifier.weight(1f))
+                            TextButton(onClick = { run { finder.switchToKnown(d, o) } }, enabled = !busy) { Text("Включить") }
+                        }
+                    }
+                }
+                val suggested = store.suggested(adapterId).filter { !it.equals(own, true) }
+                if (suggested.isNotEmpty()) {
+                    Text("Найдено (нужно подтверждение)", fontWeight = FontWeight.SemiBold)
+                    suggested.forEach { o ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(pro.noodle.mobile.core.source.MirrorStore.hostOf(o), Modifier.weight(1f))
+                            TextButton(onClick = { run { finder.switchToKnown(d, o) } }, enabled = !busy) { Text("Переключить") }
+                        }
+                    }
+                }
+                OutlinedTextField(manual, { manual = it }, label = { Text("Добавить зеркало вручную (адрес)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedButton(onClick = { run { finder.addManual(d, manual) } }, enabled = !busy && manual.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Проверить и переключить") }
+                if (store.active(adapterId).isNotBlank()) {
+                    TextButton(onClick = { store.reset(adapterId); message = "Возвращён исходный домен адаптера."; tick++ }, enabled = !busy) { Text("Вернуть исходный домен") }
+                }
+                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (message.isNotBlank()) Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            }
+        },
+        confirmButton = { TextButton(onClick = onClose, enabled = !busy) { Text("Закрыть") } },
+    )
 }
