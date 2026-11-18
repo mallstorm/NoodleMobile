@@ -681,15 +681,7 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
                         Modifier.fillMaxWidth().padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Surface(
-                            modifier = Modifier.size(42.dp),
-                            shape = MaterialTheme.shapes.extraLarge,
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                        ) {
-                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Icon(Icons.Outlined.PlayArrow, null, tint = MaterialTheme.colorScheme.primary)
-                            }
-                        }
+                        pro.noodle.mobile.ui.SourceIcon(video.sourceBaseUrl.ifBlank { "https://" + activeSession.sourceKey }, video.sourceName.ifBlank { activeSession.sourceKey }, 44.dp)
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
                             Text(video.sourceName.ifBlank { activeSession.sourceKey }, fontWeight = FontWeight.SemiBold)
