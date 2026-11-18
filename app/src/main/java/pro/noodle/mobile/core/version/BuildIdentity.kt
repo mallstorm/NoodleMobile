@@ -2,7 +2,7 @@ package pro.noodle.mobile.core.version
 
 /** Runtime identity kept separate from SNP compatibility level. */
 object BuildIdentity {
-    const val VERSION_NAME = "0.19.0"
+    const val VERSION_NAME = "0.19.1"
     const val VERSION_CODE = 190000
     const val SNP_COMPATIBILITY_VERSION = "1.9.0"
     /**
