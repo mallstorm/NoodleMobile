@@ -12,6 +12,8 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -296,134 +298,139 @@ private fun FavoritesScreen(vm: FavoritesViewModel = viewModel()) {
 @Composable
 private fun DownloadsScreen(vm: DownloadsViewModel) {
     val list by vm.items.collectAsState()
-    val library by vm.completed.collectAsState()
     val offline by vm.offlinePlayback.collectAsState()
     val message by vm.message.collectAsState()
     if (offline != null) {
         OfflinePlayerScreen(offline!!, vm::closeOffline)
         return
     }
-    var mode by remember { mutableStateOf(0) }
+    var mode by rememberSaveable { mutableStateOf(0) }
+    val active = list.filter { it.state == DownloadState.RUNNING || it.state == DownloadState.QUEUED }
+    val paused = list.filter { it.state == DownloadState.PAUSED }
+    val done = list.filter { it.state == DownloadState.COMPLETED }
+    val failed = list.filter { it.state == DownloadState.FAILED }
     val shown = when (mode) {
-        1 -> list.filter {
-            it.state == DownloadState.RUNNING ||
-                it.state == DownloadState.QUEUED ||
-                it.state == DownloadState.PAUSED
-        }
-        2 -> library
+        1 -> active
+        2 -> paused
+        3 -> done
+        4 -> failed
         else -> list
+    }
+    // Скорость считаем по приросту скачанных байт между обновлениями списка (с лёгким сглаживанием).
+    val speeds = remember { mutableStateMapOf<String, Long>() }
+    val samples = remember { HashMap<String, Pair<Long, Long>>() }
+    LaunchedEffect(list) {
+        val now = System.currentTimeMillis()
+        list.forEach { d ->
+            if (d.state != DownloadState.RUNNING) { samples.remove(d.id); speeds.remove(d.id); return@forEach }
+            val prev = samples[d.id]
+            if (prev == null) samples[d.id] = d.downloadedBytes to now
+            else if (now - prev.second >= 900 && d.downloadedBytes >= prev.first) {
+                val inst = (d.downloadedBytes - prev.first) * 1000 / (now - prev.second)
+                val old = speeds[d.id] ?: 0L
+                speeds[d.id] = if (old <= 0) inst else (old * 2 + inst) / 3
+                samples[d.id] = d.downloadedBytes to now
+            }
+        }
     }
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(12.dp),
+        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item {
-            Text("Загрузки", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text(
-                "Офлайн-библиотека и текущие загрузки",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.padding(top = 8.dp)) {
-                FilterChip(selected = mode == 0, onClick = { mode = 0 }, label = { Text("Все") })
-                FilterChip(selected = mode == 1, onClick = { mode = 1 }, label = { Text("В процессе") })
-                FilterChip(selected = mode == 2, onClick = { mode = 2 }, label = { Text("Готово (${library.size})") })
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                listOf("Все" to list.size, "В процессе" to active.size, "Пауза" to paused.size, "Готово" to done.size, "Ошибки" to failed.size)
+                    .forEachIndexed { i, (label, n) ->
+                        FilterChip(selected = mode == i, onClick = { mode = i }, label = { Text("$label  $n") })
+                    }
             }
-            val active = list.count { it.state == DownloadState.RUNNING }
-            val waiting = list.count { it.state == DownloadState.QUEUED }
-            val paused = list.count { it.state == DownloadState.PAUSED || it.state == DownloadState.FAILED }
-            if (active + waiting + paused > 0) {
-                Text(
-                    "Качается: $active • в очереди: $waiting • на паузе/с ошибкой: $paused",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.padding(top = 4.dp)) {
-                    if (active + waiting > 0) OutlinedButton(onClick = vm::pauseAll, contentPadding = PaddingValues(horizontal = 12.dp)) { Text("Пауза всех") }
-                    if (paused > 0) OutlinedButton(onClick = vm::resumeAll, contentPadding = PaddingValues(horizontal = 12.dp)) { Text("Продолжить все") }
-                    if (list.any { it.state == DownloadState.CANCELED || it.state == DownloadState.FAILED }) TextButton(onClick = vm::clearFinished) { Text("Убрать ошибки") }
+            if (active.isNotEmpty() || paused.isNotEmpty() || failed.isNotEmpty()) {
+                Row(Modifier.padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (active.isNotEmpty()) TextButton(onClick = vm::pauseAll, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("Пауза всех") }
+                    if (paused.isNotEmpty() || failed.isNotEmpty()) TextButton(onClick = vm::resumeAll, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("Продолжить все") }
+                    if (failed.isNotEmpty()) TextButton(onClick = vm::clearFinished, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("Убрать ошибки") }
                 }
             }
             if (message.isNotBlank()) {
                 Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
         }
-        if (shown.isEmpty()) item { Text("Здесь пока пусто", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        if (shown.isEmpty()) item { Text("Здесь пока пусто", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp)) }
         items(shown, key = { it.id }) { d ->
+            val total = d.totalBytes
+            val pct = if (total > 0) (d.downloadedBytes * 100 / total).toInt().coerceIn(0, 100) else -1
+            val speed = speeds[d.id] ?: 0L
+            val tint = when (d.state) {
+                DownloadState.COMPLETED -> MaterialTheme.colorScheme.secondary
+                DownloadState.FAILED -> MaterialTheme.colorScheme.error
+                else -> MaterialTheme.colorScheme.primary
+            }
             ElevatedCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Outlined.Download,
-                            null,
-                            tint = when (d.state) {
-                                DownloadState.COMPLETED -> MaterialTheme.colorScheme.secondary
-                                DownloadState.FAILED -> MaterialTheme.colorScheme.error
-                                else -> MaterialTheme.colorScheme.primary
-                            },
-                        )
+                        Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp), color = tint.copy(alpha = .14f), modifier = Modifier.size(42.dp)) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    when (d.state) {
+                                        DownloadState.COMPLETED -> Icons.Outlined.PlayCircle
+                                        DownloadState.PAUSED -> Icons.Outlined.Pause
+                                        DownloadState.FAILED -> Icons.Outlined.Cancel
+                                        else -> Icons.Outlined.Download
+                                    },
+                                    null, tint = tint, modifier = Modifier.size(24.dp),
+                                )
+                            }
+                        }
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(d.title, fontWeight = FontWeight.SemiBold, maxLines = 2)
+                            Text(d.title, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+                            val st = when (d.state) {
+                                DownloadState.RUNNING -> "качается"
+                                DownloadState.QUEUED -> "в очереди"
+                                DownloadState.PAUSED -> "на паузе"
+                                DownloadState.FAILED -> "ошибка"
+                                DownloadState.COMPLETED -> "готово"
+                                else -> "отменено"
+                            }
                             Text(
-                                listOf(
-                                    d.protocol.takeIf { it.isNotBlank() },
-                                    d.videoSelectionLabel.takeIf { it.isNotBlank() },
-                                ).filterNotNull().joinToString(" • ").let { base ->
-                                    val st = when (d.state) {
-                                        DownloadState.RUNNING -> if (d.totalBytes > 0) "качается ${(d.downloadedBytes * 100 / d.totalBytes)}%" else "качается"
-                                        DownloadState.QUEUED -> "в очереди"
-                                        DownloadState.PAUSED -> "пауза"
-                                        DownloadState.FAILED -> "ошибка"
-                                        DownloadState.COMPLETED -> "готово"
-                                        else -> d.state.name.lowercase()
-                                    }
-                                    if (base.isBlank()) st else "$base • $st"
-                                },
-                                style = MaterialTheme.typography.labelMedium,
+                                listOf(d.protocol.takeIf { it.isNotBlank() }, d.videoSelectionLabel.takeIf { it.isNotBlank() }, st).filterNotNull().joinToString(" • "),
+                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                    }
-                    if (d.totalBytes > 0) {
-                        LinearProgressIndicator(
-                            progress = { d.downloadedBytes.toFloat() / d.totalBytes.toFloat() },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    } else if (d.state == DownloadState.RUNNING) {
-                        LinearProgressIndicator(Modifier.fillMaxWidth())
-                    }
-                    Text(
-                        "${bytes(d.downloadedBytes)} / ${if (d.totalBytes > 0) bytes(d.totalBytes) else "?"}",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    if (d.errorMessage.isNotBlank()) {
-                        Text(
-                            "${d.errorCode}: ${d.errorMessage}",
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    Row {
-                        if (d.state == DownloadState.COMPLETED) {
-                            IconButton(onClick = { vm.openOffline(d.id) }) {
-                                Icon(Icons.Outlined.PlayCircle, "Открыть офлайн")
-                            }
-                        }
                         when (d.state) {
-                            DownloadState.RUNNING, DownloadState.QUEUED -> IconButton(onClick = { vm.pause(d.id) }) {
-                                Icon(Icons.Outlined.Pause, "Пауза")
-                            }
-                            DownloadState.PAUSED, DownloadState.FAILED -> IconButton(onClick = { vm.resume(d.id) }) {
-                                Icon(Icons.Outlined.PlayArrow, "Продолжить")
-                            }
+                            DownloadState.COMPLETED -> IconButton(onClick = { vm.openOffline(d.id) }, modifier = Modifier.size(36.dp)) { Icon(Icons.Outlined.PlayArrow, "Открыть офлайн") }
+                            DownloadState.RUNNING, DownloadState.QUEUED -> IconButton(onClick = { vm.pause(d.id) }, modifier = Modifier.size(36.dp)) { Icon(Icons.Outlined.Pause, "Пауза") }
+                            DownloadState.PAUSED, DownloadState.FAILED -> IconButton(onClick = { vm.resume(d.id) }, modifier = Modifier.size(36.dp)) { Icon(Icons.Outlined.PlayArrow, "Продолжить") }
                             else -> Unit
                         }
                         if (d.state != DownloadState.COMPLETED && d.state != DownloadState.CANCELED) {
-                            IconButton(onClick = { vm.cancel(d.id) }) { Icon(Icons.Outlined.Cancel, "Отмена") }
+                            IconButton(onClick = { vm.cancel(d.id) }, modifier = Modifier.size(36.dp)) { Icon(Icons.Outlined.Cancel, "Отмена") }
                         }
-                        IconButton(onClick = { vm.remove(d.id) }) { Icon(Icons.Outlined.Delete, "Удалить") }
+                        IconButton(onClick = { vm.remove(d.id) }, modifier = Modifier.size(36.dp)) { Icon(Icons.Outlined.Delete, "Удалить") }
+                    }
+                    if (d.state != DownloadState.COMPLETED) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (pct >= 0) LinearProgressIndicator(progress = { pct / 100f }, modifier = Modifier.weight(1f))
+                            else if (d.state == DownloadState.RUNNING) LinearProgressIndicator(Modifier.weight(1f))
+                            else Spacer(Modifier.weight(1f))
+                            if (pct >= 0) Text("$pct%", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            Text("${bytes(d.downloadedBytes)} / ${if (total > 0) bytes(total) else "?"}", style = MaterialTheme.typography.labelSmall)
+                            if (d.state == DownloadState.RUNNING && speed > 0) {
+                                Text("↓ ${bytes(speed)}/с", style = MaterialTheme.typography.labelSmall)
+                                if (total > d.downloadedBytes) {
+                                    val eta = (total - d.downloadedBytes) / speed
+                                    Text("≈ " + if (eta >= 3600) "${eta / 3600} ч ${eta % 3600 / 60} мин" else if (eta >= 60) "${eta / 60} мин ${eta % 60} с" else "$eta с", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+                    } else {
+                        Text(bytes(d.totalBytes.coerceAtLeast(d.downloadedBytes)), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (d.errorMessage.isNotBlank() && d.state != DownloadState.COMPLETED) {
+                        Text("${d.errorCode}: ${d.errorMessage}", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall, maxLines = 3)
                     }
                 }
             }
