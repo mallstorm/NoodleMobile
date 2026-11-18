@@ -71,6 +71,7 @@ class SandboxedWebExtractor(private val context: Context) {
             CookieManager.getInstance().setAcceptCookie(adapter.allowCookies)
             CookieManager.getInstance().setAcceptThirdPartyCookies(web, false)
             var finished = false
+            var challengeWaits = 0
             fun close(result: WebExtractResult) {
                 if (finished) return
                 finished = true
@@ -129,6 +130,8 @@ class SandboxedWebExtractor(private val context: Context) {
                         if (finished) return@postDelayed
                         view.evaluateJavascript(RUNTIME_DOM_SCRIPT) { encoded ->
                             val html = decodeJsString(encoded)
+                            // JS-проверка браузера: заглушка сама перезагрузит страницу — ждём настоящий DOM.
+                            if (pro.noodle.mobile.core.network.CookieChallenge.looksLikeChallenge(html) && challengeWaits++ < 5) return@evaluateJavascript
                             close(
                                 if (html.isNotBlank()) {
                                     WebExtractResult(true, finalUrl = url, html = html)

@@ -68,6 +68,7 @@ class StudioAiAgent(context: Context) {
         var usedModel = model
         var toolCalls = 0
         var finishes = 0
+        var testsRun = 0
         var bestJson = currentJson
         var bestStatus = ""
         var bestDetails = report
@@ -107,9 +108,13 @@ class StudioAiAgent(context: Context) {
 
             val observation: String = when (tool) {
                 "give_up" -> {
+                    if (testsRun == 0 && finishes == 0 && toolCalls < MAX_TOOL_CALLS - 4) {
+                        "GIVE_UP REJECTED: you have not yet run run_adapter_test on a complete candidate adapter (with allow_cookies:true and, if needed, allow_javascript:true). Do that first; the app solves simple JS cookie challenges by itself."
+                    } else {
                     val reason = args.optString("reason", "причина не указана")
                     log.appendLine("    give_up: $reason")
                     return@withContext finishResult(false, false, "AI не смог исправить адаптер: $reason")
+                    }
                 }
                 "finish" -> {
                     finishes++
@@ -136,6 +141,7 @@ class StudioAiAgent(context: Context) {
                 }
                 else -> {
                     onStep(stepTitle(tool, args))
+                    if (tool == "run_adapter_test") testsRun++
                     val out = runCatching { runTool(tool, args, targetUrl, query) { json, status, text -> bestJson = json; bestStatus = status; bestDetails = text } }
                         .getOrElse { "TOOL ERROR: ${it.javaClass.simpleName}: ${it.message}" }
                     log.appendLine("    ← ${out.take(1500)}")
@@ -212,7 +218,8 @@ class StudioAiAgent(context: Context) {
         if (!url.startsWith("http", true)) return "ERROR: args.url must be an absolute http(s) URL"
         val res = withTimeoutOrNull(25_000) { http.fetchText(url, policy(), keyFor(url)) } ?: return "ERROR: timeout 25s"
         val head = "HTTP ${res.statusCode} • final=${res.finalUrl} • type=${res.contentType} • ${res.text.length} chars" +
-            if (!res.success) " • ERROR ${res.errorCode}: ${res.errorMessage}" else ""
+            (if (!res.success) " • ERROR ${res.errorCode}: ${res.errorMessage}" else "") +
+            (if (pro.noodle.mobile.core.network.CookieChallenge.looksLikeChallenge(res.text)) " • THIS IS A JS/COOKIE CHALLENGE PAGE, not the real content" else "")
         if (res.text.isBlank()) return head
         val grep = args.optString("grep").trim()
         if (grep.isNotBlank()) {

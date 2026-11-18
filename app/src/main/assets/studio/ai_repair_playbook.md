@@ -37,6 +37,13 @@ Typical lines and what they mean:
   -> TRANSIENT network problem or rate limit/anti-bot. First run the SAME adapter again (run_adapter_test) after your
   other work: if it passes, the adapter was fine and you must not "fix" it. If the site keeps closing connections, check
   with fetch_page whether a plain browser-like request works; consider a different search URL form or `allow_cookies:true`.
+* `SITE_JS_CHALLENGE`, or a tiny page whose script does `document.cookie="x=..."` then `location.reload()` / "checking your browser" /
+  "just a moment" -> a JS cookie challenge. Do NOT give up and do NOT conclude the site is unreachable: the app's HTTP client
+  already solves simple challenges by itself (parses the script, or opens a hidden WebView with a real Chrome User-Agent, takes
+  the cookie and retries) BUT ONLY when the adapter has `permissions.allow_cookies:true`. So: set `allow_cookies:true` and
+  `allow_javascript:true`, make sure the site host (and `*.host`) is in allowed_hosts, then run_adapter_test. User-Agent is
+  already a mobile Chrome string; you cannot change it and need not. Give up only if run_adapter_test with those settings still
+  reports SITE_JS_CHALLENGE (captcha, Cloudflare Turnstile, login), and say so precisely.
 * `HTTP 403 / 401` on search or watch page -> anti-bot, missing cookies, or hotlink protection. Try the page with
   fetch_page; compare www/non-www and http redirects. `allow_cookies:true` is the first remedy, `allow_javascript:true` the second.
 * `HTTP 404` on search -> wrong `url_template`. Find the real search form/URL in the homepage HTML (form action, input name,
@@ -83,7 +90,7 @@ health{query,min_results,require_playback,auto_repair}, repair{...}.
    duration, large size, 200/206) with previews (short, small). Derive `reject`, `min_seconds`, `prefer`, `extract`,
    `allowed_hosts` from those facts.
 6. Assemble the complete adapter and run_adapter_test. Read the whole report. If not HEALTHY, return to the failing layer.
-7. When status is HEALTHY, call finish. If after honest effort you cannot make it healthy, call finish with your best
+7. Never call give_up before at least one run_adapter_test on a complete candidate adapter. When status is HEALTHY, call finish. If after honest effort you cannot make it healthy, call finish with your best
    adapter and explain exactly what is still broken, or call give_up with the reason (e.g. site needs login/captcha,
    geo-blocked, video served by DRM or by scripts the app cannot run).
 

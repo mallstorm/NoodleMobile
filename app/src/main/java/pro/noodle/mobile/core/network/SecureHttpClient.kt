@@ -1,7 +1,9 @@
 package pro.noodle.mobile.core.network
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.ConnectionPool
 import okhttp3.Cookie
 import okhttp3.CookieJar
@@ -58,12 +60,58 @@ class SecureHttpClient {
 
         /** Reuse TCP/TLS/HTTP2 connections across search, resolver, thumbnails and Media3. */
         private val sharedConnectionPool = ConnectionPool(8, 5, TimeUnit.MINUTES)
+
+        /** Одна JS-проверка решается за раз (WebView и CookieManager общие на процесс). */
+        private val challengeLock = kotlinx.coroutines.sync.Mutex()
     }
 
     fun fetchTextBlocking(url: String, policy: NetworkPolicy, sourceKey: String = "default"): TextFetchResult =
         kotlinx.coroutines.runBlocking { fetchText(url, policy, sourceKey) }
 
-    suspend fun fetchText(url: String, policy: NetworkPolicy, sourceKey: String = "default"): TextFetchResult = withContext(Dispatchers.IO) {
+    /**
+     * Загрузка страницы. Если сайт отдал «JS-проверку браузера» (скрипт ставит cookie и перезагружает страницу),
+     * проверка решается автоматически (разбор скрипта или скрытый WebView), cookie попадают в jar источника,
+     * и страница запрашивается ещё раз. Работает только когда источнику разрешены cookie.
+     */
+    suspend fun fetchText(url: String, policy: NetworkPolicy, sourceKey: String = "default"): TextFetchResult {
+        val first = fetchTextOnce(url, policy, sourceKey)
+        if (!policy.allowCookies || !CookieChallenge.looksLikeChallenge(first.text)) return first
+        return challengeLock.withLock {
+            // Другой параллельный запрос мог уже решить проверку.
+            var res = fetchTextOnce(url, policy, sourceKey)
+            if (!CookieChallenge.looksLikeChallenge(res.text)) return@withLock res
+            val at = res.finalUrl.ifBlank { url }
+            val host = runCatching { URI(at).host.orEmpty() }.getOrDefault("")
+            if (host.isNotBlank() && CookieChallenge.shouldTry(sourceKey, host)) {
+                val literal = CookieChallenge.staticCookies(res.text)
+                if (literal.isNotEmpty()) {
+                    importCookies(sourceKey, at, literal)
+                    res = fetchTextOnce(url, policy, sourceKey)
+                    if (!CookieChallenge.looksLikeChallenge(res.text)) return@withLock res
+                }
+                val solved = CookieChallenge.solveWithWebView(at)
+                if (!solved.isNullOrEmpty()) {
+                    importCookies(sourceKey, at, solved)
+                    res = fetchTextOnce(url, policy, sourceKey)
+                    if (!CookieChallenge.looksLikeChallenge(res.text)) return@withLock res
+                }
+            }
+            TextFetchResult(
+                false, res.finalUrl, res.statusCode, res.contentType, res.text,
+                "SITE_JS_CHALLENGE", "Сайт отдаёт JS-проверку браузера (cookie) и не пускает обычные запросы; автоматически решить её не удалось.",
+            )
+        }
+    }
+
+    /** Кладёт cookie в jar источника (используется решателем JS-проверки). */
+    fun importCookies(sourceKey: String, url: String, cookies: List<Pair<String, String>>) {
+        val httpUrl = url.toHttpUrlOrNull() ?: return
+        val jar = cookieStores.getOrPut(sourceKey) { MemoryCookieJar() }
+        val expires = System.currentTimeMillis() + 4 * 3600_000L
+        jar.add(httpUrl.host, cookies.map { (n, v) -> Cookie.Builder().name(n).value(v).hostOnlyDomain(httpUrl.host).path("/").expiresAt(expires).build() })
+    }
+
+    private suspend fun fetchTextOnce(url: String, policy: NetworkPolicy, sourceKey: String): TextFetchResult = withContext(Dispatchers.IO) {
         val client = clientFor(policy, sourceKey, followRedirects = false)
         var current = url
         repeat(policy.maxRedirects + 1) { redirectNo ->
@@ -223,8 +271,17 @@ private object SafeDns : Dns {
 
 private class MemoryCookieJar : CookieJar {
     private val store = ConcurrentHashMap<String, MutableList<Cookie>>()
-    override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-        store[url.host] = cookies.filter { !it.persistent || it.expiresAt > System.currentTimeMillis() }.toMutableList()
+    override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) = add(url.host, cookies)
+
+    /** Новые cookie заменяют только одноимённые, остальные (в том числе выданные решателем JS-проверки) сохраняются. */
+    fun add(host: String, cookies: List<Cookie>) {
+        val now = System.currentTimeMillis()
+        val merged = LinkedHashMap<String, Cookie>()
+        store[host].orEmpty().forEach { merged[it.name + "|" + it.path] = it }
+        cookies.forEach { c ->
+            if (c.persistent && c.expiresAt <= now) merged.remove(c.name + "|" + c.path) else merged[c.name + "|" + c.path] = c
+        }
+        store[host] = merged.values.toMutableList()
     }
     override fun loadForRequest(url: HttpUrl): List<Cookie> =
         store[url.host].orEmpty().filter { it.matches(url) && it.expiresAt > System.currentTimeMillis() }
