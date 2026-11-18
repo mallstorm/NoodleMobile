@@ -258,12 +258,15 @@ class BundledSearchRepository(
         if (candidates.isEmpty()) return emptyList<VideoItem>() to SourceSearchError(a.id, a.name, "SEARCH_URL_EMPTY", "Engine не сформировал search URL.")
         var lastError: SourceSearchError? = null
         var hadSuccessfulResponse = false
+        var pastLastPage = false
         for (url in candidates) {
             val started = System.currentTimeMillis()
             val net = http.fetchText(url, NetworkPolicy(a.allowedHosts, allowCookies = a.allowCookies), a.id)
             val elapsed = System.currentTimeMillis() - started
             if (!net.success) {
                 diagnostics.recordSearch(a.id, a.engine, net.finalUrl.ifBlank { url }, net.statusCode, elapsed, 0, net.errorCode)
+                // Многие сайты отвечают 404/410 на страницу за последней: это конец выдачи, а не поломка источника.
+                if (page >= 2 && (net.statusCode == 404 || net.statusCode == 410)) { pastLastPage = true; continue }
                 lastError = SourceSearchError(a.id, a.name, net.errorCode, net.errorMessage)
                 continue
             }
@@ -292,6 +295,7 @@ class BundledSearchRepository(
             diagnostics.recordSearch(a.id, a.engine, net.finalUrl.ifBlank { url }, net.statusCode, elapsed, items.size)
             if (items.isNotEmpty()) return items to null
         }
+        if (page >= 2 && (pastLastPage || hadSuccessfulResponse)) return emptyList<VideoItem>() to null
         if (hadSuccessfulResponse) return emptyList<VideoItem>() to SourceSearchError(a.id, a.name, "SEARCH_PARSED_ZERO", "Источник ответил, но текущий SNP не распознал ни одной видеокарточки.")
         return emptyList<VideoItem>() to (lastError ?: SourceSearchError(a.id, a.name, "SEARCH_FAILED", "Не удалось получить результаты поиска."))
     }
