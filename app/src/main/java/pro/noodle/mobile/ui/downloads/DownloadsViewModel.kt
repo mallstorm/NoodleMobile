@@ -1,5 +1,6 @@
 package pro.noodle.mobile.ui.downloads
 
+import pro.noodle.mobile.core.storage.DownloadState
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -29,6 +30,15 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
     fun pause(id: String) = viewModelScope.launch { repo.pause(id) }
     fun resume(id: String) = viewModelScope.launch { repo.resume(id) }
     fun cancel(id: String) = viewModelScope.launch { repo.cancel(id) }
+    fun pauseAll() = viewModelScope.launch {
+        items.value.filter { it.state == DownloadState.RUNNING || it.state == DownloadState.QUEUED }.forEach { repo.pause(it.id) }
+    }
+    fun resumeAll() = viewModelScope.launch {
+        items.value.filter { it.state == DownloadState.PAUSED || it.state == DownloadState.FAILED }.forEach { repo.resume(it.id) }
+    }
+    fun clearFinished() = viewModelScope.launch {
+        items.value.filter { it.state == DownloadState.CANCELED || it.state == DownloadState.FAILED }.forEach { repo.remove(it.id) }
+    }
     fun remove(id: String) = viewModelScope.launch {
         if (_offlinePlayback.value?.id == id) _offlinePlayback.value = null
         repo.remove(id)

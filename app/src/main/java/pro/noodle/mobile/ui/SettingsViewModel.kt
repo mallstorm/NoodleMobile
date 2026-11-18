@@ -45,6 +45,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         repo.setParallelDownloads(n)
         MediaDownloadRuntime.manager(getApplication()).maxParallelDownloads = n
     }
+    fun downloadSelectMode(v: Boolean) = viewModelScope.launch { repo.setDownloadSelectMode(v) }
     fun background(v: Boolean) = viewModelScope.launch { repo.setBackgroundMonitoring(v) }
     fun monitoringHours(v: Int) = viewModelScope.launch { repo.setMonitoringIntervalHours(v) }
     fun rememberPosition(v: Boolean) = viewModelScope.launch { repo.setRememberPlaybackPosition(v) }

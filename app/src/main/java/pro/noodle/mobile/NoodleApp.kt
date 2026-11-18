@@ -7,5 +7,6 @@ class NoodleApp : Application() {
     override fun onCreate() {
         super.onCreate()
         CookieChallenge.attach(this)
+        pro.noodle.mobile.core.download.BatchDownloads.init(this)
     }
 }

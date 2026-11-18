@@ -20,6 +20,8 @@ data class AppSettings(
     val lockSalt: String = "",
     val lockHash: String = "",
     val followedSources: Set<String> = emptySet(),
+    val downloadSelectMode: Boolean = false,
+    val downloadFolderUri: String = "",
 )
 
 /** Масштаб интерфейса: 85–100 % с шагом 5. */
@@ -38,6 +40,8 @@ class AppSettingsRepository(private val context: Context) {
         val lockSalt = stringPreferencesKey("lock_salt")
         val lockHash = stringPreferencesKey("lock_hash")
         val followedSources = stringSetPreferencesKey("followed_sources")
+        val downloadSelectMode = booleanPreferencesKey("download_select_mode")
+        val downloadFolderUri = stringPreferencesKey("download_folder_uri")
     }
 
     val settings: Flow<AppSettings> = context.noodleSettingsStore.data.map { p ->
@@ -53,6 +57,8 @@ class AppSettingsRepository(private val context: Context) {
             lockSalt = p[Keys.lockSalt] ?: "",
             lockHash = p[Keys.lockHash] ?: "",
             followedSources = p[Keys.followedSources] ?: emptySet(),
+            downloadSelectMode = p[Keys.downloadSelectMode] ?: false,
+            downloadFolderUri = p[Keys.downloadFolderUri] ?: "",
         )
     }
 
@@ -61,6 +67,8 @@ class AppSettingsRepository(private val context: Context) {
         it[Keys.uiScalePercent] = snapScale(value)
     }
     suspend fun setParallelDownloads(value: Int) = context.noodleSettingsStore.edit { it[Keys.parallelDownloads] = value.coerceIn(1, 10) }
+    suspend fun setDownloadSelectMode(value: Boolean) = context.noodleSettingsStore.edit { it[Keys.downloadSelectMode] = value }
+    suspend fun setDownloadFolderUri(value: String) = context.noodleSettingsStore.edit { it[Keys.downloadFolderUri] = value }
     suspend fun setBackgroundMonitoring(value: Boolean) = context.noodleSettingsStore.edit { it[Keys.backgroundMonitoring] = value }
     suspend fun setMonitoringIntervalHours(value: Int) = context.noodleSettingsStore.edit { it[Keys.monitoringIntervalHours] = value.coerceIn(2, 46) }
     suspend fun setRememberPlaybackPosition(value: Boolean) = context.noodleSettingsStore.edit { it[Keys.rememberPlaybackPosition] = value }

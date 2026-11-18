@@ -219,6 +219,7 @@ private fun RelatedPreview(
                 Icon(Icons.Outlined.PlayCircle, null, modifier = Modifier.size(34.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+        pro.noodle.mobile.ui.download.SelectCheck(video, Modifier.align(Alignment.TopStart))
         if (video.duration.isNotBlank()) {
             Surface(
                 modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp),

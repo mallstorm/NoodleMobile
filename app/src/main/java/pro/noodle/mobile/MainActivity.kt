@@ -221,6 +221,7 @@ private fun NoodleApp(settingsVm: SettingsViewModel) {
                 Section.HISTORY -> HistoryScreen(historyVm)
                 Section.MORE -> MoreScreen(settingsVm)
             }
+            if (!playerActive) pro.noodle.mobile.ui.download.BatchBar(Modifier.align(Alignment.BottomCenter)) { section = Section.DOWNLOADS }
         }
     }
 }
@@ -274,7 +275,8 @@ private fun FavoritesScreen(vm: FavoritesViewModel = viewModel()) {
                         Box(Modifier.fillMaxSize()) {
                             if (bitmap != null) androidx.compose.foundation.Image(bitmap!!.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
                             else Icon(Icons.Outlined.PlayCircle, null, Modifier.align(Alignment.Center).size(30.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Icon(Icons.Outlined.Favorite, null, Modifier.align(Alignment.TopStart).padding(5.dp).size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                            Icon(Icons.Outlined.Favorite, null, Modifier.align(Alignment.TopEnd).padding(5.dp).size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                            pro.noodle.mobile.ui.download.SelectCheck(v, Modifier.align(Alignment.TopStart))
                             if (v.duration.isNotBlank()) Surface(Modifier.align(Alignment.BottomEnd).padding(5.dp), shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp), color = androidx.compose.ui.graphics.Color.Black.copy(alpha = .6f)) {
                                 Text(v.duration, Modifier.padding(horizontal = 6.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall, color = androidx.compose.ui.graphics.Color.White)
                             }
@@ -328,6 +330,22 @@ private fun DownloadsScreen(vm: DownloadsViewModel) {
                 FilterChip(selected = mode == 1, onClick = { mode = 1 }, label = { Text("В процессе") })
                 FilterChip(selected = mode == 2, onClick = { mode = 2 }, label = { Text("Готово (${library.size})") })
             }
+            val active = list.count { it.state == DownloadState.RUNNING }
+            val waiting = list.count { it.state == DownloadState.QUEUED }
+            val paused = list.count { it.state == DownloadState.PAUSED || it.state == DownloadState.FAILED }
+            if (active + waiting + paused > 0) {
+                Text(
+                    "Качается: $active • в очереди: $waiting • на паузе/с ошибкой: $paused",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.padding(top = 4.dp)) {
+                    if (active + waiting > 0) OutlinedButton(onClick = vm::pauseAll, contentPadding = PaddingValues(horizontal = 12.dp)) { Text("Пауза всех") }
+                    if (paused > 0) OutlinedButton(onClick = vm::resumeAll, contentPadding = PaddingValues(horizontal = 12.dp)) { Text("Продолжить все") }
+                    if (list.any { it.state == DownloadState.CANCELED || it.state == DownloadState.FAILED }) TextButton(onClick = vm::clearFinished) { Text("Убрать ошибки") }
+                }
+            }
             if (message.isNotBlank()) {
                 Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
@@ -353,7 +371,17 @@ private fun DownloadsScreen(vm: DownloadsViewModel) {
                                 listOf(
                                     d.protocol.takeIf { it.isNotBlank() },
                                     d.videoSelectionLabel.takeIf { it.isNotBlank() },
-                                ).filterNotNull().joinToString(" • ").ifBlank { d.state.name },
+                                ).filterNotNull().joinToString(" • ").let { base ->
+                                    val st = when (d.state) {
+                                        DownloadState.RUNNING -> if (d.totalBytes > 0) "качается ${(d.downloadedBytes * 100 / d.totalBytes)}%" else "качается"
+                                        DownloadState.QUEUED -> "в очереди"
+                                        DownloadState.PAUSED -> "пауза"
+                                        DownloadState.FAILED -> "ошибка"
+                                        DownloadState.COMPLETED -> "готово"
+                                        else -> d.state.name.lowercase()
+                                    }
+                                    if (base.isBlank()) st else "$base • $st"
+                                },
                                 style = MaterialTheme.typography.labelMedium,
                             )
                         }
@@ -582,6 +610,18 @@ private fun SettingsScreen(vm: SettingsViewModel) {
                         valueRange = 1f..10f,
                         steps = 8,
                     )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Switch(settings.downloadSelectMode, vm::downloadSelectMode)
+                        Spacer(Modifier.width(8.dp))
+                        Column {
+                            Text("Выбор видео для загрузки")
+                            Text("На роликах появятся квадратики с галочкой — отметьте много и скачайте одной кнопкой.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    val pickFolder = pro.noodle.mobile.ui.download.rememberFolderPicker()
+                    OutlinedButton(onClick = pickFolder, modifier = Modifier.fillMaxWidth()) {
+                        Text("Папка загрузок: ${pro.noodle.mobile.ui.download.folderLabel(settings.downloadFolderUri)}")
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Switch(settings.rememberPlaybackPosition, vm::rememberPosition)
                         Spacer(Modifier.width(8.dp))

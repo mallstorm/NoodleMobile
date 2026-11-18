@@ -621,6 +621,7 @@ internal fun SearchPreview(video: VideoItem, vm: SearchViewModel, modifier: Modi
                 .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .45f)))),
         )
 
+        pro.noodle.mobile.ui.download.SelectCheck(video, Modifier.align(Alignment.TopStart))
         if (pro.noodle.mobile.core.search.CardEnricher.looksLikeTime(video.duration)) {
             Surface(
                 modifier = Modifier.align(Alignment.BottomEnd).padding(7.dp),
