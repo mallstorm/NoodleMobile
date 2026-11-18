@@ -445,7 +445,7 @@ private fun bytes(v: Long): String = when {
     else -> "$v Б"
 }
 
-private enum class MorePage { MENU, SOURCES, STUDIO, SETTINGS }
+private enum class MorePage { MENU, SOURCES, STUDIO }
 
 @Composable
 private fun MoreScreen(settingsVm: SettingsViewModel) {
@@ -474,60 +474,16 @@ private fun MoreScreen(settingsVm: SettingsViewModel) {
             }
             Box(Modifier.weight(1f)) { SourceCenterScreen(openStudio = page == MorePage.STUDIO, onStudioClosed = { if (page == MorePage.STUDIO) page = MorePage.SOURCES }) }
         }
-        MorePage.SETTINGS -> Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = { page = MorePage.MENU }) { Icon(Icons.Outlined.ArrowBack, "Назад") }
-                Text("Настройки", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            }
-            Box(Modifier.weight(1f)) { SettingsScreen(settingsVm) }
-        }
-        MorePage.MENU -> LazyColumn(
-            Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
+        MorePage.MENU -> SettingsScreen(settingsVm) {
             item {
                 Text("Ещё", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text(
-                    "Источники, диагностика и параметры приложения",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            item {
-                ElevatedCard(
-                    onClick = { page = MorePage.STUDIO },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                ) {
-                    ListItem(
-                        headlineContent = { Text("Добавить сайт", fontWeight = FontWeight.SemiBold) },
-                        supportingContent = { Text("SNP Studio: адрес + запрос → готовый источник") },
-                        leadingContent = { Icon(Icons.Outlined.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary) },
-                        trailingContent = { Icon(Icons.Outlined.ChevronRight, null) },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    )
-                }
             }
             item {
                 ElevatedCard(onClick = { page = MorePage.SOURCES }, modifier = Modifier.fillMaxWidth()) {
                     ListItem(
                         headlineContent = { Text("Источники (SNP)") },
-                        supportingContent = { Text("Подключённые сайты, Marketplace, Studio и диагностика") },
+                        supportingContent = { Text("Подключённые сайты, добавление сайта, Studio и диагностика") },
                         leadingContent = { Icon(Icons.Outlined.Hub, null, tint = MaterialTheme.colorScheme.secondary) },
-                        trailingContent = { Icon(Icons.Outlined.ChevronRight, null) },
-                    )
-                }
-            }
-            item {
-                ElevatedCard(onClick = { page = MorePage.SETTINGS }, modifier = Modifier.fillMaxWidth()) {
-                    ListItem(
-                        headlineContent = { Text("Настройки") },
-                        supportingContent = { Text("Тема, масштаб, плеер, защита, загрузки и диагностика") },
-                        leadingContent = { Icon(Icons.Outlined.Settings, null, tint = MaterialTheme.colorScheme.tertiary) },
                         trailingContent = { Icon(Icons.Outlined.ChevronRight, null) },
                     )
                 }
@@ -555,7 +511,7 @@ private fun MoreScreen(settingsVm: SettingsViewModel) {
 }
 
 @Composable
-private fun SettingsScreen(vm: SettingsViewModel) {
+private fun SettingsScreen(vm: SettingsViewModel, header: androidx.compose.foundation.lazy.LazyListScope.() -> Unit = {}) {
     val settings by vm.settings.collectAsState()
     val diagnosticsMessage by vm.diagnosticsMessage.collectAsState()
     val report = remember { CoreSelfTest.run() }
@@ -570,6 +526,7 @@ private fun SettingsScreen(vm: SettingsViewModel) {
         contentPadding = PaddingValues(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        header()
         item {
             ElevatedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

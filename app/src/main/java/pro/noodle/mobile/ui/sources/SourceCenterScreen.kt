@@ -59,11 +59,6 @@ fun SourceCenterScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            FilledTonalButton(onClick = { showMarketplace = true }) {
-                Icon(Icons.Outlined.Storefront, null)
-                Spacer(Modifier.width(5.dp))
-                Text("Маркет")
-            }
             Button(onClick = { showStudio = true }) {
                 Icon(Icons.Outlined.AddLink, null)
                 Spacer(Modifier.width(5.dp))
