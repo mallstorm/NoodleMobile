@@ -61,6 +61,9 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private var generation = 0L
+    /** Все найденные ролики без склейки: ранжирование и склейка дублей пересчитываются из них при каждой догрузке. */
+    private var rawItems: List<VideoItem> = emptyList()
+    private var alternates: Map<String, List<VideoItem>> = emptyMap()
     private var searchJob: Job? = null
     private var pagingJob: Job? = null
     private var resolveJob: Job? = null
@@ -160,6 +163,8 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         lastPagingFinishedAtMs = 0L
         thumbnailCache.evictAll()
         thumbnailMisses.clear()
+        rawItems = emptyList()
+        alternates = emptyMap()
         _state.update {
             it.copy(
                 loading = true,
@@ -178,7 +183,8 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
                 // Never execute them on the Compose/UI dispatcher.
                 val batch = withContext(Dispatchers.IO) { searchRepo.search(q, maxPerSource = INITIAL_PER_SOURCE) }
                 if (g != generation) return@launch
-                val ranked = withContext(Dispatchers.IO) { rankItems(batch.items, q) }
+                rawItems = batch.items
+                val ranked = withContext(Dispatchers.IO) { mergeDuplicates(rankItems(batch.items, q)) }
                 if (g != generation) return@launch
                 _state.update {
                     it.copy(
@@ -230,7 +236,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 if (g != generation) return@launch
                 val incoming = batches.flatMap { it.second.items }
-                val old = _state.value.items
+                val old = rawItems
                 val seen = old.mapTo(HashSet()) { stableKey(it) }
                 val fresh = incoming.filter { seen.add(stableKey(it)) }
                 nextPage = startPage + PAGE_BURST
@@ -239,7 +245,8 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
                 if (fresh.isEmpty() && !cleanEmpty) pagingFailures++ else pagingFailures = 0
                 val pagingErrors = batches.flatMap { it.second.errors }
                     .distinctBy { "${it.sourceId}|${it.errorCode}|${it.message}" }
-                val ranked = withContext(Dispatchers.IO) { rankItems(old + fresh, q) }
+                rawItems = old + fresh
+                val ranked = withContext(Dispatchers.IO) { mergeDuplicates(rankItems(rawItems, q)) }
                 if (g != generation) return@launch
                 lastPagingFinishedAtMs = SystemClock.elapsedRealtime()
                 _state.update {
@@ -310,6 +317,45 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
             .map { it.value }
     }
 
+    private fun normTitle(t: String): String =
+        t.lowercase().replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim().replace(Regex("\\s+"), " ")
+
+    private fun durationSec(d: String): Int {
+        val p = d.trim().split(':').map { it.toIntOrNull() ?: return 0 }
+        return when (p.size) { 2 -> p[0] * 60 + p[1]; 3 -> p[0] * 3600 + p[1] * 60 + p[2]; else -> 0 }
+    }
+
+    /**
+     * Склейка: один и тот же ролик с разных сайтов показывается одной карточкой (лучшая по рангу),
+     * остальные копии запоминаются как запасные источники — если первая не откроется, пробуем их.
+     * Склеиваем только при совпадении нормализованного названия (≥12 символов) и длительности ±5 с
+     * (если длительность указана у обоих) и только между разными сайтами.
+     */
+    private fun mergeDuplicates(ranked: List<VideoItem>): List<VideoItem> {
+        val primaries = LinkedHashMap<String, VideoItem>()
+        val alts = HashMap<String, MutableList<VideoItem>>()
+        val byTitle = HashMap<String, MutableList<String>>()
+        for (v in ranked) {
+            val key = normTitle(v.title)
+            val id = v.id.ifBlank { stableKey(v) }
+            var target: String? = null
+            if (key.length >= 12) {
+                val d = durationSec(v.duration)
+                target = byTitle[key].orEmpty().firstOrNull { pid ->
+                    val p = primaries[pid]!!
+                    val pd = durationSec(p.duration)
+                    p.sourceBaseUrl != v.sourceBaseUrl && (d == 0 || pd == 0 || kotlin.math.abs(d - pd) <= 5)
+                }
+            }
+            if (target != null) alts.getOrPut(target) { mutableListOf() }.add(v)
+            else { primaries[id] = v; if (key.length >= 12) byTitle.getOrPut(key) { mutableListOf() }.add(id) }
+        }
+        alternates = alts
+        return primaries.values.toList()
+    }
+
+    fun altCount(video: VideoItem): Int = alternates[video.id.ifBlank { stableKey(video) }]?.size ?: 0
+
     fun addFavorite(video: VideoItem) {
         viewModelScope.launch {
             userMedia.addFavorite(video)
@@ -326,7 +372,14 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(resolving = true, message = "") }
         resolveJob = viewModelScope.launch {
             userMedia.saveHistory(video, 0L, 0L)
-            val r = playbackRepo.resolve(video, adapter)
+            var r = playbackRepo.resolve(video, adapter)
+            if (!(r.success && r.session != null)) {
+                for (alt in alternates[video.id.ifBlank { stableKey(video) }].orEmpty()) {
+                    val a = searchRepo.adapterFor(alt) ?: continue
+                    val rr = playbackRepo.resolve(alt, a)
+                    if (rr.success && rr.session != null) { r = rr; break }
+                }
+            }
             _state.update {
                 if (r.success && r.session != null) {
                     it.copy(resolving = false, playback = r.session)

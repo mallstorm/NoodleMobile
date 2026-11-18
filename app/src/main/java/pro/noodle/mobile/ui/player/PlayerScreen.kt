@@ -664,6 +664,15 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
                 )
             }
 
+            if (video.sources.size > 1 || video.variants.isNotEmpty()) {
+                item {
+                    AssistChip(
+                        onClick = { showPlaybackSettings = true },
+                        label = { Text("Качество: " + (video.variants.getOrNull(selectedVariant)?.label?.ifBlank { null } ?: source.label.ifBlank { "Авто" }) + "  ▾") },
+                    )
+                }
+            }
+
             item {
                 StreamBadge(
                     verdict = activeSession.streamVerdict,

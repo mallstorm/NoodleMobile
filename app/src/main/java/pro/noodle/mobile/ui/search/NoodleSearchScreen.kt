@@ -532,7 +532,7 @@ private fun SearchGridCard(video: VideoItem, vm: SearchViewModel) {
                     shape = MaterialTheme.shapes.medium,
                 ) {
                     Text(
-                        shortSourceName(video.sourceName).ifBlank { "Источник" },
+                        shortSourceName(video.sourceName).ifBlank { "Источник" } + vm.altCount(video).let { if (it > 0) " +$it" else "" },
                         Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                         style = MaterialTheme.typography.labelMedium,
                         color = sourceColor(video.sourceName),
@@ -567,7 +567,7 @@ private fun SearchListCard(video: VideoItem, vm: SearchViewModel) {
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(video.title, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(shortSourceName(video.sourceName), color = sourceColor(video.sourceName), style = MaterialTheme.typography.labelMedium)
+                Text(shortSourceName(video.sourceName) + vm.altCount(video).let { if (it > 0) " • ещё на $it сайт." else "" }, color = sourceColor(video.sourceName), style = MaterialTheme.typography.labelMedium)
                 if (video.views.isNotBlank()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Outlined.Visibility, null, modifier = Modifier.size(16.dp))
