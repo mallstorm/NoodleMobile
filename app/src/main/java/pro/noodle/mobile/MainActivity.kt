@@ -523,7 +523,7 @@ private fun SettingsScreen(vm: SettingsViewModel) {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Slider(
+                    pro.noodle.mobile.ui.NoodleSlider(
                         value = settings.uiScalePercent.toFloat(),
                         onValueChange = { raw -> vm.uiScale(pro.noodle.mobile.core.settings.snapScale(raw.toInt())) },
                         valueRange = 85f..100f,
@@ -538,7 +538,7 @@ private fun SettingsScreen(vm: SettingsViewModel) {
 
                     HorizontalDivider()
                     Text("Параллельных загрузок: ${settings.parallelDownloads}")
-                    Slider(
+                    pro.noodle.mobile.ui.NoodleSlider(
                         settings.parallelDownloads.toFloat(),
                         { vm.parallel(it.toInt()) },
                         valueRange = 1f..10f,
@@ -585,7 +585,7 @@ private fun SettingsScreen(vm: SettingsViewModel) {
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        Slider(
+                        pro.noodle.mobile.ui.NoodleSlider(
                             settings.monitoringIntervalHours.toFloat(),
                             { vm.monitoringHours(it.toInt()) },
                             valueRange = 2f..46f,
