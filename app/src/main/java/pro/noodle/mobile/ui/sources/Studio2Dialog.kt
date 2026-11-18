@@ -329,7 +329,6 @@ private fun StudioAdvancedSection(state: SourceToolsUiState, vm: SourceToolsView
                 Text(if (state.autoBusy) "AI работает…" else "Детально разобрать ошибку нейросетью")
             }
             if (!ready) Text("Ниже выберите Kilo Code или Cline, войдите и выберите модель.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
-            if (state.autoSteps.isNotEmpty() && state.autoBusy) StudioSteps(state.autoSteps, true)
         }
     }
         Text("Обработка", fontWeight = FontWeight.SemiBold)
