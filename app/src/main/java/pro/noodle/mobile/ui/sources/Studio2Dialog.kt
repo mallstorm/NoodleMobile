@@ -143,9 +143,9 @@ internal fun Studio2Dialog(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         androidx.compose.material3.Checkbox(checked = state.autoUseAi, onCheckedChange = vm::setAutoUseAi, enabled = !state.autoBusy)
                         Column(Modifier.weight(1f)) {
-                            Text("Проверить потоки нейросетью", style = MaterialTheme.typography.bodyMedium)
+                            Text("Подключать нейросеть автоматически", style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "Studio прогонит несколько видео сайта и найдёт настоящий поток, а не 5-секундное превью. Нейросеть (подключается в расширенном режиме) помогает со сложными плеерами.",
+                                "Если Studio не справится сама, нейросеть (Kilo Code или Cline — вход в расширенном режиме) сама откроет сайт, разберёт отчёт и поправит адаптер. Писать запрос не нужно. Без входа в нейросеть работает только локальный анализ.",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -305,7 +305,7 @@ private fun StudioAdvancedSection(state: SourceToolsUiState, vm: SourceToolsView
         value = state.studioInstruction,
         onValueChange = vm::setStudioInstruction,
         modifier = Modifier.fillMaxWidth(),
-        label = { Text("Задание для AI (необязательно)") },
+        label = { Text("Пожелания для нейросети (необязательно)") },
         placeholder = { Text("Например: найди поиск, карточки видео, превью, длительность и основной HLS/MP4-поток.") },
         minLines = 3,
         maxLines = 6,
@@ -444,7 +444,7 @@ private fun StudioAdvancedSection(state: SourceToolsUiState, vm: SourceToolsView
                     !state.studioAuthBusy &&
                     state.studioUrl.isNotBlank() &&
                     (state.studioProvider == StudioAiProvider.LOCAL ||
-                        (state.studioConnected && state.studioModel.isNotBlank() && state.studioInstruction.isNotBlank())),
+                        (state.studioConnected && state.studioModel.isNotBlank())),
             ) {
                 Icon(Icons.Outlined.Science, null)
                 Spacer(Modifier.width(5.dp))

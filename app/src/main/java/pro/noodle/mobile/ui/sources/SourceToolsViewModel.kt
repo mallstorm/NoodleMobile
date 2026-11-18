@@ -213,6 +213,12 @@ class SourceToolsViewModel(app: Application) : AndroidViewModel(app) {
                 studioMessage = result.message,
             )
         }
+        // Локальный разбор не справился: если нейросеть подключена и разрешена галочкой — она подключается сама.
+        val after = _state.value
+        if (!result.healthy && after.autoUseAi && after.studioProvider != StudioAiProvider.LOCAL && after.studioConnected && after.studioModel.isNotBlank()) {
+            _state.update { it.copy(autoSteps = (it.autoSteps + "Локально не вышло — подключаю нейросеть ${after.studioProvider.title}…").takeLast(12)) }
+            aiDiagnose()
+        }
     }
 
     /** AI-агент: получает отчёт, сам ходит на сайт через инструменты приложения, правит адаптер и подтверждает реальным тестом. */
@@ -438,7 +444,7 @@ class SourceToolsViewModel(app: Application) : AndroidViewModel(app) {
         // exact strongest candidate. The AI stage never restarts discovery from the original URL.
         var result = studio.generate(
             url = state.studioUrl,
-            instruction = state.studioInstruction,
+            instruction = state.studioInstruction.ifBlank { StudioAiAgent.DEFAULT_TASK },
             provider = StudioAiProvider.LOCAL,
             model = "",
             probeQuery = state.studioQuery,
