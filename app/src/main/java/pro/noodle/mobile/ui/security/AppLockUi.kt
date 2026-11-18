@@ -5,6 +5,9 @@ import android.content.pm.PackageManager
 import android.hardware.biometrics.BiometricPrompt
 import android.os.CancellationSignal
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
@@ -53,6 +56,21 @@ fun AppLockGate(settings: AppSettings, onUnlocked: () -> Unit) {
                 onError = { error = it },
             )
         }
+    }
+
+    if (settings.lockMode == "pattern") {
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            LockBackdrop()
+            Column(Modifier.fillMaxSize().padding(horizontal = 22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Spacer(Modifier.weight(1.5f))
+                PatternPad(onPattern = ::verify, modifier = Modifier.fillMaxWidth().aspectRatio(1f), light = true)
+                Box(Modifier.height(36.dp).padding(top = 10.dp), contentAlignment = Alignment.Center) {
+                    if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
+                }
+                Spacer(Modifier.weight(1f))
+            }
+        }
+        return
     }
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -233,12 +251,13 @@ fun AppLockSettingsCard(settings: AppSettings, onSetLock: (String, String) -> Un
 }
 
 @Composable
-private fun PatternPad(onPattern: (String) -> Unit) {
+private fun PatternPad(onPattern: (String) -> Unit, modifier: Modifier = Modifier.size(250.dp), light: Boolean = false) {
     var size by remember { mutableStateOf(IntSize.Zero) }
     var selected by remember { mutableStateOf<List<Int>>(emptyList()) }
     var pointer by remember { mutableStateOf<Offset?>(null) }
     val primaryColor = MaterialTheme.colorScheme.primary
-    val outlineColor = MaterialTheme.colorScheme.outline
+    val outlineColor = if (light) Color.White.copy(alpha = .9f) else MaterialTheme.colorScheme.outline
+    val dotScale = if (light) 1.6f else 1f
 
     fun nodeAt(offset: Offset): Int? {
         if (size.width <= 0 || size.height <= 0) return null
@@ -260,8 +279,7 @@ private fun PatternPad(onPattern: (String) -> Unit) {
     }
 
     Canvas(
-        Modifier
-            .size(250.dp)
+        modifier
             .onSizeChanged { size = it }
             .pointerInput(size) {
                 detectDragGestures(
@@ -305,7 +323,7 @@ private fun PatternPad(onPattern: (String) -> Unit) {
             val active = index in selected
             drawCircle(
                 color = if (active) primaryColor else outlineColor,
-                radius = if (active) 18f else 14f,
+                radius = (if (active) 18f else 14f) * dotScale,
                 center = center(index),
             )
         }
@@ -340,4 +358,16 @@ private fun showBiometricPrompt(context: Context, onSuccess: () -> Unit, onError
             onError("Отпечаток не распознан")
         }
     })
+}
+
+/** Размытый тёмно-зелёный фон экрана блокировки (без самого приложения за ним: плеер не должен играть под замком). */
+@Composable
+private fun LockBackdrop() {
+    val c = MaterialTheme.colorScheme
+    Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(c.primary.copy(alpha = .55f), c.surfaceVariant, c.tertiary.copy(alpha = .45f))))) {
+        Box(Modifier.align(Alignment.TopStart).offset(x = (-60).dp, y = 80.dp).size(260.dp).blur(70.dp).background(c.primary.copy(alpha = .55f), androidx.compose.foundation.shape.CircleShape))
+        Box(Modifier.align(Alignment.CenterEnd).offset(x = 70.dp).size(300.dp).blur(80.dp).background(c.secondary.copy(alpha = .45f), androidx.compose.foundation.shape.CircleShape))
+        Box(Modifier.align(Alignment.BottomStart).offset(x = (-40).dp, y = 60.dp).size(280.dp).blur(80.dp).background(c.tertiary.copy(alpha = .5f), androidx.compose.foundation.shape.CircleShape))
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .28f)))
+    }
 }
