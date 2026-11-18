@@ -2,8 +2,8 @@ package pro.noodle.mobile.core.version
 
 /** Runtime identity kept separate from SNP compatibility level. */
 object BuildIdentity {
-    const val VERSION_NAME = "0.17.3"
-    const val VERSION_CODE = 170300
+    const val VERSION_NAME = "0.17.4"
+    const val VERSION_CODE = 170400
     const val SNP_COMPATIBILITY_VERSION = "1.9.0"
     /**
      * Many sites and WAFs (Cloudflare, DDoS-Guard, nginx bot filters) answer unknown clients with

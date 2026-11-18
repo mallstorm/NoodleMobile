@@ -251,7 +251,7 @@ fun AppLockSettingsCard(settings: AppSettings, onSetLock: (String, String) -> Un
 }
 
 @Composable
-private fun PatternPad(onPattern: (String) -> Unit, modifier: Modifier = Modifier.size(250.dp), light: Boolean = false) {
+private fun PatternPad(modifier: Modifier = Modifier.size(250.dp), light: Boolean = false, onPattern: (String) -> Unit) {
     var size by remember { mutableStateOf(IntSize.Zero) }
     var selected by remember { mutableStateOf<List<Int>>(emptyList()) }
     var pointer by remember { mutableStateOf<Offset?>(null) }
