@@ -22,6 +22,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -163,6 +164,7 @@ fun NoodleSearchScreen(
                         vm.search()
                     },
                     onFilters = { filterSheet = true },
+                    filtersActive = sourceFilter != null || durationFilter != DurationFilter.ANY || sort != ResultSort.SOURCE_ORDER || !gridMode,
                     enabled = !state.loading,
                     modifier = Modifier.weight(1f),
                 )
@@ -205,88 +207,10 @@ fun NoodleSearchScreen(
                     vm.search()
                 },
                 onFilters = { filterSheet = true },
+                filtersActive = sourceFilter != null || durationFilter != DurationFilter.ANY || sort != ResultSort.SOURCE_ORDER || !gridMode,
                 enabled = !state.loading,
                 modifier = Modifier.fillMaxWidth(),
             )
-
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                DurationFilter.entries.forEach { filter ->
-                    FilterChip(
-                        selected = durationFilter == filter && sourceFilter == null,
-                        onClick = {
-                            durationFilter = filter
-                            if (filter != DurationFilter.ANY) sourceFilter = null
-                        },
-                        label = { Text(filter.title) },
-                    )
-                }
-                sourceNames.take(3).forEach { source ->
-                    FilterChip(
-                        selected = sourceFilter == source,
-                        onClick = {
-                            sourceFilter = if (sourceFilter == source) null else source
-                            if (sourceFilter != null) durationFilter = DurationFilter.ANY
-                        },
-                        label = { Text(shortSourceName(source), maxLines = 1) },
-                    )
-                }
-                if (sourceNames.size > 3) {
-                    AssistChip(onClick = { filterSheet = true }, label = { Text("+${sourceNames.size - 3}") })
-                }
-            }
-
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    if (state.items.isEmpty()) "Поиск по подключённым источникам" else "Найдено: ${visibleItems.size} видео",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
-                )
-
-                Box {
-                    OutlinedButton(
-                        onClick = { sortMenu = true },
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                    ) {
-                        Text(sort.title, style = MaterialTheme.typography.labelMedium)
-                        Spacer(Modifier.width(4.dp))
-                        Icon(Icons.Outlined.KeyboardArrowDown, null, modifier = Modifier.size(18.dp))
-                    }
-                    SortMenu(sort = sort, expanded = sortMenu, onDismiss = { sortMenu = false }) {
-                        sort = it
-                        sortMenu = false
-                    }
-                }
-
-                Spacer(Modifier.width(7.dp))
-                Surface(
-                    shape = MaterialTheme.shapes.large,
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                ) {
-                    Row {
-                        IconButton(onClick = { gridMode = true }) {
-                            Icon(
-                                Icons.Outlined.GridView,
-                                "Сетка",
-                                tint = if (gridMode) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        IconButton(onClick = { gridMode = false }) {
-                            Icon(
-                                Icons.Outlined.ViewList,
-                                "Список",
-                                tint = if (!gridMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
-            }
         }
 
         if (state.loading || state.resolving || state.loadingMore) {
@@ -368,7 +292,21 @@ fun NoodleSearchScreen(
                 Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Text("Фильтры", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Text("Настройки выдачи", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                if (state.items.isNotEmpty()) {
+                    Text("Найдено: ${visibleItems.size} видео", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text("Сортировка", style = MaterialTheme.typography.titleMedium)
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    ResultSort.entries.forEach { option ->
+                        FilterChip(selected = sort == option, onClick = { sort = option }, label = { Text(option.title) })
+                    }
+                }
+                Text("Вид", style = MaterialTheme.typography.titleMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    FilterChip(selected = gridMode, onClick = { gridMode = true }, leadingIcon = { Icon(Icons.Outlined.GridView, null) }, label = { Text("Сетка") })
+                    FilterChip(selected = !gridMode, onClick = { gridMode = false }, leadingIcon = { Icon(Icons.Outlined.ViewList, null) }, label = { Text("Список") })
+                }
                 Text("Источники", style = MaterialTheme.typography.titleMedium)
                 FilterChip(
                     selected = sourceFilter == null,
@@ -400,6 +338,8 @@ fun NoodleSearchScreen(
                         onClick = {
                             sourceFilter = null
                             durationFilter = DurationFilter.ANY
+                            sort = ResultSort.SOURCE_ORDER
+                            gridMode = true
                         },
                         modifier = Modifier.weight(1f),
                     ) { Text("Сброс") }
@@ -438,6 +378,7 @@ private fun SearchField(
     onValueChange: (String) -> Unit,
     onSearch: () -> Unit,
     onFilters: () -> Unit,
+    filtersActive: Boolean = false,
     enabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -463,7 +404,9 @@ private fun SearchField(
                     }
                 }
                 IconButton(onClick = onFilters) {
-                    Icon(Icons.Outlined.Tune, "Фильтры", tint = MaterialTheme.colorScheme.secondary)
+                    BadgedBox(badge = { if (filtersActive) Badge(containerColor = MaterialTheme.colorScheme.tertiary) }) {
+                        Icon(Icons.Outlined.Tune, "Настройки выдачи", tint = MaterialTheme.colorScheme.secondary)
+                    }
                 }
             }
         },
@@ -511,14 +454,16 @@ private fun NoodleHeader(
     ) {
         Box(
             Modifier
-                .size(46.dp)
-                .background(
-                    Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary)),
-                    shape = RoundedCornerShape(15.dp),
-                ),
+                .size(48.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(Brush.linearGradient(listOf(Color(0xFF3A1478), Color(0xFF1A1240), Color(0xFF0A0E1C)))),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(Icons.Outlined.PlayArrow, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(28.dp))
+            Image(
+                painter = androidx.compose.ui.res.painterResource(pro.noodle.mobile.R.drawable.ic_launcher_foreground),
+                contentDescription = "Noodle",
+                modifier = Modifier.requiredSize(80.dp),
+            )
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
