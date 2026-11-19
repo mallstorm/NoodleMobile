@@ -15,6 +15,7 @@ import org.json.JSONObject
 import pro.noodle.mobile.core.model.VideoItem
 import pro.noodle.mobile.core.settings.AppSettingsRepository
 import pro.noodle.mobile.core.settings.SourceOverridesRepository
+import pro.noodle.mobile.core.adapter.AdapterDefinition
 import pro.noodle.mobile.core.source.AdapterProbeService
 import pro.noodle.mobile.core.source.RuntimeAdapterRepository
 
@@ -78,8 +79,12 @@ class NewVideosStore(context: Context) {
     var lastNotifiable: Int
         get() = prefs.getInt("last_notifiable", 0)
         set(v) { prefs.edit().putInt("last_notifiable", v).apply() }
-    fun hasBaseline(sourceId: String) = prefs.getBoolean("base_$sourceId", false)
-    fun setBaseline(sourceId: String) { prefs.edit().putBoolean("base_$sourceId", true).apply() }
+    // base2_: после перехода сканера на ленты «новое»/главную базу строим заново, чтобы старые ролики не считались новыми.
+    fun hasBaseline(sourceId: String) = prefs.getBoolean("base2_$sourceId", false)
+    fun setBaseline(sourceId: String) { prefs.edit().putBoolean("base2_$sourceId", true).apply() }
+    var lastReport: String
+        get() = prefs.getString("last_report", "").orEmpty()
+        set(v) { prefs.edit().putString("last_report", v).apply() }
     var lastScanMs: Long
         get() = prefs.getLong(KEY_LAST, 0L)
         set(v) { prefs.edit().putLong(KEY_LAST, v).apply() }
@@ -116,9 +121,7 @@ class NewVideosScanner(private val context: Context) {
             adapters.map { d ->
                 async {
                     gate.withPermit {
-                        d to (withTimeoutOrNull(40_000L) {
-                            runCatching { probe.searchOne(d, d.healthQuery.ifBlank { "video" }, 40).first }.getOrDefault(emptyList())
-                        } ?: emptyList())
+                        d to (withTimeoutOrNull(75_000L) { collect(probe, d) } ?: emptyList())
                     }
                 }
             }.awaitAll()
@@ -147,6 +150,33 @@ class NewVideosScanner(private val context: Context) {
         store.lastScanMs = now
         store.lastNotifiable = notifiable
         store.lastSources = results.count { it.second.isNotEmpty() }
+        val empty = results.filter { it.second.isEmpty() }.map { it.first.name }
+        store.lastReport = "Источников: ${results.size}, ответили: ${results.size - empty.size}" +
+            (if (empty.isNotEmpty()) ", пустые/недоступны: ${empty.take(4).joinToString()}${if (empty.size > 4) "…" else ""}" else "") +
+            ", роликов просмотрено: ${results.sumOf { it.second.size }}"
         found
+    }
+
+    /**
+     * Свежие ролики сайта обычно не попадают в выдачу поиска по тестовому слову (она отсортирована по релевантности),
+     * поэтому кроме поиска читаем главную и типовые страницы «новое»; объединяем и убираем дубли.
+     */
+    private suspend fun collect(probe: AdapterProbeService, d: AdapterDefinition): List<VideoItem> {
+        val out = LinkedHashMap<String, VideoItem>()
+        fun add(list: List<VideoItem>) { list.forEach { out.putIfAbsent(it.watchUrl.lowercase(), it) } }
+        val base = d.baseUrl.trimEnd('/')
+        add(runCatching { probe.listingOne(d, "$base/", 80) }.getOrDefault(emptyList()))
+        var extra = 0
+        for (path in LATEST_PATHS) {
+            if (extra >= 2) break
+            val got = runCatching { probe.listingOne(d, base + path, 80) }.getOrDefault(emptyList())
+            if (got.isNotEmpty()) { add(got); extra++ }
+        }
+        add(runCatching { probe.searchOne(d, d.healthQuery.ifBlank { "video" }, 60).first }.getOrDefault(emptyList()))
+        return out.values.toList()
+    }
+
+    private companion object {
+        val LATEST_PATHS = listOf("/new/", "/latest-updates/", "/newest/", "/latest/", "/last/", "/page/1/")
     }
 }

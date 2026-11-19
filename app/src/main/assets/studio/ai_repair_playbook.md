@@ -113,3 +113,25 @@ Escalate in this order; never give up before step 3:
 2. If the player sits in a cross-origin iframe, take the iframe URL from `IFRAMES:` and run `find_streams` / `sniff_page` on it directly.
 3. `sniff_page` on the watch page (or iframe): the hidden browser runs JS, starts the player, and records every media request. This is the universal fallback for tokenised APIs, balancers (Kodik/Alloha/Collaps-style iframes), PlayerJS-encrypted `file:"#2…"` values and streams built by JavaScript. If it finds the stream, set `allow_javascript:true` and `allow_cookies:true` in the adapter; at playback the app repeats the same browser run automatically.
 4. Streams that exist only after a login, captcha or age gate cannot be reached: say so in `give_up` with the exact reason.
+
+## 9. Recon first (unknown or stubborn sites)
+Do NOT start by guessing. First call `recon_site` on the home page and on ONE watch page. It tells you the CMS, the player vendor, the AJAX
+endpoints, the search form and whether the video is behind a wall. Write the key facts into your `thought` (older observations are trimmed).
+Then follow the branch:
+- Search form found → `probe_urls` with 3-4 candidate search URLs (GET form action + its input names, `?s=`, `/search/{query}/`, `/index.php?do=search&subaction=search&story=`) and keep the one that returns cards (`list_cards`).
+- Watch page has IFRAME → `find_streams` on the iframe URL (send the watch page as referer implicitly: the app does it) → if nothing, `sniff_page` on the iframe URL.
+- Watch page has NO iframe and NO media → the player is injected. Look at AJAX/API ENDPOINTS and DATA-ATTRS from recon, call them with `http_request`
+  (headers `X-Requested-With: XMLHttpRequest`, `referer` = watch page, POST `form` with the ids you saw: news_id, id, vid…). Often the answer is JSON/HTML with an iframe or a `file` field.
+- Still nothing → `sniff_page` on the watch page (the hidden browser runs JS and clicks Play).
+- Cards are fine but every video fails → compare preview vs full stream via `find_streams` hints; set stream_prefer/stream_reject/stream_min_seconds.
+
+## 10. DataLife Engine (DLE) sites — most Russian "kino/film" sites
+Signals: `/engine/ajax/`, `dle_root`, `dle_login_hash`, `index.php?do=...`, URLs `/{id}-{slug}.html`, pagination `/page/N/`.
+- Listing/cards: link pattern `/\d+-[^/]+\.html`; covers are in `/uploads/posts/...` (often `data-src`/lazy); title in `alt` or heading; duration/quality in badges.
+- Search: GET `/index.php?do=search&subaction=search&story={query}` works on most DLE; page N: add `&search_start=N&result_from=(N-1)*PER_PAGE+1`. POST variant is the same fields (`do=search`, `subaction=search`, `story`). Some sites block GET search → use `http_request` POST to check, then express it as search_url_template if GET works.
+- Watch page: the player is usually an `<iframe>` from a balancer (kodik/alloha/collaps/videocdn/turbo/hdvb/vibix/...), OR a Playerjs/`file:"..."` config, OR loaded by an AJAX call to `/engine/ajax/...` or a site-specific `/player/...`. Use recon_site; do not assume.
+- Many DLE film sites put the FULL video behind a "PRO"/login/premium wall and show guests only a trailer/preview or a stub. If the guest page has only a short clip (<60 s), or the player demands login/payment, report it honestly with give_up (reason in Russian: what is free, what is not) rather than certifying a trailer-only adapter.
+- Domain mirrors (ww1., ww2., .link/.cc/.net) are normal: use the final URL after redirects as base_url; the app's mirror finder handles future moves.
+
+## 11. Self-check before `finish`
+Ask yourself: (1) do search results have real titles/covers/durations? (2) does the sample video last longer than a preview and play in the app's Media3 test? (3) did I keep allow_javascript/allow_cookies only if truly needed? (4) are all CDN hosts in allowed_hosts? (5) is health.query a word that returns many results? If any answer is no, fix it before finish.

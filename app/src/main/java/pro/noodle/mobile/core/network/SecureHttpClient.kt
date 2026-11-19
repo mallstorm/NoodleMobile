@@ -11,7 +11,10 @@ import okhttp3.Dns
 import okhttp3.HttpUrl
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
+import okhttp3.FormBody
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import pro.noodle.mobile.core.security.UrlPolicy
 import pro.noodle.mobile.core.version.BuildIdentity
 import java.io.ByteArrayOutputStream
@@ -161,6 +164,58 @@ class SecureHttpClient {
             }
         }
         TextFetchResult(false, current, errorCode = "HTTP_REDIRECT_LOOP", errorMessage = "Redirect loop.")
+    }
+
+    /**
+     * Произвольный HTTP-запрос (GET/POST, свои заголовки, form/raw body) для разведки AJAX-эндпоинтов и JSON API.
+     * Те же политики безопасности: только публичные хосты, https, лимит размера, cookie по ключу источника.
+     */
+    suspend fun requestText(
+        url: String,
+        policy: NetworkPolicy,
+        sourceKey: String,
+        method: String = "GET",
+        headers: Map<String, String> = emptyMap(),
+        form: Map<String, String> = emptyMap(),
+        rawBody: String = "",
+        contentType: String = "",
+    ): TextFetchResult = withContext(Dispatchers.IO) {
+        val decision = UrlPolicy.evaluateNavigation(url, allowHttp = policy.allowHttp, resolveDns = true)
+        if (!decision.allowed) return@withContext TextFetchResult(false, url, errorCode = decision.errorCode, errorMessage = decision.reason)
+        val client = clientFor(policy, sourceKey, followRedirects = true, anyPublicHost = true)
+        val m = method.uppercase().let { if (it in setOf("GET", "POST", "HEAD")) it else "GET" }
+        val b = Request.Builder().url(url)
+            .header("User-Agent", BuildIdentity.USER_AGENT)
+            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,application/json,text/javascript,*/*;q=0.8")
+            .header("Accept-Language", BuildIdentity.ACCEPT_LANGUAGE)
+        headers.forEach { (k, v) -> if (k.isNotBlank() && !k.equals("host", true) && !k.equals("content-length", true)) b.header(k, v) }
+        when (m) {
+            "POST" -> {
+                val body = if (form.isNotEmpty()) FormBody.Builder().also { fb -> form.forEach { (k, v) -> fb.add(k, v) } }.build()
+                else rawBody.toRequestBody((contentType.ifBlank { "application/x-www-form-urlencoded; charset=UTF-8" }).toMediaTypeOrNull())
+                b.post(body)
+            }
+            "HEAD" -> b.head()
+            else -> b.get()
+        }
+        val response = try { client.newCall(b.build()).execute() } catch (e: Exception) {
+            return@withContext TextFetchResult(false, url, errorCode = "HTTP_IO_ERROR", errorMessage = e.message ?: e.javaClass.simpleName)
+        }
+        response.use { r ->
+            val body = r.body
+            val limit = policy.maxResponseBytes
+            val bytes = if (body == null) ByteArray(0) else {
+                val out = ByteArrayOutputStream()
+                val buf = ByteArray(8192)
+                val input = body.byteStream()
+                var total = 0
+                while (total < limit) { val n = input.read(buf); if (n < 0) break; out.write(buf, 0, n); total += n }
+                out.toByteArray()
+            }
+            val charset = body?.contentType()?.charset(Charsets.UTF_8) ?: Charsets.UTF_8
+            TextFetchResult(r.isSuccessful, r.request.url.toString(), r.code, body?.contentType()?.toString().orEmpty(), bytes.toString(charset),
+                if (r.isSuccessful) "" else "HTTP_${r.code}", if (r.isSuccessful) "" else "HTTP ${r.code}")
+        }
     }
 
     suspend fun fetchBytes(

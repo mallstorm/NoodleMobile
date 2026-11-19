@@ -53,6 +53,7 @@ class StudioAiAgent(context: Context) {
     private val ai = StudioAiRouter(app)
     private val http = SecureHttpClient()
     private val probe = AdapterProbeService(app)
+    private val recon = StudioReconTools(http)
 
     suspend fun run(
         provider: StudioAiProvider,
@@ -197,6 +198,9 @@ class StudioAiAgent(context: Context) {
         "list_cards" -> listCards(args, query)
         "find_streams" -> findStreams(args)
         "sniff_page" -> sniffPage(args)
+        "recon_site" -> recon.recon(args)
+        "http_request" -> recon.httpRequest(args)
+        "probe_urls" -> recon.probeUrls(args)
         "run_adapter_test" -> {
             val json = adapterArg(args) ?: return "ERROR: args.adapter_json is required"
             val v = certify(json)
@@ -214,7 +218,7 @@ class StudioAiAgent(context: Context) {
                 items.take(10).forEach { appendLine("- ${it.title.take(70)} | ${it.watchUrl} | cover=${it.thumbnailUrl.take(90)} | ${it.duration}") }
             }
         }
-        else -> "UNKNOWN TOOL '$tool'. Available: fetch_page, list_cards, find_streams, sniff_page, search_only, run_adapter_test, finish, give_up."
+        else -> "UNKNOWN TOOL '$tool'. Available: fetch_page, list_cards, find_streams, sniff_page, recon_site, http_request, probe_urls, search_only, run_adapter_test, finish, give_up."
     }
 
     private fun adapterArg(args: JSONObject): String? = when (val a = args.opt("adapter_json")) {
@@ -404,6 +408,9 @@ class StudioAiAgent(context: Context) {
     private fun stepTitle(tool: String, args: JSONObject): String = when (tool) {
         "fetch_page" -> "AI открывает страницу: ${args.optString("url").removePrefix("https://").take(60)}"
         "list_cards" -> "AI ищет карточки: ${args.optString("url").removePrefix("https://").take(60)}"
+        "recon_site" -> "AI делает разведку сайта: ${args.optString("url").removePrefix("https://").take(55)}"
+        "http_request" -> "AI шлёт ${args.optString("method", "GET").uppercase()}: ${args.optString("url").removePrefix("https://").take(55)}"
+        "probe_urls" -> "AI проверяет набор адресов…"
         "sniff_page" -> "AI запускает плеер в браузере: ${args.optString("url").removePrefix("https://").take(55)}"
         "find_streams" -> "AI ищет потоки: ${args.optString("url").removePrefix("https://").take(60)}"
         "search_only" -> "AI проверяет поиск адаптера…"
@@ -453,6 +460,13 @@ class StudioAiAgent(context: Context) {
 - sniff_page {"url":"<watch page or iframe URL>"}
   Opens the page in the app's hidden browser: runs JavaScript, starts the player (autoplay, clicks Play) and records the media URLs the
   page requests itself. Use it when find_streams says NO MEDIA URLS (stream built by JS, encrypted/packed config, token API, balancer iframe).
+- recon_site {"url":"<home, listing or watch page>"}
+  X-ray of one page in a single call: CMS fingerprint (98 profiles), generator, scripts, iframes, player/CDN keywords, AJAX/API endpoints, data-attributes,
+  JSON-LD, forms (search form action/method/inputs), pagination, link shapes, and access-wall warnings (PRO/login/trailer/captcha). START HERE on an unknown site.
+- http_request {"url":"...", "method":"GET|POST", "headers":{"X-Requested-With":"XMLHttpRequest"}, "referer":"...", "form":{"k":"v"}, "body":"raw", "content_type":"application/json", "grep":"<regex>"}
+  Any HTTP request through the secure client (cookies kept). Use it for DLE/AJAX player endpoints, JSON APIs, POST search. JSON is pretty-compacted.
+- probe_urls {"urls":["https://...", ...]}
+  Up to 12 URLs in parallel: status, type, size, <title>, redirect target. Use it to test candidate search/listing/ajax URLs, robots.txt, sitemap.xml, mirrors.
 - search_only {"adapter_json":{...}, "query":"..."}
   Quick search stage with a candidate adapter (no playback): number of cards, covers, durations.
 - run_adapter_test {"adapter_json":{...}}

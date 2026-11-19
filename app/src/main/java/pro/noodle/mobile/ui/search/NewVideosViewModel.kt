@@ -65,7 +65,7 @@ class NewVideosViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val found = runCatching { scanner.scan() }.getOrDefault(-1)
             reload()
-            _state.update { it.copy(scanning = false, message = when { found < 0 -> "Не удалось просканировать источники"; found == 0 -> "Новых роликов пока нет"; else -> "Найдено новых: $found" }) }
+            _state.update { it.copy(scanning = false, message = when { found < 0 -> "Не удалось просканировать источники"; found == 0 -> "Новых роликов пока нет. ${store.lastReport}"; else -> "Найдено новых: $found" }) }
         }
     }
 }

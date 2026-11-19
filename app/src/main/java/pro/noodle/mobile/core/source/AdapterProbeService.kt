@@ -362,6 +362,21 @@ class AdapterProbeService(
         return emptyList<VideoItem>() to lastError
     }
 
+    /** Разбирает произвольную страницу-ленту сайта (главная, «новое») теми же правилами, что и поиск. */
+    suspend fun listingOne(d: AdapterDefinition, url: String, max: Int): List<VideoItem> {
+        val engine = RuntimeEngineRegistry.find(d.engine) ?: return emptyList()
+        val req = d.searchRequest(d.healthQuery.ifBlank { "video" }, page = -1, maxItems = max)
+        val net = http.fetchText(url, NetworkPolicy(d.allowedHosts, allowCookies=d.allowCookies, maxResponseBytes=5*1024*1024), d.id)
+        if (!net.success) return emptyList()
+        val finalBase = runCatching { URI(net.finalUrl).let { u -> if (u.host.isNullOrBlank()) d.baseUrl else "${u.scheme}://${u.host}${if (u.port >= 0) ":${u.port}" else ""}" } }.getOrDefault(d.baseUrl)
+        val url0 = url
+            val items = pro.noodle.mobile.core.search.CardEnricher.enrich(engine.parseSearch(net.text, req.copy(baseUrl = finalBase)), net.text, net.finalUrl.ifBlank { url0 }, d).mapNotNull { p ->
+                val watch = normalizeAllowed(p.watchPath, d, base = finalBase) ?: return@mapNotNull null
+                VideoItem(id="${d.id}|${p.remoteId.ifBlank { watch }}", remoteId=p.remoteId, watchUrl=watch, title=p.title.ifBlank { p.remoteId.ifBlank { "Без названия" } }, thumbnailUrl=normalizeAllowed(p.thumbnailUrl,d,true,finalBase).orEmpty(), duration=p.durationText, views=p.viewsText, sourceName=d.name, sourceBaseUrl=d.baseUrl, sourceEngine=d.engine, playerPageUrl=watch, favoriteKey="${d.id}|${p.remoteId.ifBlank { watch }}")
+            }.distinctBy { it.watchUrl.lowercase() }.take(max.coerceAtLeast(1))
+        return items
+    }
+
     private fun isTransient(err: Pair<String, String>): Boolean {
         val t = (err.first + " " + err.second).lowercase()
         return listOf("io_error", "connection", "timeout", "timed out", "reset", "closed", "429", "503", "502", "504", "unreachable").any { it in t }
