@@ -80,7 +80,7 @@ health{query,min_results,require_playback,auto_repair}, repair{...}.
 * Always escape backslashes for JSON (`\\d`).
 
 ## 4. Workflow (follow in this order)
-1. Read the report and current adapter. Write a one-line hypothesis (field "thought").
+1. Read the report and current adapter. Write a one-line hypothesis (field "thought"). If the site is new or the report says nothing useful, call recon_site first (section 9).
 2. If the report says transient/IO error: run_adapter_test on the current adapter once (maybe twice) before changing anything.
 3. Search layer: fetch_page the search URL (and the homepage if the template is doubtful). Verify HTTP 200 and that real
    video links are present.
