@@ -82,6 +82,7 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
     var fullscreen by remember { mutableStateOf(false) }
     var showPlaybackSettings by remember { mutableStateOf(false) }
     var showEqualizer by remember { mutableStateOf(false) }
+    var showDub by remember { mutableStateOf(false) }
     var selectedVariant by remember(video.id) { mutableIntStateOf(-1) }
     var selectedAudio by remember(video.id) { mutableIntStateOf(-1) }
     var selectedText by remember(video.id) { mutableIntStateOf(-1) }
@@ -610,10 +611,19 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
                 player.trackSelectionParameters = builder.build()
             },
             onOpenEqualizer = { showPlaybackSettings = false; showEqualizer = true },
+            onOpenDub = { showPlaybackSettings = false; showDub = true },
             onDismiss = { showPlaybackSettings = false },
         )
     }
     if (showEqualizer) EqualizerSheet(onDismiss = { showEqualizer = false })
+    if (showDub) DubSheet(status = dub.status, onDismiss = { showDub = false })
+
+    val dub = remember(player) { pro.noodle.mobile.core.dub.DubEngine(context.applicationContext) }
+    val dubState by pro.noodle.mobile.core.dub.DubConfig.flow.collectAsState()
+    LaunchedEffect(player, dub, dubState.enabled, dubState.provider, dubState.tts, dubState.groqKey, dubState.openaiKey, source.url) {
+        if (dubState.enabled) dub.start(player, source.url, activeSession.referer, video.id) else dub.stop()
+    }
+    DisposableEffect(dub) { onDispose { dub.stop() } }
 
     val backFromPlayer = {
         if (fullscreen) fullscreen = false else onBack()
@@ -874,6 +884,7 @@ private fun PlayerSettingsSheet(
     onAudio: (Int) -> Unit,
     onText: (Int) -> Unit,
     onOpenEqualizer: () -> Unit,
+    onOpenDub: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -921,6 +932,9 @@ private fun PlayerSettingsSheet(
 
             androidx.compose.material3.OutlinedButton(onClick = onOpenEqualizer, modifier = Modifier.fillMaxWidth()) {
                 Text("Эквалайзер и звук")
+            }
+            androidx.compose.material3.OutlinedButton(onClick = onOpenDub, modifier = Modifier.fillMaxWidth()) {
+                Text("Озвучка на русском (ИИ)")
             }
             Text("Скорость", fontWeight = FontWeight.SemiBold)
             var currentSpeed by remember { mutableFloatStateOf(player.playbackParameters.speed) }

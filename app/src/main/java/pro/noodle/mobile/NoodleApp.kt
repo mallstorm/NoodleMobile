@@ -8,5 +8,7 @@ class NoodleApp : Application() {
         super.onCreate()
         CookieChallenge.attach(this)
         pro.noodle.mobile.core.download.BatchDownloads.init(this)
+        pro.noodle.mobile.core.audio.AudioEq.init(this)
+        pro.noodle.mobile.core.dub.DubConfig.init(this)
     }
 }
