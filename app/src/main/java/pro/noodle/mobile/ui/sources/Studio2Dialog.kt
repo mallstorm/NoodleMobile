@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -328,11 +329,11 @@ private fun StudioAdvancedSection(state: SourceToolsUiState, vm: SourceToolsView
                 Spacer(Modifier.width(8.dp))
                 Text(if (state.autoBusy) "AI работает…" else "Детально разобрать ошибку нейросетью")
             }
-            if (!ready) Text("Ниже выберите Kilo Code или Cline, войдите и выберите модель.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+            if (!ready) Text("Ниже выберите Kilo Code, Cline, ChatGPT или Grok, войдите и выберите модель.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
         }
     }
         Text("Обработка", fontWeight = FontWeight.SemiBold)
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             StudioAiProvider.entries.forEach { provider ->
                 FilterChip(
                     selected = state.studioProvider == provider,

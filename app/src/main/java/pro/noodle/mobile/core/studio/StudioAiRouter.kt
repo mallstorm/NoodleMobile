@@ -17,7 +17,9 @@ import java.util.concurrent.TimeUnit
 enum class StudioAiProvider(val wireName: String, val title: String) {
     LOCAL("local", "Без AI"),
     KILO("kilo", "Kilo Code"),
-    CLINE("cline", "Cline");
+    CLINE("cline", "Cline"),
+    CHATGPT("chatgpt", "ChatGPT"),
+    GROK("grok", "Grok");
 
     companion object {
         fun fromWireName(value: String): StudioAiProvider =
@@ -71,6 +73,26 @@ class StudioAiRouter(context: Context) {
         .followSslRedirects(false)
         .build()
 
+    private val gpt = StudioChatGptClient()
+    private val grok = StudioGrokClient()
+    private var pendingGpt: StudioChatGptClient.Login? = null
+    private val grokDevices = java.util.concurrent.ConcurrentHashMap<String, StudioGrokClient.Device>()
+
+    private fun readGpt(): StudioChatGptClient.Creds? = StudioChatGptClient.Creds.fromJson(readSecret(KEY_GPT))
+    private fun saveGpt(c: StudioChatGptClient.Creds) = writeSecret(KEY_GPT, c.toJson())
+    private fun currentGpt(): StudioChatGptClient.Creds? {
+        val c = readGpt() ?: return null
+        if (!c.expiresSoon()) return c
+        return runCatching { gpt.refresh(c).also { saveGpt(it) } }.getOrElse { if (c.expiresAtMs > System.currentTimeMillis()) c else throw it }
+    }
+    private fun readGrok(): StudioGrokClient.Creds? = StudioGrokClient.Creds.fromJson(readSecret(KEY_GROK))
+    private fun saveGrok(c: StudioGrokClient.Creds) = writeSecret(KEY_GROK, c.toJson())
+    private fun currentGrok(): StudioGrokClient.Creds? {
+        val c = readGrok() ?: return null
+        if (!c.expiresSoon()) return c
+        return runCatching { grok.refresh(c).also { saveGrok(it) } }.getOrElse { if (c.expiresAtMs > System.currentTimeMillis()) c else throw it }
+    }
+
     fun selectedProvider(): StudioAiProvider =
         StudioAiProvider.fromWireName(prefs.getString(KEY_PROVIDER, StudioAiProvider.LOCAL.wireName).orEmpty())
 
@@ -99,6 +121,8 @@ class StudioAiRouter(context: Context) {
                 credentials?.email.orEmpty(),
             )
         }
+        StudioAiProvider.CHATGPT -> readGpt().let { StudioAiAccountStatus(provider, it != null, it?.email.orEmpty().ifBlank { it?.plan.orEmpty() }) }
+        StudioAiProvider.GROK -> readGrok().let { StudioAiAccountStatus(provider, it != null, it?.email.orEmpty()) }
     }
 
     fun disconnect(provider: StudioAiProvider) {
@@ -106,6 +130,8 @@ class StudioAiRouter(context: Context) {
             StudioAiProvider.LOCAL -> Unit
             StudioAiProvider.KILO -> prefs.edit().remove(KEY_KILO_TOKEN).remove(KEY_KILO_EMAIL).apply()
             StudioAiProvider.CLINE -> prefs.edit().remove(KEY_CLINE_CREDENTIALS).apply()
+            StudioAiProvider.CHATGPT -> { pendingGpt?.let { gpt.cancel(it) }; pendingGpt = null; prefs.edit().remove(KEY_GPT).apply() }
+            StudioAiProvider.GROK -> prefs.edit().remove(KEY_GROK).apply()
         }
     }
 
@@ -114,6 +140,16 @@ class StudioAiRouter(context: Context) {
             StudioAiProvider.LOCAL -> error("Локальный режим не требует авторизации")
             StudioAiProvider.KILO -> beginKiloLogin()
             StudioAiProvider.CLINE -> beginClineLogin()
+            StudioAiProvider.CHATGPT -> {
+                pendingGpt?.let { gpt.cancel(it) }
+                val hostId = prefs.getString(KEY_GPT_HOST, "").orEmpty().ifBlank { "urn:uuid:" + java.util.UUID.randomUUID().also { id -> prefs.edit().putString(KEY_GPT_HOST, "urn:uuid:$id").apply() } }
+                val l = gpt.begin(hostId); pendingGpt = l
+                StudioDeviceLogin(provider, "", "", l.authUrl, 300, 1)
+            }
+            StudioAiProvider.GROK -> {
+                val d = grok.begin(); grokDevices[d.deviceCode] = d
+                StudioDeviceLogin(provider, d.deviceCode, d.userCode, d.url, ((d.expiresAtMs - System.currentTimeMillis()) / 1000).toInt(), d.intervalSec.toInt())
+            }
         }
     }
 
@@ -122,6 +158,26 @@ class StudioAiRouter(context: Context) {
             StudioAiProvider.LOCAL -> StudioAiAccountStatus(StudioAiProvider.LOCAL, true, "Локальный анализ")
             StudioAiProvider.KILO -> awaitKiloLogin(login)
             StudioAiProvider.CLINE -> awaitClineLogin(login)
+            StudioAiProvider.CHATGPT -> {
+                val l = pendingGpt ?: error("Начните вход заново")
+                val c = gpt.await(l); pendingGpt = null
+                saveGpt(c)
+                StudioAiAccountStatus(StudioAiProvider.CHATGPT, true, c.email.ifBlank { c.plan })
+            }
+            StudioAiProvider.GROK -> {
+                val d = grokDevices[login.deviceCode] ?: error("Начните вход заново")
+                var found: StudioGrokClient.Creds? = null
+                var wait = d.intervalSec
+                while (found == null) {
+                    if (System.currentTimeMillis() >= d.expiresAtMs) error("Код xAI истёк — начните вход заново")
+                    delay(wait * 1000L)
+                    found = grok.poll(d)
+                    if (found == null) wait = (wait + 1).coerceAtMost(15)
+                }
+                grokDevices.remove(login.deviceCode)
+                saveGrok(found)
+                StudioAiAccountStatus(StudioAiProvider.GROK, true, found.email)
+            }
         }
     }
 
@@ -130,6 +186,8 @@ class StudioAiRouter(context: Context) {
             StudioAiProvider.LOCAL -> emptyList()
             StudioAiProvider.KILO -> kiloModelCatalog()
             StudioAiProvider.CLINE -> clineModelCatalog()
+            StudioAiProvider.CHATGPT -> gpt.models(currentGpt() ?: error("Войдите в ChatGPT")).map { simpleModel(it) }
+            StudioAiProvider.GROK -> grok.models(currentGrok() ?: error("Войдите в Grok")).map { simpleModel(it) }
         }
     }
 
@@ -169,6 +227,12 @@ class StudioAiRouter(context: Context) {
         }
         require(chosen.isNotBlank()) { "Не удалось выбрать AI-модель" }
 
+        if (provider == StudioAiProvider.CHATGPT || provider == StudioAiProvider.GROK) {
+            val text = if (provider == StudioAiProvider.CHATGPT) gpt.chat(currentGpt() ?: error("Войдите в ChatGPT"), chosen, messages)
+            else grok.chat(currentGrok() ?: error("Войдите в Grok"), chosen, messages)
+            if (text.isBlank()) throw IllegalStateException("${provider.title} вернул пустой ответ")
+            return@withContext StudioAiReply(text, chosen)
+        }
         val auth = when (provider) {
             StudioAiProvider.KILO -> readSecret(KEY_KILO_TOKEN).ifBlank {
                 error("Войдите в Kilo Code")
@@ -176,12 +240,12 @@ class StudioAiRouter(context: Context) {
             StudioAiProvider.CLINE -> currentCline()?.let { formatClineToken(it.accessToken) }.orEmpty().ifBlank {
                 error("Войдите в Cline")
             }
-            StudioAiProvider.LOCAL -> ""
+            else -> ""
         }
         val base = when (provider) {
             StudioAiProvider.KILO -> KILO_OPENAI_BASE
             StudioAiProvider.CLINE -> CLINE_OPENAI_BASE
-            StudioAiProvider.LOCAL -> error("Локальный режим")
+            else -> error("Локальный режим")
         }
         val array = JSONArray()
         messages.forEach { (role, content) -> array.put(JSONObject().put("role", role).put("content", content)) }
@@ -375,9 +439,9 @@ class StudioAiRouter(context: Context) {
             ?.json
             ?.let(::extractModelIds)
             .orEmpty()
-            .map(::simpleModel)
+            .map { simpleModel(it) }
 
-        val fallbackModels = KILO_FALLBACK_MODELS.map(::simpleModel)
+        val fallbackModels = KILO_FALLBACK_MODELS.map { simpleModel(it) }
         val merged = linkedMapOf<String, StudioAiModel>()
         (gatewayModels + legacyModels + fallbackModels).forEach { model ->
             if (model.id.isNotBlank() && model.id !in merged) merged[model.id] = model
@@ -630,6 +694,9 @@ class StudioAiRouter(context: Context) {
         private const val KEY_KILO_TOKEN = "kilo_token"
         private const val KEY_KILO_EMAIL = "kilo_email"
         private const val KEY_CLINE_CREDENTIALS = "cline_credentials"
+        private const val KEY_GPT = "chatgpt_credentials"
+        private const val KEY_GPT_HOST = "chatgpt_host"
+        private const val KEY_GROK = "grok_credentials"
 
         private const val KILO_API_BASE = "https://api.kilo.ai"
         private const val KILO_OPENAI_BASE = "https://api.kilo.ai/api/openrouter"

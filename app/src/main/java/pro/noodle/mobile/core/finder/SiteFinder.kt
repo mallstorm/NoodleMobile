@@ -66,7 +66,12 @@ class SiteFinder(private val context: Context) {
     suspend fun search(engine: FinderEngine, query: String, opt: FinderOptions, onProgress: (List<FoundSite>, String) -> Unit): FinderResult = withContext(Dispatchers.IO) {
         val q = query.trim()
         if (q.isBlank()) return@withContext FinderResult(emptyList(), "Введите запрос.")
-        val known = runCatching { RuntimeAdapterRepository(context).listAll().map { hostOf(it.definition.baseUrl) } }.getOrDefault(emptyList()).toSet()
+        val known = runCatching {
+            RuntimeAdapterRepository(context).listAll().flatMap { r ->
+                (listOf(r.definition.baseUrl) + r.definition.allowedHosts.map { h -> "https://" + h.removePrefix("*.") }).map { hostOf(it) }
+            }
+        }.getOrDefault(emptyList()).filter { it.isNotBlank() }.toSet()
+        val hidden = java.util.Collections.synchronizedSet(HashSet<String>())
         val acc = LinkedHashMap<String, MutableSite>()
         val notes = java.util.Collections.synchronizedList(mutableListOf<String>())
         val status = java.util.concurrent.ConcurrentHashMap<String, String>()
@@ -86,7 +91,7 @@ class SiteFinder(private val context: Context) {
                     var total = 0
                     for ((vi, qq) in queries.withIndex()) {
                         val d = if (vi == 0) depth else (depth / 3).coerceAtLeast(2)
-                        total += runEngine(e, qq, d, acc, notes, opt.hideMainstream) { page ->
+                        total += runEngine(e, qq, d, acc, notes, opt.hideMainstream, known, hidden) { page ->
                             status[e.title] = "стр. $page/$d" + if (queries.size > 1) " (запрос ${vi + 1}/${queries.size})" else ""
                             push()
                         }
@@ -101,7 +106,7 @@ class SiteFinder(private val context: Context) {
         status.remove("Проверка")
         val sites = snapshot(acc, known)
         onProgress(sites, "")
-        val note = notes.distinct().joinToString("\n")
+        val note = (notes.distinct() + (if (hidden.isNotEmpty()) listOf("Скрыто сайтов, для которых адаптер уже есть: ${hidden.size}.") else emptyList())).joinToString("\n")
         FinderResult(sites, if (sites.isEmpty() && note.isBlank()) "Ничего не найдено." else note)
     }
 
@@ -113,7 +118,7 @@ class SiteFinder(private val context: Context) {
 
     private suspend fun runEngine(
         e: FinderEngine, q: String, depth: Int, acc: MutableMap<String, MutableSite>, notes: MutableList<String>,
-        hideMainstream: Boolean, onPage: (Int) -> Unit,
+        hideMainstream: Boolean, known: Set<String>, hidden: MutableSet<String>, onPage: (Int) -> Unit,
     ): Int {
         var found = 0
         var emptyStreak = 0
@@ -132,6 +137,7 @@ class SiteFinder(private val context: Context) {
                 for ((url, title) in links) {
                     val host = hostOf(url)
                     if (host.isBlank() || !host.contains('.') || isNoise(host, hideMainstream)) continue
+                    if (isKnown(host, known)) { hidden.add(host); continue } // адаптер уже есть — не показываем
                     val s = acc.getOrPut(host) { fresh++; MutableSite(host, homeOf(url), title.ifBlank { host }, url) }
                     s.hits++; s.engines.add(e.title)
                     if (s.title == s.host && title.isNotBlank()) s.title = title
@@ -273,6 +279,9 @@ class SiteFinder(private val context: Context) {
         "paramountplus.", "imdb.", "rottentomatoes.", "metacritic.", "letterboxd.", "themoviedb.", "tmdb.", "justwatch.", "vimeo.", "dailymotion.", "twitch.", "vkvideo.", "kino.pub", "plex.tv",
         "crunchyroll.", "tubitv.", "pluto.tv", "roku.", "mubi.", "kinorium.", "myshows.", "tv.yandex",
     )
+
+    private fun isKnown(host: String, known: Set<String>) =
+        known.any { k -> host == k || host.endsWith(".$k") || k.endsWith(".$host") }
 
     private fun isNoise(host: String, hideMainstream: Boolean): Boolean {
         fun m(l: List<String>) = l.any { host.contains(it) || host.endsWith(it.trimEnd('.')) }

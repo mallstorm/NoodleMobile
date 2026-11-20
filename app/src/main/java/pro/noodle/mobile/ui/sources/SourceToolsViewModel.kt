@@ -389,6 +389,8 @@ class SourceToolsViewModel(app: Application) : AndroidViewModel(app) {
                 ?: catalog.firstOrNull { it.id.equals("openrouter/free", true) }
                 ?: catalog.firstOrNull { it.isFree }
             StudioAiProvider.CLINE -> catalog.firstOrNull { it.isFree }
+            StudioAiProvider.CHATGPT -> catalog.firstOrNull { it.id.startsWith("gpt-5") && !it.id.contains("codex") }
+            StudioAiProvider.GROK -> catalog.firstOrNull { it.id.contains("fast") } ?: catalog.firstOrNull()
             StudioAiProvider.LOCAL -> null
         }
         val selected = saved.takeIf { it in models }
