@@ -23,6 +23,8 @@ import java.net.URLEncoder
 
 enum class FinderEngine(val title: String) { ALL("Все сразу"), DUCKDUCKGO("DuckDuckGo"), YAHOO("Yahoo") }
 
+data class WebPage(val html: String, val finalUrl: String, val error: String = "")
+
 data class FoundSite(
     val host: String,
     val homeUrl: String,
