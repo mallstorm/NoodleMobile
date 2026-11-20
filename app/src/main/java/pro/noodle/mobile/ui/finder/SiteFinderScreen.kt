@@ -111,7 +111,7 @@ fun SiteFinderScreen(onOpenStudio: () -> Unit, vm: SiteFinderViewModel = viewMod
         }
         item {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FinderEngine.values().forEach { e -> FilterChip(selected = st.engine == e, onClick = { vm.setEngine(e) }, label = { Text(e.title + if (e.webView) " (бета)" else "") }, enabled = !st.busy) }
+                FinderEngine.values().forEach { e -> FilterChip(selected = st.engine == e, onClick = { vm.setEngine(e) }, label = { Text(e.title) }, enabled = !st.busy) }
             }
         }
         item {

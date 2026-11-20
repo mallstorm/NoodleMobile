@@ -21,10 +21,7 @@ import java.net.URI
 import java.net.URLDecoder
 import java.net.URLEncoder
 
-enum class FinderEngine(val title: String, val webView: Boolean = false) {
-    ALL("Все сразу"), BING("Bing"), DUCKDUCKGO("DuckDuckGo"), BRAVE("Brave"), MOJEEK("Mojeek"), YAHOO("Yahoo"),
-    GOOGLE("Google", true), YANDEX("Яндекс", true),
-}
+enum class FinderEngine(val title: String) { ALL("Все сразу"), DUCKDUCKGO("DuckDuckGo"), YAHOO("Yahoo") }
 
 data class FoundSite(
     val host: String,
@@ -56,7 +53,6 @@ data class FinderOptions(
 class SiteFinder(private val context: Context) {
     private val http = SecureHttpClient()
     private val policy = NetworkPolicy(emptyList(), allowCookies = true, maxResponseBytes = 3 * 1024 * 1024)
-    private val web by lazy { SearchWebFetcher(context) }
 
     private class MutableSite(val host: String, val home: String, var title: String, val sample: String) {
         var hits = 0
@@ -73,7 +69,7 @@ class SiteFinder(private val context: Context) {
         val notes = java.util.Collections.synchronizedList(mutableListOf<String>())
         val status = java.util.concurrent.ConcurrentHashMap<String, String>()
         val depth = opt.pages.coerceIn(1, 15)
-        val engines = if (engine == FinderEngine.ALL) listOf(FinderEngine.BING, FinderEngine.DUCKDUCKGO, FinderEngine.BRAVE, FinderEngine.MOJEEK, FinderEngine.YAHOO) else listOf(engine)
+        val engines = if (engine == FinderEngine.ALL) listOf(FinderEngine.DUCKDUCKGO, FinderEngine.YAHOO) else listOf(engine)
         val queries = if (opt.variants) variants(q) else listOf(q)
         var lastPush = 0L
         fun push(force: Boolean = false) {
@@ -143,7 +139,7 @@ class SiteFinder(private val context: Context) {
             if (links.isEmpty() || fresh == 0) emptyStreak++ else emptyStreak = 0
             if (e == FinderEngine.DUCKDUCKGO && ddgNext == null) break
             if (emptyStreak >= 2) break
-            if (p < depth - 1) delay(if (e.webView) 1500L else 700L + (0..500).random())
+            if (p < depth - 1) delay(700L + (0..500).random())
         }
         if (found == 0) notes.add("${e.title} не вернул результатов (блокировка или другой формат выдачи).")
         return found
@@ -159,17 +155,12 @@ class SiteFinder(private val context: Context) {
         suspend fun h(url: String, key: String) = http.fetchText(url, policy, key).let { WebPage(it.text, it.finalUrl, if (it.text.isBlank()) it.errorMessage.ifBlank { "HTTP ${it.statusCode}" } else "") }
         return runCatching {
             when (e) {
-                FinderEngine.BING -> h("https://www.bing.com/search?q=$enc&first=${page * 10 + 1}&FORM=PERE&setlang=ru&cc=ru", "finder-bing")
                 FinderEngine.DUCKDUCKGO ->
                     if (page == 0) h("https://html.duckduckgo.com/html/?q=$enc&kl=wt-wt", "finder-ddg")
                     else if (ddgNext == null) WebPage("", "", "нет ссылки на следующую страницу")
                     else http.requestText("https://html.duckduckgo.com/html/", policy, "finder-ddg", method = "POST", form = ddgNext, headers = mapOf("Referer" to "https://html.duckduckgo.com/"))
                         .let { WebPage(it.text, it.finalUrl, if (it.text.isBlank()) it.errorMessage else "") }
-                FinderEngine.BRAVE -> h("https://search.brave.com/search?q=$enc&offset=$page&source=web", "finder-brave")
-                FinderEngine.MOJEEK -> h("https://www.mojeek.com/search?q=$enc&s=${page * 10 + 1}", "finder-mojeek")
                 FinderEngine.YAHOO -> h("https://search.yahoo.com/search?p=$enc&b=${page * 10 + 1}&ei=UTF-8&vl=lang_ru", "finder-yahoo")
-                FinderEngine.GOOGLE -> web.fetch("https://www.google.com/search?q=$enc&start=${page * 10}&hl=ru&num=10&pws=0")
-                FinderEngine.YANDEX -> web.fetch("https://yandex.ru/search/?text=$enc&p=$page&lr=213")
                 FinderEngine.ALL -> WebPage("", "", "")
             }
         }.getOrElse { WebPage("", "", it.message.orEmpty().take(80)) }
@@ -234,17 +225,10 @@ class SiteFinder(private val context: Context) {
         val preferred = all.filter { (tag, inner, _) ->
             when (engine) {
                 FinderEngine.DUCKDUCKGO -> "result__a" in tag
-                FinderEngine.GOOGLE -> "<h3" in inner.lowercase()
-                FinderEngine.YANDEX -> "OrganicTitle" in tag || "organic__url" in tag
-                FinderEngine.MOJEEK -> "class=\"title\"" in tag
                 else -> false
             }
         }
-        val bing = if (engine == FinderEngine.BING) Regex("<h2[^>]*>\\s*(<a\\b[^>]*>)(.*?)</a>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).findAll(html).mapNotNull { m ->
-            val raw = hrefRe.find(m.groupValues[1])?.groupValues?.get(1)?.let(::unescape) ?: return@mapNotNull null
-            unwrap(raw)?.let { Triple(m.groupValues[1], m.groupValues[2], it) }
-        }.toList() else emptyList()
-        val chosen = if (bing.isNotEmpty()) bing else if (preferred.isNotEmpty()) preferred else all
+        val chosen = if (preferred.isNotEmpty()) preferred else all
         return chosen.map { (_, inner, url) -> url to clean(inner) }.distinctBy { it.first }
     }
 
@@ -254,16 +238,9 @@ class SiteFinder(private val context: Context) {
         val low = u.lowercase()
         runCatching {
             when {
-                "bing.com/ck/a" in low -> {
-                    val v = Regex("[?&]u=([^&]+)").find(u)?.groupValues?.get(1)?.let { URLDecoder.decode(it, "UTF-8") } ?: return null
-                    val b64 = v.removePrefix("a1")
-                    return String(Base64.decode(b64.replace('-', '+').replace('_', '/').let { it + "=".repeat((4 - it.length % 4) % 4) }, Base64.DEFAULT), Charsets.UTF_8).takeIf { it.startsWith("http") }
-                }
                 "duckduckgo.com/l/" in low || u.startsWith("/l/?") -> return Regex("[?&]uddg=([^&]+)").find(u)?.groupValues?.get(1)?.let { URLDecoder.decode(it, "UTF-8") }
                 "search.yahoo.com" in low && "/ru=" in low ->
                     return Regex("/RU=([^/]+)/R[KS]=", RegexOption.IGNORE_CASE).find(u)?.groupValues?.get(1)?.let { URLDecoder.decode(it, "UTF-8") }
-                low.startsWith("/url?") || "google." in low && "/url?" in low ->
-                    return Regex("[?&](?:q|url)=(https?[^&]+)").find(u)?.groupValues?.get(1)?.let { URLDecoder.decode(it, "UTF-8") }
             }
         }
         return u.takeIf { it.startsWith("http", true) }
