@@ -156,7 +156,7 @@ class SiteFinder(private val context: Context) {
 
     private suspend fun fetchPage(e: FinderEngine, q: String, page: Int, ddgNext: Map<String, String>?): WebPage {
         val enc = URLEncoder.encode(q, "UTF-8")
-        fun h(url: String, key: String) = http.fetchText(url, policy, key).let { WebPage(it.text, it.finalUrl, if (it.text.isBlank()) it.errorMessage.ifBlank { "HTTP ${it.statusCode}" } else "") }
+        suspend fun h(url: String, key: String) = http.fetchText(url, policy, key).let { WebPage(it.text, it.finalUrl, if (it.text.isBlank()) it.errorMessage.ifBlank { "HTTP ${it.statusCode}" } else "") }
         return runCatching {
             when (e) {
                 FinderEngine.BING -> h("https://www.bing.com/search?q=$enc&first=${page * 10 + 1}&FORM=PERE&setlang=ru&cc=ru", "finder-bing")
