@@ -35,7 +35,7 @@ fun OfflinePlayerScreen(spec: OfflinePlaybackSpec, onBack: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val activity = context.offlineFindActivity()
     val player = remember(spec.id) {
-        ExoPlayer.Builder(context).build().apply {
+        ExoPlayer.Builder(context).setRenderersFactory(pro.noodle.mobile.core.audio.AudioEq.renderersFactory(context)).build().apply {
             when (spec) {
                 is OfflinePlaybackSpec.Adaptive -> {
                     // The upstream is null in this factory: offline playback can never silently

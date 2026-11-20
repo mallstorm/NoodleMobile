@@ -81,6 +81,7 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
     var message by remember { mutableStateOf("") }
     var fullscreen by remember { mutableStateOf(false) }
     var showPlaybackSettings by remember { mutableStateOf(false) }
+    var showEqualizer by remember { mutableStateOf(false) }
     var selectedVariant by remember(video.id) { mutableIntStateOf(-1) }
     var selectedAudio by remember(video.id) { mutableIntStateOf(-1) }
     var selectedText by remember(video.id) { mutableIntStateOf(-1) }
@@ -159,6 +160,7 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
         ExoPlayer.Builder(context)
+            .setRenderersFactory(pro.noodle.mobile.core.audio.AudioEq.renderersFactory(context))
             .setLoadControl(loadControl)
             .setMediaSourceFactory(DefaultMediaSourceFactory(factory))
             .setAudioAttributes(
@@ -607,9 +609,11 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
                 }
                 player.trackSelectionParameters = builder.build()
             },
+            onOpenEqualizer = { showPlaybackSettings = false; showEqualizer = true },
             onDismiss = { showPlaybackSettings = false },
         )
     }
+    if (showEqualizer) EqualizerSheet(onDismiss = { showEqualizer = false })
 
     val backFromPlayer = {
         if (fullscreen) fullscreen = false else onBack()
@@ -869,6 +873,7 @@ private fun PlayerSettingsSheet(
     onVariant: (Int) -> Unit,
     onAudio: (Int) -> Unit,
     onText: (Int) -> Unit,
+    onOpenEqualizer: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -914,6 +919,9 @@ private fun PlayerSettingsSheet(
                 }
             }
 
+            androidx.compose.material3.OutlinedButton(onClick = onOpenEqualizer, modifier = Modifier.fillMaxWidth()) {
+                Text("Эквалайзер и звук")
+            }
             Text("Скорость", fontWeight = FontWeight.SemiBold)
             var currentSpeed by remember { mutableFloatStateOf(player.playbackParameters.speed) }
             Row(
