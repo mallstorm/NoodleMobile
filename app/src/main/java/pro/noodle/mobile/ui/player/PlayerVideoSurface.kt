@@ -182,7 +182,6 @@ internal fun PlayerVideoSurface(
                     )
                 }
                 .pointerInput(player, locked) {
-                    if (locked) return@pointerInput
                     var mode = 0 // 0 undecided, 1 seek, 2 brightness, 3 volume
                     var dx = 0f; var dy = 0f; var startX = 0f
                     var seekFrom = 0L; var seekTo = 0L
@@ -191,6 +190,8 @@ internal fun PlayerVideoSurface(
                         onDragStart = { o -> mode = 0; dx = 0f; dy = 0f; startX = o.x },
                         onDragEnd = {
                             if (mode == 1) player.seekTo(seekTo)
+                            // Палец чуть «поплыл» при тапе: это всё равно тап, а не жест.
+                            if (mode == 0) controlsVisible = !controlsVisible
                             mode = 0; gestureTick++
                         },
                         onDragCancel = { mode = 0; gestureTick++ },
@@ -198,7 +199,8 @@ internal fun PlayerVideoSurface(
                             change.consume()
                             dx += amount.x; dy += amount.y
                             val dur = player.duration.takeIf { it != C.TIME_UNSET && it > 0L } ?: 0L
-                            if (mode == 0 && (kotlin.math.abs(dx) > 24f || kotlin.math.abs(dy) > 24f)) {
+                            if (locked) return@detectDragGestures
+                            if (mode == 0 && (kotlin.math.abs(dx) > 48f || kotlin.math.abs(dy) > 48f)) {
                                 mode = when {
                                     kotlin.math.abs(dx) > kotlin.math.abs(dy) -> if (dur > 0L && player.isCurrentMediaItemSeekable) 1 else -1
                                     startX < size.width / 2f -> 2

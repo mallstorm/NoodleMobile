@@ -116,11 +116,12 @@ class NewVideosScanner(private val context: Context) {
         val followed = adapters.filter { it.id in settings.followedSources }
         if (followed.isNotEmpty()) adapters = followed
 
-        val gate = Semaphore(3)
+        val gate = Semaphore(2)
         val results = coroutineScope {
             adapters.map { d ->
                 async {
                     gate.withPermit {
+                        pro.noodle.mobile.core.player.BackgroundGate.awaitIdle()
                         d to (withTimeoutOrNull(75_000L) { collect(probe, d) } ?: emptyList())
                     }
                 }

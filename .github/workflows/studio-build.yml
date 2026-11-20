@@ -69,12 +69,12 @@ jobs:
           REL=$(find app/build/outputs/apk/release -type f -name '*.apk' | head -1)
           test -f "$REL"
           sha256sum "$REL" > build-certification/RELEASE-SHA256.txt
-          TAG="v0.23.1-snpstudio-r${GITHUB_RUN_NUMBER}"
+          TAG="v0.24.0-snpstudio-r${GITHUB_RUN_NUMBER}"
           gh release create "$TAG" \
-            "$REL#NoodleMobile-v0.23.1-SNP-Studio-arm64.apk" \
+            "$REL#NoodleMobile-v0.24.0-SNP-Studio-arm64.apk" \
             "build-certification/RELEASE-SHA256.txt#SHA256.txt" \
             --target "$GITHUB_SHA" --prerelease \
-            --title "NoodleMobile 0.23.1 • SNP Studio • Run ${GITHUB_RUN_NUMBER}" \
+            --title "NoodleMobile 0.24.0 • SNP Studio • Run ${GITHUB_RUN_NUMBER}" \
             --notes "Real-stream detection (probe + scoring), per-site stream learning with optional AI, thumbnail CDN fix, Referer for media and downloads, HLS to MP4 file download. CI validates builds and synthetic fixtures; live Android playback still requires device verification."
 
       - name: Upload build outputs
@@ -82,7 +82,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
-          name: NoodleMobile-0.23.1-SNP-Studio-arm64
+          name: NoodleMobile-0.24.0-SNP-Studio-arm64
           retention-days: 30
           path: |
             app/build/outputs/apk/release/*.apk

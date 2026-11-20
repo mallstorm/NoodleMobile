@@ -23,7 +23,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -44,14 +44,19 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import pro.noodle.mobile.core.finder.FinderEngine
+import pro.noodle.mobile.core.finder.FinderOptions
 import pro.noodle.mobile.core.finder.FoundSite
 import pro.noodle.mobile.core.finder.SiteFinder
 import pro.noodle.mobile.ui.sources.StudioRequest
 
 data class FinderState(
-    val engine: FinderEngine = FinderEngine.BING,
+    val engine: FinderEngine = FinderEngine.ALL,
     val query: String = "",
-    val pages: Int = 3,
+    val pages: Int = 5,
+    val variants: Boolean = true,
+    val hideMainstream: Boolean = true,
+    val verify: Boolean = true,
+    val onlyVideo: Boolean = false,
     val busy: Boolean = false,
     val progress: String = "",
     val sites: List<FoundSite> = emptyList(),
@@ -67,18 +72,30 @@ class SiteFinderViewModel(app: Application) : AndroidViewModel(app) {
     fun setEngine(e: FinderEngine) = _state.update { it.copy(engine = e) }
     fun setQuery(q: String) = _state.update { it.copy(query = q) }
     fun setPages(p: Int) = _state.update { it.copy(pages = p) }
+    fun setVariants(v: Boolean) = _state.update { it.copy(variants = v) }
+    fun setHideMainstream(v: Boolean) = _state.update { it.copy(hideMainstream = v) }
+    fun setVerify(v: Boolean) = _state.update { it.copy(verify = v) }
+    fun setOnlyVideo(v: Boolean) = _state.update { it.copy(onlyVideo = v) }
 
     fun search() {
         val st = _state.value
         if (st.busy || st.query.isBlank()) return
         _state.update { it.copy(busy = true, sites = emptyList(), note = "", progress = "Запускаю поиск…") }
         job = viewModelScope.launch {
-            val r = runCatching { finder.search(st.engine, st.query, st.pages) { sites, p -> _state.update { it.copy(sites = sites, progress = p) } } }
+            val r = runCatching { finder.search(st.engine, st.query, FinderOptions(st.pages, st.variants, st.hideMainstream, st.verify)) { sites, p -> _state.update { it.copy(sites = sites, progress = p) } } }
             _state.update { it.copy(busy = false, progress = "", sites = r.getOrNull()?.sites ?: it.sites, note = r.getOrNull()?.note ?: "Ошибка поиска: ${r.exceptionOrNull()?.message}") }
         }
     }
 
     fun stop() { job?.cancel(); _state.update { it.copy(busy = false, progress = "") } }
+}
+
+@Composable
+private fun OptionRow(text: String, value: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        Switch(checked = value, onCheckedChange = onChange, enabled = enabled)
+    }
 }
 
 @Composable
@@ -94,7 +111,7 @@ fun SiteFinderScreen(onOpenStudio: () -> Unit, vm: SiteFinderViewModel = viewMod
         }
         item {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FinderEngine.values().forEach { e -> FilterChip(selected = st.engine == e, onClick = { vm.setEngine(e) }, label = { Text(e.title) }, enabled = !st.busy) }
+                FinderEngine.values().forEach { e -> FilterChip(selected = st.engine == e, onClick = { vm.setEngine(e) }, label = { Text(e.title + if (e.webView) " (бета)" else "") }, enabled = !st.busy) }
             }
         }
         item {
@@ -105,8 +122,15 @@ fun SiteFinderScreen(onOpenStudio: () -> Unit, vm: SiteFinderViewModel = viewMod
         }
         item {
             Column {
-                Text("Глубина: ${st.pages} стр. выдачи", style = MaterialTheme.typography.bodyMedium)
-                Slider(value = st.pages.toFloat(), onValueChange = { vm.setPages(it.toInt()) }, valueRange = 1f..10f, steps = 8, enabled = !st.busy)
+                Text("Глубина: ${st.pages} стр. выдачи (на каждый поисковик)", style = MaterialTheme.typography.bodyMedium)
+                pro.noodle.mobile.ui.NoodleSlider(value = st.pages.toFloat(), onValueChange = { vm.setPages(it.toInt()) }, valueRange = 1f..15f, steps = 13, enabled = !st.busy)
+            }
+        }
+        item {
+            Column {
+                OptionRow("Расширенный запрос (+ «смотреть онлайн», «watch online»)", st.variants, !st.busy, vm::setVariants)
+                OptionRow("Скрывать Кинопоиск, Rutube, ivi, Netflix и т. п.", st.hideMainstream, !st.busy, vm::setHideMainstream)
+                OptionRow("Проверять сайты (видео-признаки и движок)", st.verify, !st.busy, vm::setVerify)
             }
         }
         item {
@@ -117,15 +141,23 @@ fun SiteFinderScreen(onOpenStudio: () -> Unit, vm: SiteFinderViewModel = viewMod
         }
         if (st.busy) item { Column { LinearProgressIndicator(Modifier.fillMaxWidth()); Text(st.progress, style = MaterialTheme.typography.bodySmall) } }
         if (st.note.isNotBlank()) item { Text(st.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
-        if (st.sites.isNotEmpty()) item { Text("Найдено сайтов: ${st.sites.size}", fontWeight = FontWeight.SemiBold) }
-        items(st.sites, key = { it.host }) { s ->
+        val shown = if (st.onlyVideo) st.sites.filter { it.videoLike == true } else st.sites
+        if (st.sites.isNotEmpty()) item {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Найдено сайтов: ${shown.size}", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                if (st.sites.any { it.videoLike != null }) FilterChip(selected = st.onlyVideo, onClick = { vm.setOnlyVideo(!st.onlyVideo) }, label = { Text("Только видеосайты") })
+            }
+        }
+        items(shown, key = { it.host }) { s ->
             ElevatedCard(Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(start = 14.dp, top = 10.dp, bottom = 10.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(s.host, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(s.title, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(
-                            (if (s.known) "уже подключён • " else "") + "в выдаче: ${s.hits}",
+                            (if (s.known) "уже подключён • " else "") +
+                                (when (s.videoLike) { true -> "похож на видеосайт • "; false -> "не похож на видеосайт • "; null -> "" }) +
+                                (if (s.cms.isNotBlank()) "${s.cms} • " else "") + "в выдаче: ${s.hits}" + (if (s.engines > 1) " (${s.engines} поисковика)" else ""),
                             style = MaterialTheme.typography.labelSmall, color = if (s.known) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }

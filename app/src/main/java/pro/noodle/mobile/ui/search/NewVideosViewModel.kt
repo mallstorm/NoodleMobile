@@ -33,6 +33,7 @@ class NewVideosViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow(NewVideosState())
     val state: StateFlow<NewVideosState> = _state.asStateFlow()
     private var monitoring = true
+    private var autoDone = false
 
     init {
         viewModelScope.launch {
@@ -41,7 +42,11 @@ class NewVideosViewModel(app: Application) : AndroidViewModel(app) {
                 _state.update { it.copy(windowHours = s.monitoringIntervalHours) }
                 reload()
                 // Автоскан при запуске, если давно не сканировали.
-                if (monitoring && System.currentTimeMillis() - store.lastScanMs > 30 * 60_000L && !_state.value.scanning) scan()
+                if (monitoring && !autoDone && System.currentTimeMillis() - store.lastScanMs > 30 * 60_000L && !_state.value.scanning) {
+                    autoDone = true
+                    kotlinx.coroutines.delay(25_000) // не мешаем запуску и первым открытиям видео
+                    if (!_state.value.scanning) scan()
+                }
             }
         }
     }

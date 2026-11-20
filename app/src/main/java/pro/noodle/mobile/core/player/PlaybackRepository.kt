@@ -51,7 +51,12 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
 
     private val mirrors = pro.noodle.mobile.core.source.MirrorStore(context.applicationContext)
 
-    suspend fun resolve(original: VideoItem, adapter: AdapterDefinition, exhaustive: Boolean = false): PlaybackLoadResult = withContext(Dispatchers.IO) {
+    suspend fun resolve(original: VideoItem, adapter: AdapterDefinition, exhaustive: Boolean = false): PlaybackLoadResult {
+        BackgroundGate.enter()
+        try { return resolveCore(original, adapter, exhaustive) } finally { BackgroundGate.leave() }
+    }
+
+    private suspend fun resolveCore(original: VideoItem, adapter: AdapterDefinition, exhaustive: Boolean): PlaybackLoadResult = withContext(Dispatchers.IO) {
         // Ссылки из избранного/истории со старым доменом переписываем на актуальное зеркало.
         val video = mirrors.rewriteUrl(adapter.id, original.watchUrl).let { if (it == original.watchUrl) original else original.copy(watchUrl = it, playerPageUrl = mirrors.rewriteUrl(adapter.id, original.playerPageUrl)) }
         if (!isStaticEntryAllowed(video.watchUrl, adapter)) {

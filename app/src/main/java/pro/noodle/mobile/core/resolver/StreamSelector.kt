@@ -2,6 +2,8 @@ package pro.noodle.mobile.core.resolver
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
@@ -310,7 +312,8 @@ class StreamSelector(private val client: OkHttpClient, private val referer: Stri
         val facts = linkedMapOf<String, StreamFacts>()
         val origins = linkedMapOf<String, String>()
         val maxProbes = if (exhaustive) 16 else MAX_PROBES
-        suspend fun probeAll(list: List<MediaSource>, into: MutableMap<String, StreamFacts>) = probeAllLimited(list, into, maxProbes)
+        val enough: ((StreamFacts) -> Boolean)? = if (exhaustive) null else fun(f: StreamFacts): Boolean = f.ok && f.durationSec >= (if (expectedSec > 0) expectedSec * 0.85 else 45.0) && f.durationSec >= StreamScorer.PREVIEW_ABS_SEC && !f.live
+        suspend fun probeAll(list: List<MediaSource>, into: MutableMap<String, StreamFacts>) = probeAllLimited(list, into, maxProbes, enough)
         var all = sources.distinctBy { it.url.lowercase() }
         all.forEach { origins.putIfAbsent(it.url, "движок") }
         // hints.extract applies to the page itself first: that is the site-specific rule.
@@ -415,13 +418,27 @@ class StreamSelector(private val client: OkHttpClient, private val referer: Stri
     }.getOrNull()
 
     /** Candidates are measured in parallel (4 at a time): fast, but gentle enough not to trip 429 limits. */
-    private suspend fun probeAllLimited(list: List<MediaSource>, into: MutableMap<String, StreamFacts>, max: Int) = coroutineScope {
-        val gate = Semaphore(PARALLEL_PROBES)
+    private suspend fun probeAllLimited(list: List<MediaSource>, into: MutableMap<String, StreamFacts>, max: Int, enough: ((StreamFacts) -> Boolean)? = null) {
         val todo = list.filter { it.url !in into }.take(max)
-        val results = todo.map { s ->
-            async(Dispatchers.IO) { gate.withPermit { s.url to (withTimeoutOrNull(PROBE_TIMEOUT_MS) { probe.probe(s) } ?: StreamFacts(s.url, note = "timeout")) } }
-        }.awaitAll()
-        results.forEach { (u, f) -> into[u] = f }
+        if (todo.isEmpty()) return
+        val gate = Semaphore(PARALLEL_PROBES)
+        // Свой scope: после первого «достаточного» результата остальные замеры не ждём (блокирующий сетевой вызов всё равно не прервать).
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
+        val ch = kotlinx.coroutines.channels.Channel<Pair<String, StreamFacts>>(todo.size)
+        try {
+            todo.forEach { s ->
+                scope.launch { ch.trySend(gate.withPermit { s.url to (withTimeoutOrNull(PROBE_TIMEOUT_MS) { probe.probe(s) } ?: StreamFacts(s.url, note = "timeout")) }) }
+            }
+            var got = 0
+            while (got < todo.size) {
+                val (u, f) = ch.receive()
+                into[u] = f; got++
+                if (enough != null && enough(f)) break
+            }
+        } finally {
+            scope.cancel()
+            ch.close()
+        }
     }
 
     companion object {

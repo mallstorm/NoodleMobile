@@ -9,6 +9,6 @@ class NoodleApp : Application() {
         CookieChallenge.attach(this)
         pro.noodle.mobile.core.download.BatchDownloads.init(this)
         pro.noodle.mobile.core.audio.AudioEq.init(this)
-        pro.noodle.mobile.core.dub.DubConfig.init(this)
+        Thread { pro.noodle.mobile.core.dub.DubConfig.init(this) }.start() // Keystore — не на главном потоке
     }
 }
