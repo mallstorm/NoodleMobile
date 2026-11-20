@@ -445,7 +445,7 @@ private fun bytes(v: Long): String = when {
     else -> "$v Б"
 }
 
-private enum class MorePage { MENU, SOURCES, STUDIO }
+private enum class MorePage { MENU, SOURCES, STUDIO, FINDER }
 
 @Composable
 private fun MoreScreen(settingsVm: SettingsViewModel) {
@@ -474,6 +474,13 @@ private fun MoreScreen(settingsVm: SettingsViewModel) {
             }
             Box(Modifier.weight(1f)) { SourceCenterScreen(openStudio = page == MorePage.STUDIO, onStudioClosed = { if (page == MorePage.STUDIO) page = MorePage.SOURCES }) }
         }
+        MorePage.FINDER -> Column(Modifier.fillMaxSize()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { page = MorePage.MENU }) { Icon(Icons.Outlined.ArrowBack, "Назад") }
+                Text("Поиск сайтов", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            }
+            pro.noodle.mobile.ui.finder.SiteFinderScreen(onOpenStudio = { page = MorePage.STUDIO })
+        }
         MorePage.MENU -> SettingsScreen(settingsVm) {
             item {
                 Text("Ещё", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
@@ -484,6 +491,16 @@ private fun MoreScreen(settingsVm: SettingsViewModel) {
                         headlineContent = { Text("Источники (SNP)") },
                         supportingContent = { Text("Подключённые сайты, добавление сайта, Studio и диагностика") },
                         leadingContent = { Icon(Icons.Outlined.Hub, null, tint = MaterialTheme.colorScheme.secondary) },
+                        trailingContent = { Icon(Icons.Outlined.ChevronRight, null) },
+                    )
+                }
+            }
+            item {
+                ElevatedCard(onClick = { page = MorePage.FINDER }, modifier = Modifier.fillMaxWidth()) {
+                    ListItem(
+                        headlineContent = { Text("Поиск сайтов") },
+                        supportingContent = { Text("Найти сайты через Bing, DuckDuckGo, Google или Яндекс и отправить в Studio") },
+                        leadingContent = { Icon(Icons.Outlined.Search, null, tint = MaterialTheme.colorScheme.secondary) },
                         trailingContent = { Icon(Icons.Outlined.ChevronRight, null) },
                     )
                 }
