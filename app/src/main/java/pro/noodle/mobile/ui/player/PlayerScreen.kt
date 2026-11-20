@@ -616,7 +616,6 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
         )
     }
     if (showEqualizer) EqualizerSheet(onDismiss = { showEqualizer = false })
-    if (showDub) DubSheet(status = dub.status, onDismiss = { showDub = false })
 
     val dub = remember(player) { pro.noodle.mobile.core.dub.DubEngine(context.applicationContext) }
     val dubState by pro.noodle.mobile.core.dub.DubConfig.flow.collectAsState()
@@ -624,6 +623,7 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
         if (dubState.enabled) dub.start(player, source.url, activeSession.referer, video.id) else dub.stop()
     }
     DisposableEffect(dub) { onDispose { dub.stop() } }
+    if (showDub) DubSheet(status = dub.status, onDismiss = { showDub = false })
 
     val backFromPlayer = {
         if (fullscreen) fullscreen = false else onBack()
