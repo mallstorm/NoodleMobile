@@ -444,7 +444,11 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
 
     fun requestDownload() {
         if (source.parts.size > 1) {
-            message = "Фильм из ${source.parts.size} частей: для скачивания выберите отдельную часть в «Источник» (скачивание целиком — следующим шагом)."
+            pendingDownload = source
+            pendingSelection = null
+            pendingAsFile = false
+            message = "Скачаю фильм целиком: ${source.parts.size} части по очереди, потом склею в один файл."
+            createDocument.launch(safeFileName(video.title, source.parts.first()))
             return
         }
         // A full-length MP4 next to the HLS stream downloads directly (one request, resumable).

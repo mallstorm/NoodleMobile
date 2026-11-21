@@ -279,7 +279,14 @@ class SecureHttpClient {
      * request in the redirect/manifest/segment chain is revalidated by PolicyInterceptor.
      */
     fun streamingClient(policy: NetworkPolicy, sourceKey: String): OkHttpClient =
-        clientFor(policy, sourceKey, followRedirects = true, anyPublicHost = true)
+        clientFor(policy, sourceKey, followRedirects = true, anyPublicHost = true).newBuilder()
+            .addInterceptor { chain ->
+                // Referer как у браузера: на чужой хост (CDN) — только origin страницы. Без этого часть CDN отвечает «Error. Code 4».
+                val req = chain.request()
+                val ref = req.header("Referer")
+                if (ref.isNullOrBlank()) chain.proceed(req)
+                else chain.proceed(req.newBuilder().header("Referer", pro.noodle.mobile.core.resolver.browserReferer(ref, req.url.toString())).build())
+            }.build()
 
     private fun clientFor(policy: NetworkPolicy, sourceKey: String, followRedirects: Boolean, anyPublicHost: Boolean = false): OkHttpClient {
         val cookies = if (policy.allowCookies) cookieStores.getOrPut(sourceKey) { MemoryCookieJar() } else CookieJar.NO_COOKIES

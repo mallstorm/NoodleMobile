@@ -35,6 +35,7 @@ class DownloadWorker(appContext: Context, params: WorkerParameters) : CoroutineW
         }
         if(!admitted) return Result.retry()
         ensureChannel(); setForeground(foreground(item.title, item.downloadedBytes, item.totalBytes,0L,-1L))
+        if(item.protocol==DownloadRepository.CONCAT) return doConcat(id,item)
         if(item.destinationUri!=DownloadRepository.ADAPTIVE_DESTINATION && (item.protocol.equals("hls",true) || item.sourceUrl.substringBefore('?').endsWith(".m3u8",true))) return doHls(id,item)
         val partial=partialFile(applicationContext,id); partial.parentFile?.mkdirs()
         var offset=if(partial.exists())partial.length() else 0L
@@ -155,6 +156,107 @@ class DownloadWorker(appContext: Context, params: WorkerParameters) : CoroutineW
         return Result.success()
     }
 
+    /** Фильм из частей: качаем части по очереди (с докачкой), затем склеиваем в один MP4 без перекодирования. */
+    private suspend fun doConcat(id:String,item:pro.noodle.mobile.core.storage.DownloadEntity):Result {
+        val parts=DownloadRepository.readParts(applicationContext,id)
+        suspend fun fail(code:String,msg:String,bytes:Long=0L,total:Long=-1L,retry:Boolean=false):Result {
+            dao.updateProgress(id,DownloadState.FAILED,bytes,total,code,msg,System.currentTimeMillis()); return if(retry) Result.retry() else Result.failure()
+        }
+        if(parts.size<2) return fail("CONCAT_NO_PARTS","Список частей потерян — начните скачивание заново.")
+        val policy=NetworkPolicy(item.allowedHosts.lines().filter{it.isNotBlank()},allowHttp=item.allowHttp,allowCookies=item.allowCookies,maxResponseBytes=4*1024*1024)
+        val client=SecureHttpClient().streamingClient(policy,item.sourceKey)
+        val referer=SourceReferers.forDownload(applicationContext,id,item.sourceKey)
+        fun req(url:String,from:Long,to:Long?=null)=Request.Builder().url(url).header("User-Agent",BuildIdentity.USER_AGENT).header("Accept","*/*")
+            .apply{ if(referer.isNotBlank())header("Referer",referer); if(from>0||to!=null)header("Range","bytes=$from-${to?.toString().orEmpty()}") }.build()
+        val dir=File(applicationContext.filesDir,"downloads").apply{mkdirs()}
+        // Размеры частей (для общего прогресса и проверки места).
+        val sizes=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){ parts.map { u ->
+            runCatching { client.newCall(req(u,0,0)).execute().use { r -> if(r.code==206) parseTotal(r.header("Content-Range")) ?: -1L else r.body?.contentLength() ?: -1L } }.getOrDefault(-1L)
+        } }
+        val grand=if(sizes.all{it>0}) sizes.sum() else -1L
+        val have=parts.indices.sumOf{ File(dir,"$id.p$it").takeIf{f->f.exists()}?.length() ?: 0L }
+        if(grand>0){
+            val need=(grand-have).coerceAtLeast(0)+(sizes.maxOrNull()?:0L)+MIN_FREE_RESERVE_BYTES
+            val available=availableInternalBytes()
+            if(available in 1 until need) return fail("DOWNLOAD_NO_SPACE","Недостаточно места: нужно ещё ${humanBytes(need)}, свободно ${humanBytes(available)}.",have,grand)
+        }
+        var doneBytes=0L
+        var sampleAt=System.currentTimeMillis(); var sampleBytes=have; var smooth=0L
+        for((i,u) in parts.withIndex()){
+            val f=File(dir,"$id.p$i"); val done=File(dir,"$id.p$i.done")
+            if(done.exists() && f.exists()){ doneBytes+=f.length(); continue }
+            var offset=if(f.exists()) f.length() else 0L
+            val r=try{ kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){ client.newCall(req(u,offset)).execute() } }catch(e:Exception){ return fail("DOWNLOAD_IO","Часть ${i+1}: ${e.message?:e.javaClass.simpleName}",doneBytes+offset,grand,retry=true) }
+            val res:Result?=r.use { resp ->
+                if(!resp.isSuccessful && resp.code!=206) return@use fail("HTTP_${resp.code}","Часть ${i+1}: HTTP ${resp.code}. Если ссылка устарела — откройте видео заново и запустите скачивание.",doneBytes+offset,grand)
+                if(resp.header("Content-Type").orEmpty().contains("text/html",true)) return@use fail("CONCAT_NOT_VIDEO","Часть ${i+1}: сервер вернул страницу вместо видео (ссылка устарела). Откройте видео заново и скачайте.",doneBytes+offset,grand)
+                if(offset>0 && resp.code==200){ f.delete(); offset=0 }
+                val body=resp.body ?: return@use fail("DOWNLOAD_EMPTY_FILE","Часть ${i+1}: пустой ответ.",doneBytes,grand,retry=true)
+                java.io.FileOutputStream(f,offset>0).buffered(256*1024).use { out ->
+                    body.byteStream().use { input ->
+                        val buf=ByteArray(64*1024); var last=0L
+                        while(true){
+                            if(isStopped){
+                                val requested=dao.get(id)?.state
+                                if(requested!=DownloadState.PAUSED && requested!=DownloadState.CANCELED)dao.updateState(id,DownloadState.QUEUED,System.currentTimeMillis())
+                                return if(requested==DownloadState.PAUSED||requested==DownloadState.CANCELED)Result.failure() else Result.retry()
+                            }
+                            val n=input.read(buf); if(n<0)break; out.write(buf,0,n); offset+=n
+                            val now=System.currentTimeMillis()
+                            if(now-last>=750){
+                                last=now
+                                val cur=doneBytes+offset
+                                val dt=(now-sampleAt).coerceAtLeast(1L); val inst=((cur-sampleBytes)*1000L/dt).coerceAtLeast(0L)
+                                smooth=if(smooth<=0)inst else (smooth*3+inst)/4; sampleAt=now; sampleBytes=cur
+                                val eta=if(grand>cur && smooth>0)(grand-cur)/smooth else -1L
+                                dao.updateProgress(id,DownloadState.RUNNING,cur,grand,"","",now)
+                                setForeground(foreground(item.title,cur,grand,smooth,eta))
+                            }
+                        }
+                    }
+                }
+                null
+            }
+            if(res!=null) return res
+            if(sizes[i]>0 && f.length()!=sizes[i]) return fail("DOWNLOAD_INCOMPLETE","Часть ${i+1}: получено ${humanBytes(f.length())} из ${humanBytes(sizes[i])}, продолжу.",doneBytes+f.length(),grand,retry=true)
+            done.createNewFile(); doneBytes+=f.length()
+        }
+        // Склейка.
+        setForeground(foreground(item.title,doneBytes,grand,0L,-1L))
+        dao.updateProgress(id,DownloadState.RUNNING,doneBytes,grand,"","",System.currentTimeMillis())
+        val inputs=parts.indices.map{File(dir,"$id.p$it")}
+        val lowSpace=availableInternalBytes().let{ it in 1 until (doneBytes+MIN_FREE_RESERVE_BYTES) }
+        var localPath:String
+        var size:Long
+        val ok:Boolean
+        if(item.destinationUri.isNotBlank()){
+            val uri=Uri.parse(item.destinationUri)
+            val pfd=runCatching{ applicationContext.contentResolver.openFileDescriptor(uri,"rw") }.getOrNull()
+            if(pfd!=null){
+                ok=pfd.use { p -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){ MediaRemuxer.concat(inputs,p.fileDescriptor,null,deleteEach=lowSpace) } }
+                localPath=item.destinationUri
+                size=runCatching{ applicationContext.contentResolver.openAssetFileDescriptor(uri,"r")?.use{it.length} ?: -1L }.getOrDefault(-1L)
+            } else {
+                val tmp=File(dir,"$id.joined.mp4")
+                ok=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){ MediaRemuxer.concat(inputs,null,tmp.absolutePath,deleteEach=lowSpace) }
+                size=tmp.length()
+                localPath=if(ok) try{ finalizeFile(item.destinationUri,tmp,id,parts.first()) }catch(e:Exception){ return fail("DOWNLOAD_FINALIZE_FAILED",e.message?:e.javaClass.simpleName,doneBytes,grand) } else ""
+            }
+        } else {
+            val target=File(File(applicationContext.filesDir,"downloads/completed").apply{mkdirs()},"$id.mp4")
+            ok=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){ MediaRemuxer.concat(inputs,null,target.absolutePath,deleteEach=lowSpace) }
+            localPath=target.absolutePath; size=target.length()
+        }
+        if(!ok){
+            if(lowSpace) cleanupParts(applicationContext,id)
+            return fail("CONCAT_MUX_FAILED","Части скачаны, но склеить их не удалось (разный формат частей). Скачайте части по отдельности через «Источник».",doneBytes,grand)
+        }
+        cleanupParts(applicationContext,id)
+        if(size<=0L) size=doneBytes
+        dao.markCompleted(id,size,size,localPath,System.currentTimeMillis())
+        return Result.success()
+    }
+
     private fun verifyFinal(localPath:String,expected:Long):Boolean {
         if(expected<=0) return false
         if(localPath.startsWith(applicationContext.filesDir.absolutePath)) return File(localPath).isFile && File(localPath).length()==expected
@@ -194,5 +296,6 @@ class DownloadWorker(appContext: Context, params: WorkerParameters) : CoroutineW
     }
     private fun humanBytes(v:Long):String=when { v>=1024L*1024*1024 -> "%.2f ГБ".format(v/(1024.0*1024*1024)); v>=1024L*1024 -> "%.1f МБ".format(v/(1024.0*1024)); v>=1024 -> "%.1f КБ".format(v/1024.0); else -> "$v Б" }
     private fun formatEta(seconds:Long):String=when { seconds>=3600 -> "%d:%02d:%02d".format(seconds/3600,(seconds/60)%60,seconds%60); else -> "%02d:%02d".format(seconds/60,seconds%60) }
-    companion object { const val KEY_ID="download_id";private const val CHANNEL="noodle_downloads";private const val MIN_FREE_RESERVE_BYTES=128L*1024*1024;private val gate=Mutex(); fun partialFile(context:Context,id:String)=File(context.filesDir,"downloads/$id.partial") }
+    companion object { const val KEY_ID="download_id";private const val CHANNEL="noodle_downloads";private const val MIN_FREE_RESERVE_BYTES=128L*1024*1024;private val gate=Mutex(); fun partialFile(context:Context,id:String)=File(context.filesDir,"downloads/$id.partial")
+        fun cleanupParts(context:Context,id:String){ File(context.filesDir,"downloads").listFiles()?.filter{ it.name.startsWith("$id.p") || it.name=="$id.joined.mp4" }?.forEach{ it.delete() } } }
 }

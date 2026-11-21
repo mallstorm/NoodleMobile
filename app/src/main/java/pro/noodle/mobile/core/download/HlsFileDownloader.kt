@@ -181,6 +181,68 @@ class HlsFileDownloader(private val client: OkHttpClient, private val referer: S
 
 /** TS / fragmented MP4 → regular MP4 without re-encoding (extractor + muxer). */
 object MediaRemuxer {
+    /** Склейка MP4-частей одного фильма в один файл без перекодирования: дорожки первой части, время частей подряд. */
+    fun concat(inputs: List<File>, fd: java.io.FileDescriptor?, outPath: String?, deleteEach: Boolean): Boolean {
+        var muxer: MediaMuxer? = null
+        return try {
+            val m = if (fd != null) MediaMuxer(fd, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4) else MediaMuxer(outPath!!, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            muxer = m
+            val tracks = HashMap<String, Int>()
+            var started = false
+            var offsetUs = 0L
+            var buf = ByteBuffer.allocate(8 shl 20)
+            val info = MediaCodec.BufferInfo()
+            for (file in inputs) {
+                val ex = MediaExtractor()
+                try {
+                    ex.setDataSource(file.absolutePath)
+                    val local = HashMap<Int, Int>()
+                    var partDur = 0L
+                    for (i in 0 until ex.trackCount) {
+                        val f = ex.getTrackFormat(i)
+                        val mime = f.getString(MediaFormat.KEY_MIME).orEmpty()
+                        val kind = when { mime.startsWith("video/") -> "video"; mime.startsWith("audio/") -> "audio"; else -> continue }
+                        if (tracks.containsKey(kind) && local.values.contains(tracks[kind])) continue // вторая дорожка того же типа — пропускаем
+                        if (!started && !tracks.containsKey(kind)) tracks[kind] = m.addTrack(f)
+                        val t = tracks[kind] ?: continue
+                        ex.selectTrack(i); local[i] = t
+                        if (f.containsKey(MediaFormat.KEY_DURATION)) partDur = maxOf(partDur, f.getLong(MediaFormat.KEY_DURATION))
+                        if (f.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
+                            val need = minOf(f.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE), 32 shl 20)
+                            if (need > buf.capacity()) buf = ByteBuffer.allocate(need)
+                        }
+                    }
+                    if (!started) { if (tracks.isEmpty()) return false; m.start(); started = true }
+                    if (local.isEmpty()) return false
+                    var lastPts = 0L
+                    while (true) {
+                        buf.clear()
+                        val size = ex.readSampleData(buf, 0)
+                        if (size < 0) break
+                        val t = local[ex.sampleTrackIndex]
+                        if (t != null) {
+                            val pts = ex.sampleTime.coerceAtLeast(0L)
+                            val flags = if ((ex.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC) != 0) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0
+                            info.set(0, size, pts + offsetUs, flags)
+                            m.writeSampleData(t, buf, info)
+                            if (pts > lastPts) lastPts = pts
+                        }
+                        ex.advance()
+                    }
+                    offsetUs += maxOf(partDur, lastPts + 40_000L)
+                } finally {
+                    runCatching { ex.release() }
+                }
+                if (deleteEach) file.delete()
+            }
+            m.stop(); m.release(); muxer = null
+            true
+        } catch (_: Exception) {
+            runCatching { muxer?.release() }
+            false
+        }
+    }
+
     fun toMp4(input: File, output: File): Boolean {
         val extractor = MediaExtractor()
         var muxer: MediaMuxer? = null

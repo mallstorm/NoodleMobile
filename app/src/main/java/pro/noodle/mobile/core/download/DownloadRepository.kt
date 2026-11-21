@@ -41,8 +41,10 @@ class DownloadRepository(private val context: Context) {
     ): String {
         val id = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
-        val hlsFile = asFile && destinationUri.isNotBlank() && isHls(source)
-        val adaptive = isAdaptive(source) && !hlsFile
+        val concat = source.parts.size > 1
+        if (concat) java.io.File(app.filesDir, "downloads/$id.parts").apply { parentFile?.mkdirs() }.writeText(source.parts.joinToString("\n"))
+        val hlsFile = !concat && asFile && destinationUri.isNotBlank() && isHls(source)
+        val adaptive = !concat && isAdaptive(source) && !hlsFile
         SourceReferers.remember(app, id, sourceKey, referer)
         val selected = adaptiveSelection.normalized()
         val entity = DownloadEntity(
@@ -54,10 +56,10 @@ class DownloadRepository(private val context: Context) {
             allowCookies = policy.allowCookies,
             allowHttp = policy.allowHttp,
             destinationUri = if (adaptive) ADAPTIVE_DESTINATION else destinationUri,
-            mimeType = if (adaptive) adaptiveMime(source) else if (hlsFile) "video/mp4" else source.mimeType,
+            mimeType = if (adaptive) adaptiveMime(source) else if (hlsFile || concat) "video/mp4" else source.mimeType,
             state = DownloadState.QUEUED,
             thumbnailUrl = thumbnailUrl,
-            protocol = if (hlsFile) "hls" else source.protocol,
+            protocol = if (concat) CONCAT else if (hlsFile) "hls" else source.protocol,
             videoSelectionLabel = if (adaptive) selected.videoLabel else source.label,
             videoMaxWidth = selected.maxVideoWidth,
             videoMaxHeight = selected.maxVideoHeight,
@@ -121,6 +123,7 @@ class DownloadRepository(private val context: Context) {
         } else {
             WorkManager.getInstance(app).cancelUniqueWork(workName(id))
             DownloadWorker.partialFile(app, id).delete()
+            DownloadWorker.cleanupParts(app, id)
             item?.localFilePath?.takeIf { it.startsWith(app.filesDir.absolutePath) }?.let { java.io.File(it).delete() }
         }
         dao.delete(id)
@@ -210,5 +213,10 @@ class DownloadRepository(private val context: Context) {
     private fun DownloadEntity.isAdaptive() = destinationUri == ADAPTIVE_DESTINATION
     private fun workName(id: String) = "noodle-download-$id"
 
-    companion object { const val ADAPTIVE_DESTINATION = "media3://adaptive" }
+    companion object {
+        const val ADAPTIVE_DESTINATION = "media3://adaptive"
+        const val CONCAT = "concat"
+        fun readParts(context: android.content.Context, id: String): List<String> =
+            runCatching { java.io.File(context.filesDir, "downloads/$id.parts").readText().lines().filter { it.isNotBlank() } }.getOrDefault(emptyList())
+    }
 }
