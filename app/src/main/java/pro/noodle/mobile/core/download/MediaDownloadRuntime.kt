@@ -107,7 +107,14 @@ object MediaDownloadRuntime {
         }
 
         fun upstreamFactory(policy: NetworkPolicy, sourceKey: String, referer: String = ""): DataSource.Factory {
-            val client = SecureHttpClient().streamingClient(policy, sourceKey)
+            val client = SecureHttpClient().streamingClient(policy, sourceKey).newBuilder()
+                .addInterceptor { chain ->
+                    // Referer как у браузера: для чужого хоста (CDN) — только origin страницы.
+                    val req = chain.request()
+                    val ref = req.header("Referer")
+                    if (ref.isNullOrBlank()) chain.proceed(req)
+                    else chain.proceed(req.newBuilder().header("Referer", pro.noodle.mobile.core.resolver.browserReferer(ref, req.url.toString())).build())
+                }.build()
             // Keep the exact same User-Agent that was used to obtain signed media URLs.
             // Some CDNs bind short-lived signatures to the request fingerprint.
             val headers = buildMap<String, String> {

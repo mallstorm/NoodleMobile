@@ -31,6 +31,8 @@ class SandboxedWebExtractor(private val context: Context) {
         additionalAllowedHosts: Set<String> = emptySet(),
         /** Запускать плеер (autoplay + клик по play) и записывать потоки, которые страница запрашивает сама. */
         sniff: Boolean = true,
+        /** Диагностика Studio: проверить, играет ли поток в самом браузере (тег <video>), и записать заголовки/cookie. */
+        browserProbe: Boolean = false,
     ): WebExtractResult = mutex.withLock {
         if (!adapter.allowJavaScript) {
             return WebExtractResult(false, errorCode = "WEB_JS_NOT_ALLOWED", errorMessage = "SNP не разрешает JavaScript.")
@@ -39,7 +41,7 @@ class SandboxedWebExtractor(private val context: Context) {
             return WebExtractResult(false, errorCode = "WEB_URL_BLOCKED", errorMessage = "URL не прошёл SNP/security policy.")
         }
         try {
-            withTimeout(timeoutMs + if (sniff) SNIFF_EXTRA_MS else 0L) { extractOnMain(url, adapter, additionalAllowedHosts, sniff) }
+            withTimeout(timeoutMs + (if (sniff) SNIFF_EXTRA_MS else 0L) + (if (browserProbe) 14_000L else 0L)) { extractOnMain(url, adapter, additionalAllowedHosts, sniff, browserProbe) }
         } catch (_: TimeoutCancellationException) {
             WebExtractResult(false, errorCode = "WEB_TIMEOUT", errorMessage = "JavaScript extraction превысил ${timeoutMs} мс.")
         } catch (e: Exception) {
@@ -53,6 +55,7 @@ class SandboxedWebExtractor(private val context: Context) {
         adapter: AdapterDefinition,
         additionalAllowedHosts: Set<String>,
         sniff: Boolean,
+        probe: Boolean = false,
     ): WebExtractResult = withContext(Dispatchers.Main.immediate) {
         suspendCancellableCoroutine { cont ->
             val cookies = CookieManager.getInstance()
@@ -77,6 +80,8 @@ class SandboxedWebExtractor(private val context: Context) {
             var finished = false
             var pageLoaded = false
             var blockedNav = ""
+            var probing = false
+            val mediaHeaders = java.util.concurrent.ConcurrentHashMap<String, String>()
             var challengeWaits = 0
             val captured = java.util.Collections.synchronizedSet(LinkedHashSet<String>())
             fun close(result: WebExtractResult) {
@@ -108,15 +113,20 @@ class SandboxedWebExtractor(private val context: Context) {
                         baseDomain(request.url.host.orEmpty()) != baseDomain(Uri.parse(url).host.orEmpty())) {
                         blockedNav = request.url.toString(); return true
                     }
-                    return !allowed(request.url.toString(), adapter, additionalAllowedHosts, resolveDns = true)
+                    // UI-поток: без DNS (сетевой вызов здесь падает и ложно блокировал страницу). DNS проверяется в shouldInterceptRequest.
+                    return !allowed(request.url.toString(), adapter, additionalAllowedHosts, resolveDns = false)
                 }
 
                 override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest): WebResourceResponse? {
                     val u = request.url.toString()
                     val media = sniff && looksLikeMediaRequest(u, request.requestHeaders)
-                    if (media && captured.size < 24 && u.startsWith("https://", true)) captured.add(u)
-                    // Сам поток не качаем: нам нужен только его адрес.
-                    if (media) return blockedResponse()
+                    if (media && captured.size < 24 && u.startsWith("https://", true)) {
+                        captured.add(u)
+                        if (mediaHeaders.size < 3) mediaHeaders[u] = request.requestHeaders.orEmpty().entries.joinToString("; ") { "${it.key}: ${it.value}" }.take(600)
+                    }
+                    // Сам поток не качаем: нам нужен только его адрес (кроме диагностики «играет ли в браузере»).
+                    if (media && !probing) return blockedResponse()
+                    if (media && probing) return if (allowed(u, adapter, additionalAllowedHosts, resolveDns = true)) null else blockedResponse()
                     return if (allowed(u, adapter, additionalAllowedHosts, resolveDns = true)) null else blockedResponse()
                 }
 
@@ -137,7 +147,7 @@ class SandboxedWebExtractor(private val context: Context) {
 
                 override fun onPageFinished(view: WebView, url: String) {
                     if (finished) return
-                    if (!allowed(url, adapter, additionalAllowedHosts, resolveDns = true)) {
+                    if (!allowed(url, adapter, additionalAllowedHosts, resolveDns = false)) {
                         // Уже что-то поймали со своей страницы — отдаём это, а не ошибку.
                         if (captured.isNotEmpty()) {
                             val seen = synchronized(captured) { captured.toList() }
@@ -162,6 +172,32 @@ class SandboxedWebExtractor(private val context: Context) {
                             if (pro.noodle.mobile.core.network.CookieChallenge.looksLikeChallenge(html) && challengeWaits++ < 5) return@evaluateJavascript
                             val seen = synchronized(captured) { captured.toList() }
                             val withSniff = if (seen.isEmpty()) html else html + "\n<!--NOODLE_RUNTIME_MEDIA\n" + seen.joinToString("\n") + "\n-->"
+                            val target = seen.firstOrNull() ?: Regex("https://[^\"'\\s,\\]\\[]+\\.(?:mp4|m3u8)[^\"'\\s,\\]\\[]*").find(html)?.value
+                            if (probe && html.isNotBlank() && target != null && !probing) {
+                                probing = true
+                                val js = "(function(u){window.__nm='pending';var v=document.createElement('video');v.muted=true;v.preload='metadata';" +
+                                    "v.onloadedmetadata=function(){window.__nm='OK duration='+Math.round(v.duration)+'s size='+v.videoWidth+'x'+v.videoHeight};" +
+                                    "v.onerror=function(){window.__nm='ERROR media code='+(v.error?v.error.code:'?')+' '+(v.error&&v.error.message||'')};" +
+                                    "v.src=u;(document.body||document.documentElement).appendChild(v);return 1})(" + org.json.JSONObject.quote(target) + ")"
+                                view.evaluateJavascript(js, null)
+                                fun check(n: Int) {
+                                    view.postDelayed({
+                                        if (finished) return@postDelayed
+                                        view.evaluateJavascript("window.__nm||''") { r ->
+                                            val v = decodeJsString(r)
+                                            if ((v.isBlank() || v == "pending") && n < 20) { check(n + 1); return@evaluateJavascript }
+                                            val ck = runCatching { CookieManager.getInstance().getCookie(target).orEmpty() }.getOrDefault("")
+                                            val diag = "BROWSER_VIDEO_TEST url=${target.take(160)} → ${v.ifBlank { "нет ответа за 10 с" }}\n" +
+                                                "COOKIES for media host: ${ck.ifBlank { "(none)" }.take(300)}\n" +
+                                                mediaHeaders.entries.joinToString("\n") { "PLAYER REQUEST HEADERS ${it.key.take(90)} → ${it.value}" } +
+                                                (if (blockedNav.isNotBlank()) "\nBLOCKED AD REDIRECT: ${blockedNav.take(120)}" else "")
+                                            close(WebExtractResult(true, finalUrl = url, html = withSniff, capturedMedia = seen, diagnostics = diag))
+                                        }
+                                    }, 500L)
+                                }
+                                check(0)
+                                return@evaluateJavascript
+                            }
                             close(
                                 if (html.isNotBlank()) {
                                     WebExtractResult(true, finalUrl = url, html = withSniff, capturedMedia = seen)
@@ -325,4 +361,6 @@ data class WebExtractResult(
     val errorMessage: String = "",
     /** Адреса потоков, которые страница реально запросила (в порядке появления). */
     val capturedMedia: List<String> = emptyList(),
+    /** Текст диагностики браузера (только для Studio). */
+    val diagnostics: String = "",
 )

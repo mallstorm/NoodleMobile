@@ -195,7 +195,7 @@ class StreamProbe(private val client: OkHttpClient, private val referer: String)
         .header("Accept", "video/*,application/vnd.apple.mpegurl,application/dash+xml,*/*;q=0.8")
         // Тот же User-Agent, что у плеера и у загрузки страницы: подпись CDN бывает привязана к нему.
         .header("User-Agent", pro.noodle.mobile.core.version.BuildIdentity.USER_AGENT)
-        .apply { if (referer.isNotBlank()) header("Referer", referer) }
+        .apply { if (referer.isNotBlank()) header("Referer", browserReferer(referer, url)) }
 
     private fun resolve(base: String, ref: String): String = runCatching { URI(base).resolve(ref).toString() }.getOrDefault(ref)
 
@@ -203,6 +203,12 @@ class StreamProbe(private val client: OkHttpClient, private val referer: String)
         private val MP4_BRANDS = setOf("ftyp", "moov", "mdat", "free", "skip", "wide", "styp")
     }
 }
+
+/** Как браузер (strict-origin-when-cross-origin): на чужой хост уходит только origin страницы. */
+fun browserReferer(referer: String, target: String): String = runCatching {
+    val r = URI(referer); val t = URI(target)
+    if (r.host.equals(t.host, true)) referer else "${r.scheme}://${r.host}${if (r.port > 0) ":" + r.port else ""}/"
+}.getOrDefault(referer)
 
 /** Reads the movie duration from an MP4 by hopping over top-level boxes with ranged requests. */
 object Mp4Duration {

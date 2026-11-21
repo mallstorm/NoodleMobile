@@ -345,10 +345,11 @@ class StudioAiAgent(context: Context) {
             id = "sniff", name = "sniff", baseUrl = url, engine = "generic_html5",
             allowedHosts = emptyList(), allowJavaScript = true, allowCookies = true,
         )
-        val res = withTimeoutOrNull(30_000) { pro.noodle.mobile.core.web.SandboxedWebExtractor(app).extract(url, def, timeoutMs = 16_000) }
-            ?: return "ERROR: browser timeout 30s"
+        val res = withTimeoutOrNull(50_000) { pro.noodle.mobile.core.web.SandboxedWebExtractor(app).extract(url, def, timeoutMs = 16_000, browserProbe = true) }
+            ?: return "ERROR: browser timeout 50s"
         if (!res.success) return "BROWSER ERROR ${res.errorCode}: ${res.errorMessage}"
         val out = StringBuilder("BROWSER final=${res.finalUrl} • DOM ${res.html.length} chars\n")
+        if (res.diagnostics.isNotBlank()) out.appendLine(res.diagnostics).appendLine("(BROWSER_VIDEO_TEST OK + app probe FAIL ⇒ the browser sends something the app does not: compare the headers/cookies above and retry http_request with them.)")
         out.appendLine("REQUESTED BY THE PLAYER (media-like requests; the file itself was not downloaded):")
         if (res.capturedMedia.isEmpty()) out.appendLine("  none — the player did not start by itself (needs a real click/login/age gate, or the video lives in a cross-origin iframe: sniff_page the iframe URL directly).")
         res.capturedMedia.take(12).forEach { out.appendLine("  ${it.take(240)}") }
