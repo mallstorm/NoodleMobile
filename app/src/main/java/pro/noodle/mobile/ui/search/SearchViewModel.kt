@@ -382,6 +382,10 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
             _state.update {
                 if (r.success && r.session != null) {
                     it.copy(resolving = false, playback = r.session)
+                } else if (pro.noodle.mobile.core.search.ServiceCardFilter.isNoMediaCode(r.errorCode)) {
+                    // Не ролик (служебная/пустая страница): карточку убираем из ленты, без красной плашки.
+                    rawItems = rawItems.filterNot { x -> x.watchUrl.equals(video.watchUrl, true) }
+                    it.copy(resolving = false, message = "", items = it.items.filterNot { x -> x.watchUrl.equals(video.watchUrl, true) })
                 } else {
                     it.copy(resolving = false, message = "${r.errorCode}: ${r.errorMessage}")
                 }

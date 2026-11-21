@@ -196,7 +196,7 @@ class BundledSearchRepository(
                 playerPageUrl = url,
                 favoriteKey = adapter.id + "|" + remote,
             )
-        }.distinctBy { it.watchUrl.lowercase() }.take(maximum)
+        }.distinctBy { it.watchUrl.lowercase() }.let { ServiceCardFilter.filterBatch(it) }.take(maximum)
         return SearchBatch(items, emptyList())
     }
 
@@ -299,7 +299,7 @@ class BundledSearchRepository(
                     playerPageUrl = watch,
                     favoriteKey = "${a.id}|${p.remoteId.ifBlank { watch }}",
                 )
-            }.distinctBy { it.watchUrl.lowercase() }.take(max.coerceAtLeast(1))
+            }.distinctBy { it.watchUrl.lowercase() }.let { ServiceCardFilter.filterBatch(it) }.take(max.coerceAtLeast(1))
             diagnostics.recordSearch(a.id, a.engine, net.finalUrl.ifBlank { url }, net.statusCode, elapsed, items.size)
             if (items.isNotEmpty()) return items to null
         }

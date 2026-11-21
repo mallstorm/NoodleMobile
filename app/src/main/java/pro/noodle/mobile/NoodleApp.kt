@@ -9,5 +9,6 @@ class NoodleApp : Application() {
         CookieChallenge.attach(this)
         pro.noodle.mobile.core.download.BatchDownloads.init(this)
         pro.noodle.mobile.core.audio.AudioEq.init(this)
+        pro.noodle.mobile.core.search.ServiceCardFilter.init(this)
     }
 }

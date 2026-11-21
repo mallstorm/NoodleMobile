@@ -148,6 +148,7 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
         if (!resolved.success && safeSources.isEmpty()) {
             val code = resolved.errorCode.ifBlank { "PLAYBACK_RESOLVE_FAILED" }
             diagnostics.recordPlayback(adapter.id, video.watchUrl, "", "resolve_failed", code)
+            if (pro.noodle.mobile.core.search.ServiceCardFilter.isNoMediaCode(code)) pro.noodle.mobile.core.search.ServiceCardFilter.markDead(video.watchUrl)
             return@withContext PlaybackLoadResult(
                 false,
                 errorCode = code,
