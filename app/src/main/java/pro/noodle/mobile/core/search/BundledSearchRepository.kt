@@ -274,7 +274,7 @@ class BundledSearchRepository(
             if (!net.success) {
                 diagnostics.recordSearch(a.id, a.engine, net.finalUrl.ifBlank { url }, net.statusCode, elapsed, 0, net.errorCode)
                 // Многие сайты отвечают 404/410 на страницу за последней: это конец выдачи, а не поломка источника.
-                if (page >= 2 && (net.statusCode == 404 || net.statusCode == 410)) { pastLastPage = true; continue }
+                if (page >= 1 && (net.statusCode == 404 || net.statusCode == 410)) { pastLastPage = true; continue }
                 lastError = SourceSearchError(a.id, pro.noodle.mobile.core.source.SourceNames.short(a.name, a.baseUrl), net.errorCode, net.errorMessage)
                 continue
             }

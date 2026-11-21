@@ -15,6 +15,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -31,6 +34,8 @@ import java.util.Date
 fun NewVideosScreen(newVm: NewVideosViewModel, searchVm: SearchViewModel, onClose: () -> Unit) {
     val st by newVm.state.collectAsState()
     val play by searchVm.state.collectAsState()
+    // Баннер ошибки — только для ролика, открытого отсюда (а не для сообщений общего поиска, например «больше результатов нет»).
+    var tapped by remember { mutableStateOf(false) }
     BackHandler(onBack = onClose)
     Column(Modifier.fillMaxSize().padding(horizontal = 14.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -54,7 +59,7 @@ fun NewVideosScreen(newVm: NewVideosViewModel, searchVm: SearchViewModel, onClos
         if (play.resolving) {
             LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 6.dp))
             Text("Открываю видео…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
-        } else if (play.message.isNotBlank()) {
+        } else if (tapped && play.message.isNotBlank()) {
             ElevatedCard(Modifier.fillMaxWidth().padding(top = 6.dp), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
                 Row(Modifier.padding(start = 12.dp, top = 6.dp, bottom = 6.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Не удалось открыть: ${play.message}", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
@@ -86,7 +91,7 @@ fun NewVideosScreen(newVm: NewVideosViewModel, searchVm: SearchViewModel, onClos
                 if (unviewed > 0) TextButton(onClick = newVm::markAllViewed) { Text("Всё просмотрено") }
             }
             val shownItems = st.items.filter { !st.onlyUnviewed || it.video.id !in st.viewed }
-            val open: (NewEntry) -> Unit = { e -> newVm.markViewed(e.video); searchVm.open(e.video) }
+            val open: (NewEntry) -> Unit = { e -> tapped = true; searchVm.clearMessage(); newVm.markViewed(e.video); searchVm.open(e.video) }
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (st.grouped) {
                     shownItems.groupBy { it.video.sourceName.ifBlank { "Без названия" } }.forEach { (source, list) ->
