@@ -48,6 +48,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     fun downloadSelectMode(v: Boolean) = viewModelScope.launch { repo.setDownloadSelectMode(v) }
     fun background(v: Boolean) = viewModelScope.launch { repo.setBackgroundMonitoring(v) }
     fun monitoringHours(v: Int) = viewModelScope.launch { repo.setMonitoringIntervalHours(v) }
+    fun showSourceWarnings(v: Boolean) = viewModelScope.launch { repo.setShowSourceWarnings(v) }
     fun rememberPosition(v: Boolean) = viewModelScope.launch { repo.setRememberPlaybackPosition(v) }
 
     fun setLock(mode: String, secret: String = "") = viewModelScope.launch {

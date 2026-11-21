@@ -608,6 +608,14 @@ private fun SettingsScreen(vm: SettingsViewModel, header: androidx.compose.found
                         Spacer(Modifier.width(8.dp))
                         Text("Запоминать позицию воспроизведения")
                     }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Switch(settings.showSourceWarnings, vm::showSourceWarnings)
+                        Spacer(Modifier.width(8.dp))
+                        Column {
+                            Text("Предупреждения об источниках")
+                            Text("Значок «!» рядом с поиском и «Состояние источников». По умолчанию выключено.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
 
                     HorizontalDivider()
                     Text("Похожие видео", fontWeight = FontWeight.SemiBold)

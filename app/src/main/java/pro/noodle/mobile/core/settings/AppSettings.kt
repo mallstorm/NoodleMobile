@@ -22,6 +22,7 @@ data class AppSettings(
     val followedSources: Set<String> = emptySet(),
     val downloadSelectMode: Boolean = false,
     val downloadFolderUri: String = "",
+    val showSourceWarnings: Boolean = false,
 )
 
 /** Масштаб интерфейса: 85–100 % с шагом 5. */
@@ -42,6 +43,7 @@ class AppSettingsRepository(private val context: Context) {
         val followedSources = stringSetPreferencesKey("followed_sources")
         val downloadSelectMode = booleanPreferencesKey("download_select_mode")
         val downloadFolderUri = stringPreferencesKey("download_folder_uri")
+        val showSourceWarnings = booleanPreferencesKey("show_source_warnings")
     }
 
     val settings: Flow<AppSettings> = context.noodleSettingsStore.data.map { p ->
@@ -59,6 +61,7 @@ class AppSettingsRepository(private val context: Context) {
             followedSources = p[Keys.followedSources] ?: emptySet(),
             downloadSelectMode = p[Keys.downloadSelectMode] ?: false,
             downloadFolderUri = p[Keys.downloadFolderUri] ?: "",
+            showSourceWarnings = p[Keys.showSourceWarnings] ?: false,
         )
     }
 
@@ -67,6 +70,7 @@ class AppSettingsRepository(private val context: Context) {
         it[Keys.uiScalePercent] = snapScale(value)
     }
     suspend fun setParallelDownloads(value: Int) = context.noodleSettingsStore.edit { it[Keys.parallelDownloads] = value.coerceIn(1, 10) }
+    suspend fun setShowSourceWarnings(value: Boolean) = context.noodleSettingsStore.edit { it[Keys.showSourceWarnings] = value }
     suspend fun setDownloadSelectMode(value: Boolean) = context.noodleSettingsStore.edit { it[Keys.downloadSelectMode] = value }
     suspend fun setDownloadFolderUri(value: String) = context.noodleSettingsStore.edit { it[Keys.downloadFolderUri] = value }
     suspend fun setBackgroundMonitoring(value: Boolean) = context.noodleSettingsStore.edit { it[Keys.backgroundMonitoring] = value }

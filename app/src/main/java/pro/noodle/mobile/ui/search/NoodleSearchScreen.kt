@@ -87,6 +87,9 @@ fun NoodleSearchScreen(
     val listState = rememberLazyListState()
     var filterSheet by remember { mutableStateOf(false) }
     var errorDialog by remember { mutableStateOf(false) }
+    val appCtx = androidx.compose.ui.platform.LocalContext.current
+    val warnSettings by remember { pro.noodle.mobile.core.settings.AppSettingsRepository(appCtx).settings }
+        .collectAsState(initial = pro.noodle.mobile.core.settings.AppSettings())
     var sourceFilter by remember { mutableStateOf<String?>(null) }
     var durationFilter by remember { mutableStateOf(DurationFilter.ANY) }
     var sort by remember { mutableStateOf(ResultSort.SOURCE_ORDER) }
@@ -143,7 +146,7 @@ fun NoodleSearchScreen(
     ) {
         if (!landscape) {
             NoodleHeader(
-                errorCount = state.errors.size,
+                errorCount = if (warnSettings.showSourceWarnings) state.errors.size else 0,
                 newCount = newState.items.count { it.video.id !in newState.viewed },
                 onStatusClick = { errorDialog = true },
                 onBellClick = { showNew = true },
