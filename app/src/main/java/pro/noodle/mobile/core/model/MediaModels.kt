@@ -10,6 +10,10 @@ data class MediaSource(
     val bandwidth: Long = 0,
     val codecs: String = "",
     val isDefault: Boolean = false,
+    /** Фильм из нескольких частей: адреса частей по порядку (проигрываются как одно видео). */
+    val parts: List<String> = emptyList(),
+    /** Длительности частей в мс (-1 — неизвестно). */
+    val partDurationsMs: List<Long> = emptyList(),
 )
 
 data class MediaVariant(

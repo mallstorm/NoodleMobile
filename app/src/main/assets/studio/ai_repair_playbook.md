@@ -144,3 +144,6 @@ Ask yourself: (1) do search results have real titles/covers/durations? (2) does 
 - Report honestly if every path fails, naming which one (IP/UA binding, expiry, login wall).
 - The app now sends Referer like a browser: for a different host (CDN) only the page ORIGIN (`https://site/`), never the full page URL. When testing a CDN with http_request, try both the origin-only Referer and no Referer.
 - sniff_page now runs a BROWSER_VIDEO_TEST: the WebView itself loads the stream in a <video> tag. "OK duration=…" while the app's probe gets HTML means the browser sends something extra — the output lists the player's real request headers and the CDN cookies; reproduce them with http_request. "ERROR media" in the browser too means the CDN refuses this device/network (VPN split routing, geo) — say so in give_up.
+
+## 13. Films split into parts
+- Files like `Film.1.mp4, Film.2.mp4 …` (or `Film.1080.1.mp4 …`) are PARTS of one film, not alternatives. Do not reject later/shorter parts as previews and do not pick only part 1: return all parts from the engine. The app joins consecutive parts of the same quality into one "Весь фильм" source with the total duration automatically.

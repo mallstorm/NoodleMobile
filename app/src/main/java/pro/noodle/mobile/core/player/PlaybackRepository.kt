@@ -184,8 +184,22 @@ class PlaybackRepository(context: Context, private val http: SecureHttpClient = 
                 if (retry.ranked.any { it.facts?.ok == true }) { selection = retry; referer = alt }
             }
         }
+        val rawCandidates = safeSources
         // Mined/extra candidates may live on CDN hosts that were not seen yet: admit them under the same rules.
         safeSources = selection.sources.filter { admitMediaSource(it, adapter, discoveredHosts) }
+        // Фильм, нарезанный на части, склеиваем в один источник с общей длительностью (части одного качества).
+        run {
+            val facts = (selection.allRanked + selection.ranked).mapNotNull { r -> r.facts?.let { r.source.url to it } }.toMap()
+            val joined = MultiPartJoiner.join((rawCandidates + safeSources).distinctBy { it.url }, facts)
+                .filter { j -> j.parts.all { u -> admitMediaSource(MediaSource(url = u, mimeType = "video/mp4"), adapter, discoveredHosts) } }
+            if (joined.isNotEmpty()) {
+                val top = safeSources.firstOrNull()?.url
+                val preferred = joined.firstOrNull { top != null && top in it.parts }
+                    ?: joined.filter { it.height in 1..1080 }.maxByOrNull { it.height } ?: joined.first()
+                val ordered = listOf(preferred.copy(isDefault = true)) + joined.filter { it !== preferred }
+                safeSources = ordered + safeSources.map { it.copy(isDefault = false) }
+            }
+        }
         if (safeSources.isEmpty()) {
             diagnostics.recordPlayback(adapter.id, video.watchUrl, "", "blocked_sources", "PLAYBACK_NO_ALLOWED_SOURCE")
             return@withContext PlaybackLoadResult(false, errorCode = "PLAYBACK_NO_ALLOWED_SOURCE", errorMessage = "Resolver нашёл media URL, но поток не прошёл HTTPS/public-host policy.")

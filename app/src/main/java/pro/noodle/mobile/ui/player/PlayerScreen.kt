@@ -221,7 +221,20 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
             ?: player.currentPosition.takeIf { it > 0 }
             ?: restoredPosition
         val wasPlaying = player.playWhenReady
-        player.setMediaItem(mediaItemFor(source), old.coerceAtLeast(0))
+        if (source.parts.size > 1) {
+            // Фильм из частей: один таймлайн с общей длительностью, перемотка по всему фильму.
+            val dsf = MediaDownloadRuntime.cacheDataSourceFactory(context.applicationContext, activeSession.networkPolicy, activeSession.sourceKey, activeSession.referer)
+            val builder = androidx.media3.exoplayer.source.ConcatenatingMediaSource2.Builder()
+                .setMediaSourceFactory(DefaultMediaSourceFactory(dsf))
+                .setMediaItem(mediaItemFor(source))
+            source.parts.forEachIndexed { i, u ->
+                val d = source.partDurationsMs.getOrNull(i)?.takeIf { it > 0 } ?: C.TIME_UNSET
+                builder.add(MediaItem.Builder().setUri(Uri.parse(u)).setMimeType(MimeTypes.VIDEO_MP4).build(), d)
+            }
+            player.setMediaSource(builder.build(), old.coerceAtLeast(0))
+        } else {
+            player.setMediaItem(mediaItemFor(source), old.coerceAtLeast(0))
+        }
         attemptStartMs = android.os.SystemClock.elapsedRealtime()
         player.prepare()
         player.playWhenReady = firstLoad || wasPlaying || old == 0L
@@ -430,6 +443,10 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
         src.url.contains(".mpd", true)
 
     fun requestDownload() {
+        if (source.parts.size > 1) {
+            message = "Фильм из ${source.parts.size} частей: для скачивания выберите отдельную часть в «Источник» (скачивание целиком — следующим шагом)."
+            return
+        }
         // A full-length MP4 next to the HLS stream downloads directly (one request, resumable).
         val direct = if (isAdaptiveSource(source)) {
             video.sources.firstOrNull { !isAdaptiveSource(it) && (Regex("(\\d{3,4})p").find(it.label)?.groupValues?.get(1)?.toIntOrNull() ?: 720) >= 480 }
