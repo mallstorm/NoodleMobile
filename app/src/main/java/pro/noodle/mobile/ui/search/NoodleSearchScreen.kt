@@ -363,7 +363,14 @@ fun NoodleSearchScreen(
                 } else {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         state.errors.take(6).forEach { e ->
-                            Text("${e.sourceName}: ${e.errorCode}", style = MaterialTheme.typography.bodySmall)
+                            val human = when {
+                                e.errorCode == "SEARCH_TIMEOUT" -> "не ответил вовремя (сайт медленный или ограничивает частые запросы)"
+                                e.errorCode == "HTTP_IO_ERROR" -> "обрыв связи с сайтом" + (e.message.takeIf { it.isNotBlank() }?.let { ": ${it.take(80)}" } ?: "")
+                                e.errorCode == "HTTP_429" -> "сайт попросил делать запросы реже (429)"
+                                e.message.isNotBlank() -> "${e.errorCode}: ${e.message.take(100)}"
+                                else -> e.errorCode
+                            }
+                            Text("${e.sourceName}: $human", style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }

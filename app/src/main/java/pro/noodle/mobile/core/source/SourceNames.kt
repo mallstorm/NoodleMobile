@@ -1,0 +1,41 @@
+package pro.noodle.mobile.core.source
+
+import java.net.URI
+
+/** Короткое имя источника: «Кинокордон», а не «Порно фильмы онлайн 18+ | Порнокино с русским переводом». */
+object SourceNames {
+    private val tr = mapOf('а' to "a", 'б' to "b", 'в' to "v", 'г' to "g", 'д' to "d", 'е' to "e", 'ё' to "e", 'ж' to "zh", 'з' to "z", 'и' to "i", 'й' to "y",
+        'к' to "k", 'л' to "l", 'м' to "m", 'н' to "n", 'о' to "o", 'п' to "p", 'р' to "r", 'с' to "s", 'т' to "t", 'у' to "u", 'ф' to "f", 'х' to "h",
+        'ц' to "c", 'ч' to "ch", 'ш' to "sh", 'щ' to "sch", 'ъ' to "", 'ы' to "y", 'ь' to "", 'э' to "e", 'ю' to "yu", 'я' to "ya")
+    fun translit(s: String) = s.lowercase().map { c -> tr[c] ?: c.toString() }.joinToString("")
+
+    fun label(host: String): String {
+        val parts = host.lowercase().removePrefix("www.").split('.').filter { it.isNotBlank() }
+        if (parts.size < 2) return parts.firstOrNull().orEmpty()
+        val sld = parts[parts.size - 2]
+        return if (sld in setOf("co", "com", "net", "org") && parts.size >= 3) parts[parts.size - 3] else sld
+    }
+
+    /** Ищет среди фрагментов (заголовок, og:site_name, generator) тот, что совпадает с доменом. */
+    fun brand(candidates: List<String>, host: String): String {
+        val lbl = label(host).replace(Regex("[^a-z0-9]"), "")
+        if (lbl.length < 3) return ""
+        val pieces = candidates.flatMap { it.split(" - ", " | ", " — ", " – ", ": ", "(", ")", ",") }.map { it.trim() }.filter { it.length in 2..30 }
+        return pieces.firstOrNull { p ->
+            val t = translit(p).replace(Regex("[^a-z0-9]"), "")
+            t.isNotEmpty() && (t == lbl || (t.length >= 5 && (lbl.startsWith(t.take(6)) || t.startsWith(lbl.take(6)))))
+        }.orEmpty()
+    }
+
+    fun short(name: String, baseUrl: String): String {
+        val n = name.trim()
+        if (n.length <= 26 && !n.contains(" | ")) return n.ifBlank { fromHost(baseUrl) }
+        val host = runCatching { URI(baseUrl).host.orEmpty() }.getOrDefault("")
+        return brand(listOf(n), host).ifBlank { fromHost(baseUrl) }.ifBlank { n }
+    }
+
+    fun fromHost(baseUrl: String): String {
+        val host = runCatching { URI(baseUrl).host.orEmpty() }.getOrDefault("")
+        return label(host).replaceFirstChar { it.uppercase() }
+    }
+}

@@ -542,7 +542,11 @@ class SnpAutoBuilder(private val http: SecureHttpClient = SecureHttpClient()) {
 
         fun siteName(html: String, host: String): String {
             val og = EngineParsing.first(html, "<meta[^>]+property=[\"']og:site_name[\"'][^>]+content=[\"']([^\"']{2,60})[\"']")
-            if (og.isNotBlank()) return EngineParsing.htmlDecode(og)
+            val gen = EngineParsing.first(html, "<meta[^>]+name=[\"']generator[\"'][^>]+content=[\"']([^\"']{2,80})[\"']")
+            val titleRaw = EngineParsing.stripTags(EngineParsing.first(html, "<title[^>]*>([\\s\\S]*?)</title>"))
+            pro.noodle.mobile.core.source.SourceNames.brand(listOf(og, gen, titleRaw).filter { it.isNotBlank() }.map { EngineParsing.htmlDecode(it) }, host)
+                .takeIf { it.isNotBlank() }?.let { return it }
+            if (og.isNotBlank() && og.length <= 26 && !og.contains("|")) return EngineParsing.htmlDecode(og)
             val title = EngineParsing.stripTags(EngineParsing.first(html, "<title[^>]*>([\\s\\S]*?)</title>"))
             val short = title.split(" - ", " | ", " — ", " – ", ": ").map { it.trim() }.filter { it.length in 2..40 }
                 .minByOrNull { it.length }

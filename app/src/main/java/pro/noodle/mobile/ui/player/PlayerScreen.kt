@@ -227,11 +227,16 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
             val builder = androidx.media3.exoplayer.source.ConcatenatingMediaSource2.Builder()
                 .setMediaSourceFactory(DefaultMediaSourceFactory(dsf))
                 .setMediaItem(mediaItemFor(source))
+            // Progressive-части обязаны иметь начальную длительность-заглушку; настоящая подставится после загрузки.
+            val known = source.partDurationsMs.filter { it > 0 }
+            val fallback = if (known.isNotEmpty()) known.average().toLong() else 30 * 60_000L
             source.parts.forEachIndexed { i, u ->
-                val d = source.partDurationsMs.getOrNull(i)?.takeIf { it > 0 } ?: C.TIME_UNSET
+                val d = source.partDurationsMs.getOrNull(i)?.takeIf { it > 0 } ?: fallback
                 builder.add(MediaItem.Builder().setUri(Uri.parse(u)).setMimeType(MimeTypes.VIDEO_MP4).build(), d)
             }
-            player.setMediaSource(builder.build(), old.coerceAtLeast(0))
+            val concat = runCatching { builder.build() }.getOrNull()
+            if (concat != null) player.setMediaSource(concat, old.coerceAtLeast(0))
+            else player.setMediaItem(mediaItemFor(source.copy(url = source.parts.first())), old.coerceAtLeast(0))
         } else {
             player.setMediaItem(mediaItemFor(source), old.coerceAtLeast(0))
         }

@@ -82,7 +82,7 @@ class BundledSearchRepository(
                             searchOne(adapter, query, page, maxPerSource)
                         } ?: (emptyList<VideoItem>() to SourceSearchError(
                             adapter.id,
-                            adapter.name,
+                            pro.noodle.mobile.core.source.SourceNames.short(adapter.name, adapter.baseUrl),
                             "SEARCH_TIMEOUT",
                             "Источник не ответил за ${SOURCE_SEARCH_TIMEOUT_MS / 1000} с.",
                         ))
@@ -91,7 +91,7 @@ class BundledSearchRepository(
                     } catch (e: Exception) {
                         emptyList<VideoItem>() to SourceSearchError(
                             adapter.id,
-                            adapter.name,
+                            pro.noodle.mobile.core.source.SourceNames.short(adapter.name, adapter.baseUrl),
                             "SEARCH_SOURCE_EXCEPTION",
                             e.message ?: e.javaClass.simpleName,
                         )
@@ -128,7 +128,7 @@ class BundledSearchRepository(
                 }
             } ?: (emptyList<VideoItem>() to SourceSearchError(
                 adapter.id,
-                adapter.name,
+                pro.noodle.mobile.core.source.SourceNames.short(adapter.name, adapter.baseUrl),
                 "RELATED_TIMEOUT",
                 "Похожие видео загружались слишком долго.",
             ))
@@ -137,7 +137,7 @@ class BundledSearchRepository(
         } catch (e: Exception) {
             emptyList<VideoItem>() to SourceSearchError(
                 adapter.id,
-                adapter.name,
+                pro.noodle.mobile.core.source.SourceNames.short(adapter.name, adapter.baseUrl),
                 "RELATED_SOURCE_EXCEPTION",
                 e.message ?: e.javaClass.simpleName,
             )
@@ -190,7 +190,7 @@ class BundledSearchRepository(
                 thumbnailUrl = thumb,
                 duration = card.durationText,
                 views = card.viewsText,
-                sourceName = adapter.name,
+                sourceName = pro.noodle.mobile.core.source.SourceNames.short(adapter.name, adapter.baseUrl),
                 sourceBaseUrl = adapter.baseUrl,
                 sourceEngine = adapter.engine,
                 playerPageUrl = url,
@@ -223,7 +223,7 @@ class BundledSearchRepository(
                     remoteId = id,
                     watchUrl = decision.normalizedUrl,
                     title = id.replace('-', ' ').replace('_', ' '),
-                    sourceName = adapter.name,
+                    sourceName = pro.noodle.mobile.core.source.SourceNames.short(adapter.name, adapter.baseUrl),
                     sourceBaseUrl = adapter.baseUrl,
                     sourceEngine = adapter.engine,
                     playerPageUrl = decision.normalizedUrl,
@@ -255,22 +255,27 @@ class BundledSearchRepository(
         mirrorDepth: Int = 0,
     ): Pair<List<VideoItem>, SourceSearchError?> {
         val engine = RuntimeEngineRegistry.find(a.engine)
-            ?: return emptyList<VideoItem>() to SourceSearchError(a.id, a.name, "ENGINE_NOT_IMPLEMENTED", "Runtime engine ${a.engine} отсутствует.")
+            ?: return emptyList<VideoItem>() to SourceSearchError(a.id, pro.noodle.mobile.core.source.SourceNames.short(a.name, a.baseUrl), "ENGINE_NOT_IMPLEMENTED", "Runtime engine ${a.engine} отсутствует.")
         val req = a.searchRequest(q, page, max)
         val candidates = searchCandidates(SearchUrls.candidates(engine, req), a.baseUrl, q, page, legacyFallbacks = a.engine != "auto_catalog")
-        if (candidates.isEmpty()) return emptyList<VideoItem>() to SourceSearchError(a.id, a.name, "SEARCH_URL_EMPTY", "Engine не сформировал search URL.")
+        if (candidates.isEmpty()) return emptyList<VideoItem>() to SourceSearchError(a.id, pro.noodle.mobile.core.source.SourceNames.short(a.name, a.baseUrl), "SEARCH_URL_EMPTY", "Engine не сформировал search URL.")
         var lastError: SourceSearchError? = null
         var hadSuccessfulResponse = false
         var pastLastPage = false
         for (url in candidates) {
             val started = System.currentTimeMillis()
-            val net = http.fetchText(url, NetworkPolicy(a.allowedHosts, allowCookies = a.allowCookies), a.id)
+            var net = http.fetchText(url, NetworkPolicy(a.allowedHosts, allowCookies = a.allowCookies), a.id)
+            // Сбой связи, «слишком часто» (429) или 5xx — одна повторная попытка после паузы.
+            if (!net.success && (net.errorCode == "HTTP_IO_ERROR" || net.statusCode == 429 || net.statusCode in 500..599)) {
+                kotlinx.coroutines.delay(if (net.statusCode == 429) 2_500L else 1_200L)
+                net = http.fetchText(url, NetworkPolicy(a.allowedHosts, allowCookies = a.allowCookies), a.id)
+            }
             val elapsed = System.currentTimeMillis() - started
             if (!net.success) {
                 diagnostics.recordSearch(a.id, a.engine, net.finalUrl.ifBlank { url }, net.statusCode, elapsed, 0, net.errorCode)
                 // Многие сайты отвечают 404/410 на страницу за последней: это конец выдачи, а не поломка источника.
                 if (page >= 2 && (net.statusCode == 404 || net.statusCode == 410)) { pastLastPage = true; continue }
-                lastError = SourceSearchError(a.id, a.name, net.errorCode, net.errorMessage)
+                lastError = SourceSearchError(a.id, pro.noodle.mobile.core.source.SourceNames.short(a.name, a.baseUrl), net.errorCode, net.errorMessage)
                 continue
             }
             hadSuccessfulResponse = true
@@ -288,7 +293,7 @@ class BundledSearchRepository(
                     thumbnailUrl = thumb,
                     duration = p.durationText,
                     views = p.viewsText,
-                    sourceName = a.name,
+                    sourceName = pro.noodle.mobile.core.source.SourceNames.short(a.name, a.baseUrl),
                     sourceBaseUrl = a.baseUrl,
                     sourceEngine = a.engine,
                     playerPageUrl = watch,
@@ -312,8 +317,8 @@ class BundledSearchRepository(
                 }
             }
         }
-        if (hadSuccessfulResponse) return emptyList<VideoItem>() to SourceSearchError(a.id, a.name, "SEARCH_PARSED_ZERO", "Источник ответил, но текущий SNP не распознал ни одной видеокарточки.")
-        return emptyList<VideoItem>() to (lastError ?: SourceSearchError(a.id, a.name, "SEARCH_FAILED", "Не удалось получить результаты поиска."))
+        if (hadSuccessfulResponse) return emptyList<VideoItem>() to SourceSearchError(a.id, pro.noodle.mobile.core.source.SourceNames.short(a.name, a.baseUrl), "SEARCH_PARSED_ZERO", "Источник ответил, но текущий SNP не распознал ни одной видеокарточки.")
+        return emptyList<VideoItem>() to (lastError ?: SourceSearchError(a.id, pro.noodle.mobile.core.source.SourceNames.short(a.name, a.baseUrl), "SEARCH_FAILED", "Не удалось получить результаты поиска."))
     }
 
     /**
@@ -365,7 +370,7 @@ class BundledSearchRepository(
     }
 
     companion object {
-        private const val SOURCE_SEARCH_TIMEOUT_MS = 10_000L
+        private const val SOURCE_SEARCH_TIMEOUT_MS = 14_000L
         private const val RELATED_SEARCH_TIMEOUT_MS = 6_000L
         private const val MAX_SEARCH_CANDIDATES = 10
     }
