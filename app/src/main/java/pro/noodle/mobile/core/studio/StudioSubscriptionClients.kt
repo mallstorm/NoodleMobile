@@ -115,7 +115,7 @@ internal class StudioChatGptClient {
         val url = "$AUTH/api/accounts/authorize".toHttpUrl().newBuilder()
             .addQueryParameter("client_id", DYNAMIC_CLIENT_ID).addQueryParameter("ext_agent_host_id", hostId)
             .addQueryParameter("response_type", "code").addQueryParameter("redirect_uri", redirect)
-            .addQueryParameter("scope", "openid profile email offline_access $DIRECT_SCOPE")
+            .addQueryParameter("scope", "openid profile email offline_access resource.invoke $DIRECT_SCOPE")
             .addQueryParameter("resource", RESOURCE).addQueryParameter("state", state).addQueryParameter("nonce", nonce)
             .addQueryParameter("code_challenge_method", "S256").addQueryParameter("code_challenge", challenge)
             .addQueryParameter("agent_name_hint", "NoodleMobile").build().toString()
