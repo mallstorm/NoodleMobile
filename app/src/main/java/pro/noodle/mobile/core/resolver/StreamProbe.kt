@@ -193,6 +193,8 @@ class StreamProbe(private val client: OkHttpClient, private val referer: String)
 
     private fun builder(url: String): Request.Builder = Request.Builder().url(url)
         .header("Accept", "video/*,application/vnd.apple.mpegurl,application/dash+xml,*/*;q=0.8")
+        // Тот же User-Agent, что у плеера и у загрузки страницы: подпись CDN бывает привязана к нему.
+        .header("User-Agent", pro.noodle.mobile.core.version.BuildIdentity.USER_AGENT)
         .apply { if (referer.isNotBlank()) header("Referer", referer) }
 
     private fun resolve(base: String, ref: String): String = runCatching { URI(base).resolve(ref).toString() }.getOrDefault(ref)

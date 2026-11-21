@@ -320,7 +320,9 @@ private object SafeDns : Dns {
         if (addresses.isEmpty() || addresses.any(UrlPolicy::isUnsafeAddress)) {
             throw java.net.UnknownHostException("Unsafe/private DNS target blocked: $hostname")
         }
-        return addresses
+        // IPv4 первым: страница и видео-CDN должны ходить с ОДНОГО IP. Подписанные ссылки (secure_link)
+        // часто привязаны к IP, а у сайта за Cloudflare есть IPv6, у CDN — нет: без этого CDN отвечает «Error. Code 4».
+        return addresses.sortedBy { if (it is java.net.Inet4Address) 0 else 1 }
     }
 }
 

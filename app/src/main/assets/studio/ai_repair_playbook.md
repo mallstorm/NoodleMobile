@@ -135,3 +135,10 @@ Signals: `/engine/ajax/`, `dle_root`, `dle_login_hash`, `index.php?do=...`, URLs
 
 ## 11. Self-check before `finish`
 Ask yourself: (1) do search results have real titles/covers/durations? (2) does the sample video last longer than a preview and play in the app's Media3 test? (3) did I keep allow_javascript/allow_cookies only if truly needed? (4) are all CDN hosts in allowed_hosts? (5) is health.query a word that returns many results? If any answer is no, fix it before finish.
+
+
+## 12. Signed CDN answers HTML / "Error. Code N" with HTTP 200
+- URLs like `/secure/<hash>/<expires>/file.mp4` are nginx secure_link: the hash binds the link to the requester's IP (often also the User-Agent) and an expiry time. "Error. Code 4"-style bodies mean the signature did not match the request.
+- The app already uses ONE IP (IPv4 first) and ONE User-Agent for page fetch, probe and player, and takes a fresh link from the page right before playback. So: never hard-code such URLs into the adapter; let the engine extract them from the watch page every time (generic_player_config / PlayerJS `file:` parsing).
+- If find_streams still shows HTML instead of video, call sniff_page: if the browser's own requests to the CDN succeed, the adapter needs `allow_javascript: true` (player via WebView) and `allow_cookies: true`. The browser now blocks ad "click-under" redirects, so WEB_NAV_BLOCKED after a play click should be rare; if it still happens, the blocked URL is in the error.
+- Report honestly if every path fails, naming which one (IP/UA binding, expiry, login wall).

@@ -75,6 +75,8 @@ class SandboxedWebExtractor(private val context: Context) {
             CookieManager.getInstance().setAcceptCookie(adapter.allowCookies)
             CookieManager.getInstance().setAcceptThirdPartyCookies(web, false)
             var finished = false
+            var pageLoaded = false
+            var blockedNav = ""
             var challengeWaits = 0
             val captured = java.util.Collections.synchronizedSet(LinkedHashSet<String>())
             fun close(result: WebExtractResult) {
@@ -99,8 +101,15 @@ class SandboxedWebExtractor(private val context: Context) {
                 }
             }
             web.webViewClient = object : WebViewClient() {
-                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest): Boolean =
-                    !allowed(request.url.toString(), adapter, additionalAllowedHosts, resolveDns = true)
+                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest): Boolean {
+                    // Клик по плееру часто запускает «кликандер»: сайт уводит всю страницу на рекламу.
+                    // После первой загрузки не пускаем JS-переходы главного окна на чужой домен (редиректы сервера — можно).
+                    if (pageLoaded && request.isForMainFrame && !request.isRedirect &&
+                        baseDomain(request.url.host.orEmpty()) != baseDomain(Uri.parse(url).host.orEmpty())) {
+                        blockedNav = request.url.toString(); return true
+                    }
+                    return !allowed(request.url.toString(), adapter, additionalAllowedHosts, resolveDns = true)
+                }
 
                 override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest): WebResourceResponse? {
                     val u = request.url.toString()
@@ -127,16 +136,24 @@ class SandboxedWebExtractor(private val context: Context) {
                 }
 
                 override fun onPageFinished(view: WebView, url: String) {
-                    if (finished || !allowed(url, adapter, additionalAllowedHosts, resolveDns = true)) {
+                    if (finished) return
+                    if (!allowed(url, adapter, additionalAllowedHosts, resolveDns = true)) {
+                        // Уже что-то поймали со своей страницы — отдаём это, а не ошибку.
+                        if (captured.isNotEmpty()) {
+                            val seen = synchronized(captured) { captured.toList() }
+                            close(WebExtractResult(true, finalUrl = url, html = "<!--NOODLE_RUNTIME_MEDIA\n" + seen.joinToString("\n") + "\n-->", capturedMedia = seen))
+                            return
+                        }
                         close(
                             WebExtractResult(
                                 false,
                                 errorCode = "WEB_NAV_BLOCKED",
-                                errorMessage = "Финальная страница вышла за SNP policy.",
+                                errorMessage = "Финальная страница вышла за SNP policy: ${url.take(120)}",
                             )
                         )
                         return
                     }
+                    pageLoaded = true
                     fun finishNow() {
                         if (finished) return
                         view.evaluateJavascript(RUNTIME_DOM_SCRIPT) { encoded ->
@@ -215,6 +232,8 @@ class SandboxedWebExtractor(private val context: Context) {
     }
 
     private fun blockedResponse() = WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
+
+    private fun baseDomain(host: String): String = host.lowercase().trimEnd('.').split('.').takeLast(2).joinToString(".")
 
     private fun decodeJsString(value: String?): String {
         val v = value.orEmpty()
