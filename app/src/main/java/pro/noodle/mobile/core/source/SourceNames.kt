@@ -7,6 +7,12 @@ object SourceNames {
     private val tr = mapOf('а' to "a", 'б' to "b", 'в' to "v", 'г' to "g", 'д' to "d", 'е' to "e", 'ё' to "e", 'ж' to "zh", 'з' to "z", 'и' to "i", 'й' to "y",
         'к' to "k", 'л' to "l", 'м' to "m", 'н' to "n", 'о' to "o", 'п' to "p", 'р' to "r", 'с' to "s", 'т' to "t", 'у' to "u", 'ф' to "f", 'х' to "h",
         'ц' to "c", 'ч' to "ch", 'ш' to "sh", 'щ' to "sch", 'ъ' to "", 'ы' to "y", 'ь' to "", 'э' to "e", 'ю' to "yu", 'я' to "ya")
+    /** Латинский вариант запроса, если в нём есть кириллица; иначе null. */
+    fun latinQuery(q: String): String? {
+        if (q.none { it in 'А'..'я' || it == 'ё' || it == 'Ё' }) return null
+        val t = translit(q.replace('ё', 'е').replace('Ё', 'Е')).replace(Regex("\\s+"), " ").trim()
+        return t.ifBlank { null }?.takeIf { !it.equals(q.trim(), true) }
+    }
     fun translit(s: String) = s.lowercase().map { c -> tr[c] ?: c.toString() }.joinToString("")
 
     fun label(host: String): String {

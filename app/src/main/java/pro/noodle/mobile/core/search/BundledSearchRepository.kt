@@ -74,29 +74,38 @@ class BundledSearchRepository(
         if (query.isBlank()) return@coroutineScope SearchBatch(emptyList(), emptyList())
         val adapters = activeAdapters()
         directUrlResult(query, adapters)?.let { return@coroutineScope it }
+        // Запрос по-русски ищем и в латинской транслитерации («Анна Бали» + «Anna Bali»).
+        val queries = listOfNotNull(query, pro.noodle.mobile.core.source.SourceNames.latinQuery(query))
         val parts = adapters.map { adapter ->
             async {
-                networkSemaphore.withPermit {
-                    try {
-                        withTimeoutOrNull(SOURCE_SEARCH_TIMEOUT_MS) {
-                            searchOne(adapter, query, page, maxPerSource)
-                        } ?: (emptyList<VideoItem>() to SourceSearchError(
-                            adapter.id,
-                            pro.noodle.mobile.core.source.SourceNames.short(adapter.name, adapter.baseUrl),
-                            "SEARCH_TIMEOUT",
-                            "Источник не ответил за ${SOURCE_SEARCH_TIMEOUT_MS / 1000} с.",
-                        ))
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (e: Exception) {
-                        emptyList<VideoItem>() to SourceSearchError(
-                            adapter.id,
-                            pro.noodle.mobile.core.source.SourceNames.short(adapter.name, adapter.baseUrl),
-                            "SEARCH_SOURCE_EXCEPTION",
-                            e.message ?: e.javaClass.simpleName,
-                        )
+                val perQuery = queries.map { q ->
+                    async {
+                        networkSemaphore.withPermit {
+                            try {
+                                withTimeoutOrNull(SOURCE_SEARCH_TIMEOUT_MS) {
+                                    searchOne(adapter, q, page, maxPerSource)
+                                } ?: (emptyList<VideoItem>() to SourceSearchError(
+                                    adapter.id,
+                                    pro.noodle.mobile.core.source.SourceNames.short(adapter.name, adapter.baseUrl),
+                                    "SEARCH_TIMEOUT",
+                                    "Источник не ответил за ${SOURCE_SEARCH_TIMEOUT_MS / 1000} с.",
+                                ))
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (e: Exception) {
+                                emptyList<VideoItem>() to SourceSearchError(
+                                    adapter.id,
+                                    pro.noodle.mobile.core.source.SourceNames.short(adapter.name, adapter.baseUrl),
+                                    "SEARCH_SOURCE_EXCEPTION",
+                                    e.message ?: e.javaClass.simpleName,
+                                )
+                            }
+                        }
                     }
-                }
+                }.awaitAll()
+                val items = perQuery.flatMap { it.first }
+                // Ошибка латинского варианта не важна, если что-то нашлось; ошибку берём у основного запроса.
+                items to (if (items.isNotEmpty()) null else perQuery.firstOrNull()?.second)
             }
         }.awaitAll()
         SearchBatch(
