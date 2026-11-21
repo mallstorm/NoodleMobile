@@ -243,8 +243,6 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
                 val cleanEmpty = fresh.isEmpty() && batches.all { it.second.errors.isEmpty() }
                 if (fresh.isNotEmpty()) emptyStreak = 0 else if (cleanEmpty) emptyStreak++ else emptyStreak = emptyStreak.coerceAtLeast(0)
                 if (fresh.isEmpty() && !cleanEmpty) pagingFailures++ else pagingFailures = 0
-                val pagingErrors = batches.flatMap { it.second.errors }
-                    .distinctBy { "${it.sourceId}|${it.errorCode}|${it.message}" }
                 rawItems = old + fresh
                 val ranked = withContext(Dispatchers.IO) { mergeDuplicates(rankItems(rawItems, q)) }
                 if (g != generation) return@launch
@@ -253,9 +251,10 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
                     it.copy(
                         loadingMore = false,
                         items = ranked,
-                        errors = (it.errors + pagingErrors).distinctBy { e -> "${e.sourceId}|${e.errorCode}|${e.message}" },
+                        // Дозагрузка ленты молча: конец выдачи или сбой страницы — это не ошибка источника.
+                        errors = it.errors,
                         hasMore = emptyStreak < MAX_EMPTY_STREAK && (fresh.isNotEmpty() || pagingFailures < MAX_FAILED_STREAK),
-                        message = if (emptyStreak >= MAX_EMPTY_STREAK) "Больше результатов на следующих страницах не найдено" else "",
+                        message = "",
                     )
                 }
             } catch (cancelled: CancellationException) {
