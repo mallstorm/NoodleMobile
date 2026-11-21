@@ -1,0 +1,112 @@
+===== 01-testDebugUnitTest =====
+
+Welcome to Gradle 9.5.1!
+
+Here are the highlights of this release:
+ - Task provenance in reports and failure messages
+ - Type-safe accessors for precompiled Kotlin Settings plugins
+
+For more details see https://docs.gradle.org/9.5.1/release-notes.html
+
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/9.5.1/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+Calculating task graph as no cached configuration is available for tasks: :app:testDebugUnitTest
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugUnitTestBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:generateDebugResources
+> Task :app:packageDebugResources
+> Task :app:mapDebugSourceSetPaths
+> Task :app:javaPreCompileDebug
+> Task :app:createDebugCompatibleScreenManifests
+> Task :app:extractDeepLinksDebug
+> Task :app:processDebugNavigationResources
+> Task :app:checkDebugAarMetadata
+> Task :app:processDebugMainManifest
+> Task :app:processDebugManifest
+> Task :app:compileDebugNavigationResources
+> Task :app:processDebugManifestForPackage
+> Task :app:javaPreCompileDebugUnitTest
+> Task :app:parseDebugLocalResources
+> Task :app:generateDebugRFile
+> Task :app:mergeDebugResources
+> Task :app:processDebugResources
+> Task :app:kspDebugKotlin
+> Task :app:compileDebugKotlin
+Problem found: Kotlin compiler warning (id: kotlin:compiler:warning:compiler-warning)
+  Kotlin compiler warning
+    'val Icons.Outlined.ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Outlined.ArrowBack.
+    Location: /home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/MainActivity.kt line 472
+Problem found: Kotlin compiler warning (id: kotlin:compiler:warning:compiler-warning)
+  Kotlin compiler warning
+    'val Icons.Outlined.ArrowBack: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Outlined.ArrowBack.
+    Location: /home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/MainActivity.kt line 479
+Problem found: Kotlin compiler warning (id: kotlin:compiler:warning:compiler-warning)
+  Kotlin compiler warning
+    'val Icons.Outlined.ViewList: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Outlined.ViewList.
+    Location: /home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/MainActivity.kt line 623
+Problem found: Kotlin compiler warning (id: kotlin:compiler:warning:compiler-warning)
+  Kotlin compiler warning
+    Annotation 'androidx.media3.common.util.UnstableApi' is not annotated with '@RequiresOptIn'. '@OptIn' has no effect.
+    Location: /home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/audio/AudioEq.kt line 78
+Problem found: Kotlin compiler warning (id: kotlin:compiler:warning:compiler-warning)
+  Kotlin compiler warning
+    Annotation 'androidx.media3.common.util.UnstableApi' is not annotated with '@RequiresOptIn'. '@OptIn' has no effect.
+    Location: /home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/audio/AudioEq.kt line 89
+Problem found: Kotlin compiler warning (id: kotlin:compiler:warning:compiler-warning)
+  Kotlin compiler warning
+    Annotation 'androidx.media3.common.util.UnstableApi' is not annotated with '@RequiresOptIn'. '@OptIn' has no effect.
+    Location: /home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/download/DownloadRepository.kt line 21
+Problem found: Kotlin compiler warning (id: kotlin:compiler:warning:compiler-warning)
+  Kotlin compiler warning
+    Annotation 'androidx.media3.common.util.UnstableApi' is not annotated with '@RequiresOptIn'. '@OptIn' has no effect.
+    Location: /home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/source/AdapterProbeService.kt line 246
+Problem found: Kotlin compiler warning (id: kotlin:compiler:warning:compiler-warning)
+  Kotlin compiler warning
+    Annotation 'androidx.media3.common.util.UnstableApi' is not annotated with '@RequiresOptIn'. '@OptIn' has no effect.
+    Location: /home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/source/AdapterProbeService.kt line 265
+Problem found: Kotlin compiler warning (id: kotlin:compiler:warning:compiler-warning)
+  Kotlin compiler warning
+    'when' is exhaustive so 'else' is redundant here.
+    Location: /home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/studio/StudioAiRouter.kt line 243
+Problem found: Kotlin compiler warning (id: kotlin:compiler:warning:compiler-warning)
+  Kotlin compiler warning
+    'when' is exhaustive so 'else' is redundant here.
+    Location: /home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/studio/StudioAiRouter.kt line 248
+Problem found: Kotlin compiler warning (id: kotlin:compiler:warning:compiler-warning)
+  Kotlin compiler warning
+    'when' expression over a subject of type 'Any?' is not exhaustive. Add a 'null' or 'else' branch.
+    Location: /home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/studio/StudioAiRouter.kt line 633
+Problem found: Kotlin compiler warning (id: kotlin:compiler:warning:compiler-warning)
+  Kotlin compiler warning
+    Unnecessary safe call on a non-null receiver of type 'StudioDiscovery.ViewProbe'.
+    Location: /home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/studio/StudioDiscovery.kt line 108
+Problem found: Kotlin compiler warning (id: kotlin:compiler:warning:compiler-warning)
+  Kotlin compiler warning
+    Unnecessary safe call on a non-null receiver of type 'StudioDiscovery.ViewProbe'.
+    Location: /home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/studio/StudioDiscovery.kt line 109
+Problem found: Kotlin compiler warning (id: kotlin:compiler:warning:compiler-warning)
+  Kotlin compiler warning
+    Unnecessary safe call on a non-null receiver of type 'StudioDiscoveryResult'.
+    Location: /home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/studio/StudioKnownRouteDiscovery.kt line 39
+Problem found: Kotlin compiler warning (id: kotlin:compiler:warning:compiler-warning)
+  Kotlin compiler warning
+    Unnecessary safe call on a non-null receiver of type 'StudioDiscoveryResult'.
+    Location: /home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/studio/StudioKnownRouteDiscovery.kt line 164
+
+> Task :app:compileDebugJavaWithJavac NO-SOURCE
+> Task :app:processDebugJavaRes
+> Task :app:bundleDebugClassesToCompileJar
+> Task :app:bundleDebugClassesToRuntimeJar
+> Task :app:kspDebugUnitTestKotlin
+> Task :app:compileDebugUnitTestKotlin
+> Task :app:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :app:processDebugUnitTestJavaRes
+> Task :app:testDebugUnitTest
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/build-1795268086087.json
+
+[Incubating] Problems report is available at: file:///home/runner/work/NoodleMobile/NoodleMobile/build/reports/problems/problems-report.html
+
+BUILD SUCCESSFUL in 2m 51s
+26 actionable tasks: 26 executed
+Configuration cache entry stored.

@@ -1,0 +1,72 @@
+{
+  "version": 3,
+  "id": "pornobomba.in",
+  "name": "Pornobomba",
+  "adapter_version": "1.0.0",
+  "publisher": "SNP Studio Auto",
+  "homepage": "https://pornobomba.in",
+  "min_app_version": "1.9.0",
+  "base_url": "https://pornobomba.in",
+  "engine": "auto_catalog",
+  "engine_dependencies": [
+    "jwplayer_config",
+    "videojs_config",
+    "generic_player_config",
+    "generic_html5",
+    "oembed_provider",
+    "iframe_chain",
+    "hls_manifest",
+    "dash_manifest"
+  ],
+  "enabled": false,
+  "capabilities": {
+    "search": true,
+    "pagination": false,
+    "direct_url": true,
+    "embedded_playback": true
+  },
+  "permissions": {
+    "allowed_hosts": [
+      "pornobomba.in",
+      "*.pornobomba.in",
+      "pbembed.me",
+      "promo-bc.com",
+      "img.pbembed.me"
+    ],
+    "allow_javascript": false,
+    "allow_cookies": true
+  },
+  "search": {
+    "url_template": "/search/?q={query}",
+    "link_pattern": "^/videos/[^/]+/?$"
+  },
+  "view": {
+    "strategies": [
+      "primary",
+      "jwplayer",
+      "videojs",
+      "player_config",
+      "generic_html5",
+      "oembed",
+      "iframe",
+      "hls",
+      "dash"
+    ]
+  },
+  "health": {
+    "query": "aziatki",
+    "min_results": 1,
+    "require_playback": true,
+    "auto_repair": false
+  },
+  "repair": {
+    "enabled": false,
+    "mode": "conservative",
+    "failure_threshold": 3,
+    "cooldown_minutes": 60,
+    "auto_quarantine": false,
+    "strategies": [
+      "resolver_refresh"
+    ]
+  }
+}

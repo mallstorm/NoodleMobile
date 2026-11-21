@@ -1,0 +1,468 @@
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/ui/search/SearchViewModel.kt:406: Warning: No need to call super.onCleared; the super method is defined to be empty [EmptySuperCall]
+        super.onCleared()
+              ~~~~~~~~~
+
+   Explanation for issues of type "EmptySuperCall":
+   For methods annotated with @EmptySuper, overriding methods should not also
+   call the super implementation, either because it is empty, or perhaps it
+   contains code not intended to be run when the method is overridden.
+
+/home/runner/work/NoodleMobile/NoodleMobile/gradle/wrapper/gradle-wrapper.properties:3: Warning: A newer version of Gradle than 9.5.1 is available: 9.9.2 [AndroidGradlePluginVersion]
+distributionUrl=https\://services.gradle.org/distributions/gradle-9.5.1-bin.zip
+                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "AndroidGradlePluginVersion":
+   This detector looks for usage of the Android Gradle Plugin where the
+   version you are using is not the current stable release. Using older
+   versions is fine, and there are cases where you deliberately want to stick
+   with an older version. However, you may simply not be aware that a more
+   recent version is available, and that is what this lint check helps find.
+
+/home/runner/work/NoodleMobile/NoodleMobile/app/build.gradle.kts:69: Warning: A newer version of androidx.compose:compose-bom than 2026.06.00 is available: 2026.11.01 [GradleDependency]
+    implementation(platform("androidx.compose:compose-bom:2026.06.00"))
+                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/build.gradle.kts:75: Warning: A newer version of androidx.lifecycle:lifecycle-runtime-ktx than 2.11.0 is available: 2.11.1 [GradleDependency]
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/build.gradle.kts:76: Warning: A newer version of androidx.lifecycle:lifecycle-viewmodel-ktx than 2.11.0 is available: 2.11.1 [GradleDependency]
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/build.gradle.kts:77: Warning: A newer version of androidx.lifecycle:lifecycle-viewmodel-compose than 2.11.0 is available: 2.11.1 [GradleDependency]
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/build.gradle.kts:78: Warning: A newer version of androidx.core:core-ktx than 1.19.0 is available: 1.19.1 [GradleDependency]
+    implementation("androidx.core:core-ktx:1.19.0")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/build.gradle.kts:81: Warning: A newer version of androidx.webkit:webkit than 1.16.0 is available: 1.18.0 [GradleDependency]
+    implementation("androidx.webkit:webkit:1.16.0")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/build.gradle.kts:83: Warning: A newer version of androidx.media3:media3-exoplayer than 1.10.1 is available: 1.11.1 [GradleDependency]
+    implementation("androidx.media3:media3-exoplayer:1.10.1")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/build.gradle.kts:84: Warning: A newer version of androidx.media3:media3-exoplayer-hls than 1.10.1 is available: 1.11.1 [GradleDependency]
+    implementation("androidx.media3:media3-exoplayer-hls:1.10.1")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/build.gradle.kts:85: Warning: A newer version of androidx.media3:media3-exoplayer-dash than 1.10.1 is available: 1.11.1 [GradleDependency]
+    implementation("androidx.media3:media3-exoplayer-dash:1.10.1")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/build.gradle.kts:86: Warning: A newer version of androidx.media3:media3-ui than 1.10.1 is available: 1.11.1 [GradleDependency]
+    implementation("androidx.media3:media3-ui:1.10.1")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/build.gradle.kts:87: Warning: A newer version of androidx.media3:media3-datasource-okhttp than 1.10.1 is available: 1.11.1 [GradleDependency]
+    implementation("androidx.media3:media3-datasource-okhttp:1.10.1")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/build.gradle.kts:88: Warning: A newer version of androidx.media3:media3-database than 1.10.1 is available: 1.11.1 [GradleDependency]
+    implementation("androidx.media3:media3-database:1.10.1")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/build.gradle.kts:89: Warning: A newer version of androidx.media3:media3-exoplayer-workmanager than 1.10.1 is available: 1.11.1 [GradleDependency]
+    implementation("androidx.media3:media3-exoplayer-workmanager:1.10.1")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/build.gradle.kts:93: Warning: A newer version of androidx.room:room-runtime than 2.8.4 is available: 2.8.5 [GradleDependency]
+    implementation("androidx.room:room-runtime:$roomVersion")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/build.gradle.kts:94: Warning: A newer version of androidx.room:room-ktx than 2.8.4 is available: 2.8.5 [GradleDependency]
+    implementation("androidx.room:room-ktx:$roomVersion")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/build.gradle.kts:95: Warning: A newer version of androidx.room:room-compiler than 2.8.4 is available: 2.8.5 [GradleDependency]
+    ksp("androidx.room:room-compiler:$roomVersion")
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/build.gradle.kts:97: Warning: A newer version of androidx.datastore:datastore-preferences than 1.2.1 is available: 1.3.0 [GradleDependency]
+    implementation("androidx.datastore:datastore-preferences:1.2.1")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/build.gradle.kts:98: Warning: A newer version of androidx.work:work-runtime-ktx than 2.11.2 is available: 2.12.0 [GradleDependency]
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/build.gradle.kts:103: Warning: A newer version of androidx.compose:compose-bom than 2026.06.00 is available: 2026.11.01 [GradleDependency]
+    androidTestImplementation(platform("androidx.compose:compose-bom:2026.06.00"))
+                                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/build.gradle.kts:109: Warning: A newer version of androidx.room:room-testing than 2.8.4 is available: 2.8.5 [GradleDependency]
+    androidTestImplementation("androidx.room:room-testing:$roomVersion")
+                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "GradleDependency":
+   This detector looks for usages of libraries where the version you are using
+   is not the current stable release. Using older versions is fine, and there
+   are cases where you deliberately want to stick with an older version.
+   However, you may simply not be aware that a more recent version is
+   available, and that is what this lint check helps find.
+
+/home/runner/work/NoodleMobile/NoodleMobile/app/build.gradle.kts:80: Warning: A newer version of com.squareup.okhttp3:okhttp than 4.12.0 is available: 5.5.1 [NewerVersionAvailable]
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/build.gradle.kts:99: Warning: A newer version of org.jetbrains.kotlinx:kotlinx-coroutines-android than 1.10.2 is available: 1.11.0 [NewerVersionAvailable]
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "NewerVersionAvailable":
+   This detector checks with a central repository to see if there are newer
+   versions available for the dependencies used by this project. This is
+   similar to the GradleDependency check, which checks for newer versions
+   available in the Android SDK tools and libraries, but this works with any
+   MavenCentral dependency, and connects to the library every time, which
+   makes it more flexible but also much slower.
+
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/ui/security/AppLockUi.kt:254: Warning: Optional Modifier parameter should have a default value of Modifier [ModifierParameter from androidx.compose.ui]
+private fun PatternPad(modifier: Modifier = Modifier.size(250.dp), light: Boolean = false, onPattern: (String) -> Unit) {
+                       ~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/ui/search/NoodleSearchScreen.kt:390: Warning: Modifier parameter should be the first optional parameter [ModifierParameter from androidx.compose.ui]
+    modifier: Modifier = Modifier,
+    ~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/ui/SourceIcon.kt:27: Warning: Modifier parameter should be the first optional parameter [ModifierParameter from androidx.compose.ui]
+fun SourceIcon(baseUrl: String, name: String, size: Dp = 42.dp, modifier: Modifier = Modifier) {
+                                                                ~~~~~~~~
+
+   Explanation for issues of type "ModifierParameter":
+   The first (or only) Modifier parameter in a Composable function should
+   follow the following rules:
+   - Be named modifier
+   - Have a type of Modifier
+   - Either have no default value, or have a default value of Modifier
+   - If optional, be the first optional parameter in the parameter list
+
+   Vendor: Jetpack Compose
+   Identifier: androidx.compose.ui
+   Feedback: https://issuetracker.google.com/issues/new?component=612128
+
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/ui/player/PlayerVideoSurface.kt:96: Warning: Switch statement on an int with known associated constant missing case Configuration.ORIENTATION_SQUARE, Configuration.ORIENTATION_UNDEFINED [SwitchIntDef]
+            when (orientation) {
+            ~~~~
+
+   Explanation for issues of type "SwitchIntDef":
+   This check warns if a switch statement does not explicitly include all the
+   values declared by the typedef @IntDef declaration.
+
+/home/runner/work/NoodleMobile/NoodleMobile/app/build.gradle.kts:19: Warning: Missing x86_64 ABI support for ChromeOS [ChromeOsAbiSupport]
+        ndk { abiFilters += listOf("arm64-v8a") }
+                            ~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "ChromeOsAbiSupport":
+   To properly support ChromeOS, your Android application should have an x86
+   and/or x86_64 binary as part of the build configuration. To fix the issue,
+   ensure your files are properly optimized for ARM; the binary translator
+   will then ensure compatibility with x86. Alternatively, add an abiSplit for
+   x86 within your build.gradle file and create the required x86
+   dependencies.
+
+   https://developer.android.com/ndk/guides/abis
+
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/AndroidManifest.xml:12: Warning: The attribute android:allowBackup is deprecated from Android 12 and higher and may be removed in future versions. Consider adding the attribute android:dataExtractionRules specifying an @xml resource which configures cloud backups and device transfers on Android 12 and higher. [DataExtractionRules]
+        android:allowBackup="false"
+                             ~~~~~
+
+   Explanation for issues of type "DataExtractionRules":
+   Before Android 12, the attributes android:allowBackup and
+   android:fullBackupContent were used to configure all forms of backup,
+   including cloud backups, device-to-device transfers and adb backup.
+
+   In Android 12 and higher, these attributes have been deprecated and will
+   only apply to cloud backups. You should instead use the attribute
+   android:dataExtractionRules, specifying an @xml resource that configures
+   which files to back up, for cloud backups and for device-to-device
+   transfers, separately. If your minSdkVersion supports older versions,
+   you'll still want to specify an android:fullBackupContent resource if the
+   default behavior is not right for your app.
+
+   https://developer.android.com/about/versions/12/backup-restore#xml-changes
+   https://goo.gle/DataExtractionRules
+
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/download/DownloadWorker.kt:285: Warning: Unnecessary; SDK_INT is always >= 28 [ObsoleteSdkInt]
+    private fun ensureChannel(){if(Build.VERSION.SDK_INT>=26){val nm=applicationContext.getSystemService(NotificationManager::class.java);nm.createNotificationChannel(NotificationChannel(CHANNEL,"Загрузки Noodle",NotificationManager.IMPORTANCE_LOW))}}
+                                   ~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/ui/player/OfflinePlayerScreen.kt:96: Warning: Unnecessary; SDK_INT is always >= 28 [ObsoleteSdkInt]
+            if (Build.VERSION.SDK_INT >= 26) {
+                ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/web/SandboxedWebExtractor.kt:76: Warning: Unnecessary; SDK_INT is always >= 28 [ObsoleteSdkInt]
+                if (Build.VERSION.SDK_INT >= 26) safeBrowsingEnabled = true
+                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/res/mipmap-anydpi-v26: Warning: This folder configuration (v26) is unnecessary; minSdkVersion is 28. Merge all the resources in this folder into mipmap-anydpi. [ObsoleteSdkInt]
+
+   Explanation for issues of type "ObsoleteSdkInt":
+   This check flags version checks that are not necessary, because the
+   minSdkVersion (or surrounding known API level) is already at least as high
+   as the version checked for.
+
+   Similarly, it also looks for resources in -vNN folders, such as values-v14
+   where the version qualifier is less than or equal to the minSdkVersion,
+   where the contents should be merged into the best folder.
+
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/download/BatchDownloads.kt:27: Warning: Do not place Android context classes in static fields (static reference to BatchDownloads which has field app pointing to Context); this is a memory leak [StaticFieldLeak]
+/**
+^
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/download/BatchDownloads.kt:34: Warning: Do not place Android context classes in static fields; this is a memory leak [StaticFieldLeak]
+    private lateinit var app: Context
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/download/MediaDownloadRuntime.kt:24: Warning: Do not place Android context classes in static fields (static reference to Holder which has field context pointing to Context); this is a memory leak [StaticFieldLeak]
+    @Volatile private var holder: Holder? = null
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "StaticFieldLeak":
+   A static field will leak contexts.
+
+   Non-static inner classes have an implicit reference to their outer class.
+   If that outer class is for example a Fragment or Activity, then this
+   reference means that the long-running handler/loader/task will hold a
+   reference to the activity which prevents it from getting garbage
+   collected.
+
+   Similarly, direct field references to activities and fragments from these
+   longer running instances can cause leaks.
+
+   ViewModel classes should never point to Views or non-application Contexts.
+
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/MainActivity.kt:307: Hint: Prefer mutableIntStateOf instead of mutableStateOf [AutoboxingStateCreation from androidx.compose.runtime]
+    var mode by rememberSaveable { mutableStateOf(0) }
+                                   ~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/ui/player/RelatedVideosSection.kt:37: Hint: Prefer mutableIntStateOf instead of mutableStateOf [AutoboxingStateCreation from androidx.compose.runtime]
+    var shown by remember(currentVideo.id, currentVideo.watchUrl) { mutableStateOf(12) }
+                                                                    ~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/ui/sources/SourceCenterScreen.kt:490: Hint: Prefer mutableIntStateOf instead of mutableStateOf [AutoboxingStateCreation from androidx.compose.runtime]
+    var tick by remember { mutableStateOf(0) }
+                           ~~~~~~~~~~~~~~
+
+   Explanation for issues of type "AutoboxingStateCreation":
+   Calling mutableStateOf<T>() when T is either backed by a primitive type on
+   the JVM or is a value class results in a state implementation that requires
+   all state values to be boxed. This usually causes an additional allocation
+   for each state write, and adds some additional work to auto-unbox values
+   when reading the value of the state. Instead, prefer to use a specialized
+   primitive state implementation for Int, Long, Float, and Double when the
+   state does not need to track null values and does not override the default
+   SnapshotMutationPolicy. See mutableIntStateOf(), mutableLongStateOf(),
+   mutableFloatStateOf(), and mutableDoubleStateOf() for more information.
+
+   Vendor: Jetpack Compose
+   Identifier: androidx.compose.runtime
+   Feedback: https://issuetracker.google.com/issues/new?component=612128
+
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/res/values/strings.xml:2: Warning: The resource R.string.app_name appears to be unused [UnusedResources]
+    <string name="app_name">Noodle Mobile</string>
+            ~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "UnusedResources":
+   Unused resources make applications larger and slow down builds.
+
+
+   The unused resource check can ignore tests. If you want to include
+   resources that are only referenced from tests, consider packaging them in a
+   test source set instead.
+
+   You can include test sources in the unused resource check by setting the
+   system property lint.unused-resources.include-tests=true, and to exclude
+   them (usually for performance reasons), use
+   lint.unused-resources.exclude-tests=true.
+
+   Available options:
+
+   **skip-libraries** (default is true):
+   Whether the unused resource check should skip reporting unused resources in libraries.
+
+   Many libraries will declare resources that are part of the library surface; other modules depending on the library will also reference the resources. To avoid reporting all these resources as unused (in the context of a library), the unused resource check normally skips reporting unused resources in libraries. Instead, run the unused resource check on the consuming app module (along with `checkDependencies=true`).
+
+   However, there are cases where you want to check that all the resources declared in a library are used; in that case, you can disable the skip option.
+
+   To configure this option, use a `lint.xml` file with an <option> like this:
+
+   ```xml
+   <lint>
+       <issue id="UnusedResources">
+           <option name="skip-libraries" value="true" />
+       </issue>
+   </lint>
+   ```
+
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/source/AdapterProbeService.kt:327: Warning: Use the KTX extension function String.toUri instead? [UseKtx]
+                .setUri(Uri.parse(source.url))
+                        ~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/download/AdaptiveDownloadPlanner.kt:52: Warning: Use the KTX extension function String.toUri instead? [UseKtx]
+            .setUri(Uri.parse(source.url))
+                    ~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/download/BatchDownloads.kt:129: Warning: Use the KTX extension function String.toUri instead? [UseKtx]
+        val t = Uri.parse(tree)
+                ~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/download/BatchDownloads.kt:135: Warning: Use the KTX extension function String.toUri instead? [UseKtx]
+        val ext = if (asFile) "mp4" else Uri.parse(url).lastPathSegment.orEmpty().substringAfterLast('.', "mp4")
+                                         ~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/download/DownloadWorker.kt:153: Warning: Use the KTX extension function String.toUri instead? [UseKtx]
+        if(!ok && localPath.startsWith("content://")) runCatching { android.provider.DocumentsContract.renameDocument(applicationContext.contentResolver,Uri.parse(localPath),(item.title.replace(Regex("[^\\p{L}\\p{N}._ -]+"),"_").trim().take(80).ifBlank{"video"})+(if(plan.fmp4)".mp4" else ".ts")) }
+                                                                                                                                                         ~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/download/DownloadWorker.kt:233: Warning: Use the KTX extension function String.toUri instead? [UseKtx]
+            val uri=Uri.parse(item.destinationUri)
+                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/download/DownloadWorker.kt:264: Warning: Use the KTX extension function String.toUri instead? [UseKtx]
+            applicationContext.contentResolver.openAssetFileDescriptor(Uri.parse(localPath),"r")?.use { afd -> afd.length<0 || afd.length==expected } ?: false
+                                                                       ~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/download/DownloadWorker.kt:273: Warning: Use the KTX extension function String.toUri instead? [UseKtx]
+            val ext=runCatching{Uri.parse(sourceUrl).lastPathSegment.orEmpty().substringAfterLast('.',"").take(8)}.getOrDefault("").takeIf{it.matches(Regex("[A-Za-z0-9]{1,8}"))}?.let{".$it"}.orEmpty()
+                                ~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/download/DownloadWorker.kt:279: Warning: Use the KTX extension function String.toUri instead? [UseKtx]
+        val uri=Uri.parse(destinationUri)
+                ~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/source/MirrorStore.kt:22: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+    private fun put(key: String, values: Set<String>) { prefs.edit().putStringSet(key, values.toSet()).apply() }
+                                                        ~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/source/MirrorStore.kt:37: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putString("active_$key", origin).putString("note_$key", "${java.text.DateFormat.getDateTimeInstance().format(java.util.Date())}: $reason").apply()
+        ~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/source/MirrorStore.kt:42: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().remove("active_$key").remove("note_$key").apply()
+        ~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/newvideos/NewVideos.kt:62: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putString(KEY_ITEMS, arr.toString()).apply()
+        ~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/newvideos/NewVideos.kt:66: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+    @Synchronized fun saveSeen(set: Collection<String>) { prefs.edit().putString(KEY_SEEN, set.toList().takeLast(MAX_SEEN).joinToString("\n")).apply() }
+                                                          ~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/newvideos/NewVideos.kt:71: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putString(KEY_VIEWED, all.toList().takeLast(4000).joinToString("\n")).apply()
+        ~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/newvideos/NewVideos.kt:76: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putStringSet(KEY_MUTED, set).apply()
+        ~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/newvideos/NewVideos.kt:81: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        set(v) { prefs.edit().putInt("last_notifiable", v).apply() }
+                 ~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/newvideos/NewVideos.kt:84: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+    fun setBaseline(sourceId: String) { prefs.edit().putBoolean("base2_$sourceId", true).apply() }
+                                        ~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/newvideos/NewVideos.kt:87: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        set(v) { prefs.edit().putString("last_report", v).apply() }
+                 ~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/newvideos/NewVideos.kt:90: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        set(v) { prefs.edit().putLong(KEY_LAST, v).apply() }
+                 ~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/newvideos/NewVideos.kt:93: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        set(v) { prefs.edit().putInt(KEY_SRC, v).apply() }
+                 ~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/download/OfflineMediaRepository.kt:45: Warning: Use the KTX extension function String.toUri instead? [UseKtx]
+            OfflinePlaybackSpec.Progressive(item.id, item.title, item.mimeType, Uri.parse(location))
+                                                                                ~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/player/PlaybackRepository.kt:82: Warning: Use the KTX extension function String.toUri instead? [UseKtx]
+                if (u.startsWith("https://", true)) runCatching { android.net.Uri.parse(u).host?.lowercase()?.trimEnd('.') }.getOrNull()?.takeIf { it.isNotBlank() }?.let { discoveredHosts += it }
+                                                                  ~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/player/PlayerLearning.kt:25: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        if (set.add(pattern)) prefs.edit().putStringSet(key(sourceKey), set.take(40).toSet()).apply()
+                              ~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/player/PlayerLearning.kt:29: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+    fun clear(sourceKey: String) { prefs.edit().remove(key(sourceKey)).apply() }
+                                   ~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/player/PlayerLearning.kt:62: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putString("log_" + sourceKey.lowercase(), list.joinToString("\n")).apply()
+        ~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/ui/player/PlayerScreen.kt:200: Warning: Use the KTX extension function String.toUri instead? [UseKtx]
+        val builder = MediaItem.Builder().setUri(Uri.parse(s.url))
+                                                 ~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/ui/player/PlayerScreen.kt:204: Warning: Use the KTX extension function String.toUri instead? [UseKtx]
+            MediaItem.SubtitleConfiguration.Builder(Uri.parse(t.url))
+                                                    ~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/ui/player/PlayerScreen.kt:235: Warning: Use the KTX extension function String.toUri instead? [UseKtx]
+                builder.add(MediaItem.Builder().setUri(Uri.parse(u)).setMimeType(MimeTypes.VIDEO_MP4).build(), d)
+                                                       ~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/ui/player/PlayerScreen.kt:971: Warning: Use the KTX extension function String.toUri instead? [UseKtx]
+    val ext = Uri.parse(url).lastPathSegment.orEmpty().substringAfterLast('.', "mp4")
+              ~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/web/SandboxedWebExtractor.kt:113: Warning: Use the KTX extension function String.toUri instead? [UseKtx]
+                        baseDomain(request.url.host.orEmpty()) != baseDomain(Uri.parse(url).host.orEmpty())) {
+                                                                             ~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/web/SandboxedWebExtractor.kt:113: Warning: Use the KTX extension function String.toUri instead? [UseKtx]
+                        baseDomain(request.url.host.orEmpty()) != baseDomain(Uri.parse(url).host.orEmpty())) {
+                                                                             ~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/web/SandboxedWebExtractor.kt:256: Warning: Use the KTX extension function String.toUri instead? [UseKtx]
+        val host = runCatching { Uri.parse(decision.normalizedUrl).host.orEmpty().lowercase().trimEnd('.') }
+                                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/ui/search/SearchViewModel.kt:60: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        app.getSharedPreferences("noodle_search_history", android.content.Context.MODE_PRIVATE).edit().clear().apply()
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/ui/download/SelectionUi.kt:62: Warning: Use the KTX extension function String.toUri instead? [UseKtx]
+    val id = runCatching { android.provider.DocumentsContract.getTreeDocumentId(Uri.parse(uri)) }.getOrDefault(uri)
+                                                                                ~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/ui/finder/SiteFinderScreen.kt:164: Warning: Use the KTX extension function String.toUri instead? [UseKtx]
+                    IconButton(onClick = { runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(s.homeUrl)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }) {
+                                                                                                      ~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/media/SourceIcons.kt:112: Warning: Use the KTX extension function Bitmap.scale instead? [UseKtx]
+        return if (raw.width > TARGET) Bitmap.createScaledBitmap(raw, TARGET, (raw.height * TARGET / raw.width).coerceAtLeast(1), true) else raw
+                                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/maintenance/SourceMaintenanceWorker.kt:56: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+                        prefs.edit().putBoolean("notified_${d.id}", true).apply()
+                        ~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/download/SourceReferers.kt:15: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+            context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/ui/sources/Studio2Dialog.kt:388: Warning: Use the KTX extension function String.toUri instead? [UseKtx]
+                                        Intent(Intent.ACTION_VIEW, Uri.parse(state.studioLoginUrl)),
+                                                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/studio/StudioAiRouter.kt:100: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putString(KEY_PROVIDER, provider.wireName).apply()
+        ~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/studio/StudioAiRouter.kt:107: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putString("model_${provider.wireName}", model.trim()).apply()
+        ~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/studio/StudioAiRouter.kt:134: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+            StudioAiProvider.GROK -> prefs.edit().remove(KEY_GROK).apply()
+                                     ~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/studio/StudioAiRouter.kt:145: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+                val hostId = prefs.getString(KEY_GPT_HOST, "").orEmpty().ifBlank { "urn:uuid:" + java.util.UUID.randomUUID().also { id -> prefs.edit().putString(KEY_GPT_HOST, "urn:uuid:$id").apply() } }
+                                                                                                                                          ~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/studio/StudioAiRouter.kt:317: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+                    prefs.edit().putString(KEY_KILO_EMAIL, email).apply()
+                    ~~~~~~~~~~~~
+/home/runner/work/NoodleMobile/NoodleMobile/app/src/main/java/pro/noodle/mobile/core/studio/StudioAiRouter.kt:607: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putString(key, vault.encrypt(value)).apply()
+        ~~~~~~~~~~~~
+
+   Explanation for issues of type "UseKtx":
+   The Android KTX libraries decorates the Android platform SDK as well as
+   various libraries with more convenient extension functions available from
+   Kotlin, allowing you to use default parameters, named parameters, and
+   more.
+
+   Available options:
+
+   **remove-defaults** (default is true):
+   Whether to skip arguments that match the defaults provided by the extension.
+
+   Extensions often provide default values for some of the parameters. For example:
+   ```kotlin
+   fun Path.readLines(charset: Charset = Charsets.UTF_8): List<String> { return Files.readAllLines(this, charset) }
+   ```
+   This lint check will by default automatically omit parameters that match the default, so if your code was calling
+
+   ```kotlin
+   Files.readAllLines(file, Charset.UTF_8)
+   ```
+   lint would replace this with
+   ```kotlin
+   file.readLines()
+   ```
+   rather than
+
+   ```kotlin
+   file.readLines(Charset.UTF_8
+   ```
+   You can turn this behavior off using this option.
+
+   To configure this option, use a `lint.xml` file with an <option> like this:
+
+   ```xml
+   <lint>
+       <issue id="UseKtx">
+           <option name="remove-defaults" value="true" />
+       </issue>
+   </lint>
+   ```
+
+   **require-present** (default is true):
+   Whether to only offer extensions already available.
+
+   This option lets you only have lint suggest extension replacements if those extensions are already available on the class path (in other words, you're already depending on the library containing the extension method.)
+
+   To configure this option, use a `lint.xml` file with an <option> like this:
+
+   ```xml
+   <lint>
+       <issue id="UseKtx">
+           <option name="require-present" value="true" />
+       </issue>
+   </lint>
+   ```
+
+0 errors, 84 warnings, 3 hints
