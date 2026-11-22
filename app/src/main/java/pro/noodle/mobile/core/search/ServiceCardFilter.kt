@@ -18,6 +18,21 @@ object ServiceCardFilter {
         if (prefs == null) prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     }
 
+    /** Фильтр можно выключить в настройках (по умолчанию включён). */
+    var enabled: Boolean
+        get() = prefs?.getBoolean("__enabled", true) ?: true
+        set(v) { prefs?.edit()?.putBoolean("__enabled", v)?.apply() }
+
+    /** Сколько карточек запомнено как «нерабочие» и скрыто из выдачи. */
+    fun deadCount(): Int = prefs?.all?.count { it.value is Long } ?: 0
+
+    fun clearDead() {
+        val p = prefs ?: return
+        val e = p.edit()
+        p.all.filter { it.value is Long }.keys.forEach { e.remove(it) }
+        e.apply()
+    }
+
     private val titleStop = setOf(
         "информация", "инфо", "контакты", "контакт", "обратная связь", "связь с нами", "правила", "правила сайта",
         "реклама", "для рекламодателей", "о сайте", "о нас", "об авторе", "правообладателям", "для правообладателей",
@@ -63,6 +78,7 @@ object ServiceCardFilter {
      * а у карточки нет ни длительности, ни превью — это не ролик, а ссылка меню/раздела.
      */
     fun filterBatch(batch: List<VideoItem>): List<VideoItem> {
+        if (!enabled) return batch
         val withDuration = batch.count { it.duration.isNotBlank() }
         val strict = batch.size >= 3 && withDuration * 2 >= batch.size
         return batch.filter { v ->
