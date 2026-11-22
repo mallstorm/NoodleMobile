@@ -183,6 +183,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
                 // Never execute them on the Compose/UI dispatcher.
                 val batch = withContext(Dispatchers.IO) { searchRepo.search(q, maxPerSource = INITIAL_PER_SOURCE) }
                 if (g != generation) return@launch
+                val noSources = batch.items.isEmpty() && withContext(Dispatchers.IO) { !searchRepo.hasAdapters() }
                 rawItems = batch.items
                 val ranked = withContext(Dispatchers.IO) { mergeDuplicates(rankItems(batch.items, q)) }
                 if (g != generation) return@launch
@@ -192,7 +193,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
                         items = ranked,
                         errors = batch.errors,
                         hasMore = true,
-                        message = if (batch.items.isEmpty()) "Ничего не найдено" else "",
+                        message = if (noSources) "Источников нет. Добавьте сайт: Ещё → Источники → «Добавить сайт»." else if (batch.items.isEmpty()) "Ничего не найдено" else "",
                     )
                 }
                 // Лента должна быть «предзагружена»: сразу дотягиваем следующие страницы,

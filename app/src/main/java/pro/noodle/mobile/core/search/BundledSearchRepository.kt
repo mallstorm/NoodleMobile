@@ -48,6 +48,8 @@ class BundledSearchRepository(
     @Volatile
     private var adapterSnapshot: List<AdapterDefinition> = emptyList()
 
+    fun hasAdapters(): Boolean = runtimeRepo.listAll().isNotEmpty()
+
     private fun allAdapters(): List<AdapterDefinition> {
         val cached = adapterSnapshot
         if (cached.isNotEmpty()) return cached

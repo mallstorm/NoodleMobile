@@ -5,7 +5,7 @@ on:
   push:
     branches: [ main ]
     paths:
-      - "app/src/main/assets/adapters/bundled/**"
+      - "ci/fixtures/bundled/**"
       - "ci/live_source_probe.py"
       - "ci/deep_playback_probe.py"
       - ".github/workflows/live-source-probe.yml"
@@ -25,7 +25,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -d app/src/main/assets/adapters/bundled
+          test -d ci/fixtures/bundled
           test -f ci/live_source_probe.py
           test -f ci/deep_playback_probe.py
           test ! -e NoodleMobile_0.10.0-alpha10_SOURCE.zip

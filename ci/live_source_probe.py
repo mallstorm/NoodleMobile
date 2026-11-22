@@ -13,7 +13,7 @@ import sys
 
 ROOT = Path(sys.argv[1] if len(sys.argv) > 1 else ".")
 OUT = Path(sys.argv[2] if len(sys.argv) > 2 else ROOT / "build-certification/LIVE_SOURCE_PROBE.json")
-BUNDLED = ROOT / "app/src/main/assets/adapters/bundled"
+BUNDLED = ROOT / "ci/fixtures/bundled"
 UA = "NoodleMobile-LiveSourceProbe/0.10 (technical compatibility probe; no content retained)"
 MAX_BYTES = 2 * 1024 * 1024
 TIMEOUT = 20

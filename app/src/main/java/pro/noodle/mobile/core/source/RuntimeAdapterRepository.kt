@@ -23,7 +23,7 @@ class RuntimeAdapterRepository(private val context: Context) {
 
     init {
         paths.ensure()
-        seedBundledAssets()
+        migrateBundledToCustom()
     }
 
     fun listAll(): List<RuntimeAdapter> = paths.runtimeAdapterDirs().mapNotNull { dir ->
@@ -96,33 +96,23 @@ class RuntimeAdapterRepository(private val context: Context) {
         item.directory.deleteRecursively()
     }
 
-    private fun seedBundledAssets() {
-        val bundledIds = context.assets.list("adapters/bundled").orEmpty().sorted()
-        for (id in bundledIds) {
-            val target = File(paths.bundled, id)
-            val staging = File(paths.updates, "bundled-$id.seed")
-            staging.deleteRecursively(); staging.mkdirs()
-            copyAssetTree("adapters/bundled/$id", staging)
-            val pkg = AdapterPackageManager.verifyDirectory(staging)
-            if (!pkg.valid) {
-                staging.deleteRecursively()
-                continue
+    /**
+     * Штатных адаптеров в приложении больше нет. Те, что остались от прежних версий в adapters/bundled,
+     * переносим в custom как есть (тот же id, manifest и файлы) — настройки, зеркала, снимки и
+     * включённое состояние привязаны к id и сохраняются; такие источники теперь можно удалять.
+     */
+    private fun migrateBundledToCustom() {
+        val dirs = paths.bundled.listFiles().orEmpty().filter { it.isDirectory }
+        for (dir in dirs) {
+            val target = File(paths.custom, dir.name)
+            val moved = when {
+                !File(dir, "adapter.json").isFile -> false
+                target.exists() -> false
+                dir.renameTo(target) -> true
+                else -> runCatching { dir.copyRecursively(target, overwrite = true) }.getOrDefault(false)
             }
-            val old = File(paths.updates, "bundled-$id.old")
-            old.deleteRecursively()
-            if (target.exists()) target.renameTo(old)
-            if (staging.renameTo(target)) old.deleteRecursively() else if (!target.exists() && old.exists()) old.renameTo(target)
+            if (moved || target.exists() || !File(dir, "adapter.json").isFile) dir.deleteRecursively()
         }
-    }
-
-    private fun copyAssetTree(assetPath: String, target: File) {
-        val children = context.assets.list(assetPath).orEmpty()
-        if (children.isEmpty()) {
-            target.parentFile?.mkdirs()
-            context.assets.open(assetPath).use { input -> target.outputStream().use { input.copyTo(it) } }
-            return
-        }
-        target.mkdirs()
-        for (child in children) copyAssetTree("$assetPath/$child", File(target, child))
+        paths.updates.listFiles().orEmpty().filter { it.name.startsWith("bundled-") }.forEach { it.deleteRecursively() }
     }
 }

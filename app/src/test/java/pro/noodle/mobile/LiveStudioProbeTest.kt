@@ -28,7 +28,7 @@ class LiveStudioProbeTest {
         assumeTrue(System.getenv("NOODLE_LIVE_STUDIO") == "1")
         val out = File(System.getenv("NOODLE_LIVE_OUT") ?: "build/live-studio").apply { mkdirs() }
         val report = StringBuilder()
-        val bundledDir = listOf(File("src/main/assets/adapters/bundled"), File("app/src/main/assets/adapters/bundled")).first { it.isDirectory }
+        val bundledDir = listOf(File("../ci/fixtures/bundled"), File("ci/fixtures/bundled")).first { it.isDirectory }
         val hosts = mutableListOf<String>()
 
         report.appendLine("=== BUNDLED SNP LIVE CHECK ===")

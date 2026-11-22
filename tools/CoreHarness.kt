@@ -6,7 +6,7 @@ fun main(args:Array<String>){
     val report=CoreSelfTest.run()
     report.checks.forEach{ println((if(it.passed) "PASS" else "FAIL")+" | "+it.name+(if(it.detail.isBlank())"" else " | "+it.detail)) }
     check(report.passed){"Core self-test failed"}
-    val assetDir=File(args.firstOrNull() ?: "app/src/main/assets/adapters/bundled")
+    val assetDir=File(args.firstOrNull() ?: "ci/fixtures/bundled")
     val files=assetDir.walkTopDown().filter{it.isFile && it.name.equals("adapter.json",true)}.sortedBy{it.path}.toList()
     check(files.size==3){"Expected 3 bundled adapters, got ${files.size}"}
     for(file in files){

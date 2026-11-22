@@ -7,7 +7,7 @@ from http.cookiejar import CookieJar
 import json, re, ssl, sys
 
 ROOT=Path(sys.argv[1]); OUT=Path(sys.argv[2])
-BUNDLED=ROOT/'app/src/main/assets/adapters/bundled'
+BUNDLED=ROOT/'ci/fixtures/bundled'
 UA='NoodleMobile-DeepPlaybackProbe/0.10'
 opener=build_opener(HTTPCookieProcessor(CookieJar()))
 

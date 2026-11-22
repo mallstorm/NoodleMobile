@@ -31,7 +31,7 @@ class DiagnosticsService(context:Context){
         checks+=AndroidDiagnosticCheck("Engine registry count",EngineRegistry.knownEngineIds.size==15,"canonical=${EngineRegistry.knownEngineIds.size}")
         checks+=AndroidDiagnosticCheck("Runtime engine count",RuntimeEngineRegistry.implementedIds.size==15,"runtime=${RuntimeEngineRegistry.implementedIds.size}")
         val dep=EngineDependencies.validateRegistry();checks+=AndroidDiagnosticCheck("Dependency graph",dep.success,dep.errorMessage)
-        val sources=runtime.listAll();checks+=AndroidDiagnosticCheck("Bundled SNP available",sources.count{it.bundled}>=5,"bundled=${sources.count{it.bundled}} custom=${sources.count{!it.bundled}}")
+        val sources=runtime.listAll();checks+=AndroidDiagnosticCheck("SNP sources",true,"custom=${sources.count{!it.bundled}}")
         sources.filter{it.bundled}.forEach{r->checks+=AndroidDiagnosticCheck("Package ${r.definition.id}",r.packageInfo.valid,"${r.packageInfo.trustStatus.wireName} ${r.packageInfo.errorCode}")}
         checks+=AndroidDiagnosticCheck("Trusted key registry readable",runCatching{TrustedKeyManager(app).list();true}.getOrDefault(false),"keys=${runCatching{TrustedKeyManager(app).list().size}.getOrDefault(0)}")
         checks+=AndroidDiagnosticCheck("Room opens",runCatching{NoodleDatabase.get(app).openHelper.writableDatabase.isOpen}.getOrDefault(false))
