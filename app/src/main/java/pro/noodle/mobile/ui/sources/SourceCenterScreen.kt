@@ -16,6 +16,7 @@ import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.foundation.clickable
 import androidx.compose.runtime.*
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -39,6 +40,7 @@ fun SourceCenterScreen(
     var exportId by remember { mutableStateOf("") }
     var showMarketplace by remember { mutableStateOf(false) }
     var mirrorFor by remember { mutableStateOf("") }
+    var limitFor by remember { mutableStateOf("") }
     var showStudio by remember(openStudio) { mutableStateOf(openStudio) }
     var showKeys by remember { mutableStateOf(false) }
 
@@ -107,6 +109,7 @@ fun SourceCenterScreen(
                             }
                             "details" -> vm.showDetails(item.adapterId)
                             "mirrors" -> mirrorFor = item.adapterId
+                            "limit" -> limitFor = item.adapterId
                             "health" -> vm.health(item.adapterId)
                             "semantic" -> vm.semantic(item.adapterId)
                             "fingerprint" -> vm.fingerprint(item.adapterId)
@@ -130,6 +133,7 @@ fun SourceCenterScreen(
     }
 
     state.details?.let { SourceDetailsDialog(it, vm::closeDetails) }
+    if (limitFor.isNotBlank()) NewLimitDialog(limitFor, state.adapters.firstOrNull { it.adapterId == limitFor }?.name ?: limitFor) { limitFor = "" }
     if (mirrorFor.isNotBlank()) MirrorDialog(mirrorFor, onClose = { mirrorFor = ""; vm.reload() })
     if (state.historyFor.isNotBlank()) {
         HistoryDialog(state.historyFor, state.history, vm::closeHistory) { snapshot ->
@@ -191,6 +195,7 @@ private fun SourceCard(
                         SourceMenuAction("Перенастроить (Studio)", "reconfigure", { menu = false }, onAction)
                         SourceMenuAction("Подробности", "details", { menu = false }, onAction)
                         HorizontalDivider()
+                        SourceMenuAction("Лимит новых видео за период", "limit", { menu = false }, onAction)
                         SourceMenuAction("Зеркала и домен", "mirrors", { menu = false }, onAction)
                         SourceMenuAction("Проверить доступность", "health", { menu = false }, onAction)
                         SourceMenuAction("Проверить поиск и видео (подробно)", "semantic", { menu = false }, onAction)
@@ -547,5 +552,37 @@ private fun MirrorDialog(adapterId: String, onClose: () -> Unit) {
             }
         },
         confirmButton = { TextButton(onClick = onClose, enabled = !busy) { Text("Закрыть") } },
+    )
+}
+
+
+/** Сколько новых роликов этот источник может добавить в «Новое» за один период мониторинга. */
+@Composable
+private fun NewLimitDialog(adapterId: String, name: String, onClose: () -> Unit) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    val store = remember { pro.noodle.mobile.core.newvideos.NewVideosStore(ctx) }
+    var value by remember { mutableStateOf(store.limitFor(adapterId)) }
+    var hours by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) {
+        hours = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            pro.noodle.mobile.core.settings.AppSettingsRepository(ctx).settings.first().monitoringIntervalHours
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("Лимит новых видео") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(name, fontWeight = FontWeight.SemiBold)
+                Text(if (value == 0) "Без ограничения" else "Не более $value за период", fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Период мониторинга${if (hours > 0) " — $hours ч (меняется в настройках)" else ""}. За это время с источника в «Новое» и в уведомление попадёт не больше выбранного числа роликов. 0 — без ограничения.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                pro.noodle.mobile.ui.NoodleSlider(value.toFloat(), { value = it.toInt() }, valueRange = 0f..30f, steps = 29)
+            }
+        },
+        confirmButton = { TextButton(onClick = { store.setLimit(adapterId, value); onClose() }) { Text("Сохранить") } },
+        dismissButton = { TextButton(onClick = onClose) { Text("Отмена") } },
     )
 }

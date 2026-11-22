@@ -82,6 +82,9 @@ class NewVideosStore(context: Context) {
     // base2_: после перехода сканера на ленты «новое»/главную базу строим заново, чтобы старые ролики не считались новыми.
     fun hasBaseline(sourceId: String) = prefs.getBoolean("base2_$sourceId", false)
     fun setBaseline(sourceId: String) { prefs.edit().putBoolean("base2_$sourceId", true).apply() }
+    /** Лимит новых роликов с источника за период мониторинга; 0 — без ограничения. */
+    fun limitFor(sourceId: String): Int = prefs.getInt("limit_$sourceId", 0)
+    fun setLimit(sourceId: String, n: Int) { prefs.edit().putInt("limit_$sourceId", n.coerceIn(0, 100)).apply() }
     var lastReport: String
         get() = prefs.getString("last_report", "").orEmpty()
         set(v) { prefs.edit().putString("last_report", v).apply() }
@@ -137,10 +140,16 @@ class NewVideosScanner(private val context: Context) {
         for ((d, items) in results) {
             if (items.isEmpty()) continue
             val baseline = store.hasBaseline(d.id)
+            // Лимит на период мониторинга: сколько уже принято с этого источника за последние N часов.
+            val limit = store.limitFor(d.id)
+            val windowMs = settings.monitoringIntervalHours.coerceAtLeast(1) * 3600_000L
+            var room = if (limit <= 0) Int.MAX_VALUE else (limit - entries.count { e ->
+                now - e.seenAtMs < windowMs && (e.video.id.startsWith(d.id + "|") || (e.video.sourceBaseUrl.isNotBlank() && e.video.sourceBaseUrl.equals(d.baseUrl, true)))
+            }).coerceAtLeast(0)
             for (v in items) {
                 val key = (d.id + "|" + v.watchUrl).lowercase()
                 if (!seen.add(key)) continue
-                if (baseline) { entries += NewEntry(v, now); found++; if (d.name !in muted) notifiable++ }
+                if (baseline && room > 0) { entries += NewEntry(v, now); found++; room--; if (d.name !in muted) notifiable++ }
             }
             store.setBaseline(d.id)
         }
