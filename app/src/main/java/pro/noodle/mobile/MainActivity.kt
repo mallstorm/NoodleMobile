@@ -645,6 +645,14 @@ private fun SettingsScreen(vm: SettingsViewModel, header: androidx.compose.found
                         Spacer(Modifier.width(8.dp))
                         Text("Мониторинг: проверка источников и поиск новых видео")
                     }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Switch(settings.notifyNewVideos, vm::notifyNewVideos)
+                        Spacer(Modifier.width(8.dp))
+                        Column {
+                            Text("Уведомление о новых видео")
+                            Text("Всплывающее сообщение в шторке «Новые видео: N». Колокольчик в приложении работает независимо.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                     if (settings.backgroundMonitoring) {
                         Text("Интервал мониторинга: ${settings.monitoringIntervalHours} ч")
                         Text(

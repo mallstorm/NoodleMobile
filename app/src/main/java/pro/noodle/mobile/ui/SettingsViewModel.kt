@@ -48,6 +48,10 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     fun downloadSelectMode(v: Boolean) = viewModelScope.launch { repo.setDownloadSelectMode(v) }
     fun background(v: Boolean) = viewModelScope.launch { repo.setBackgroundMonitoring(v) }
     fun monitoringHours(v: Int) = viewModelScope.launch { repo.setMonitoringIntervalHours(v) }
+    fun notifyNewVideos(v: Boolean) = viewModelScope.launch {
+        repo.setNotifyNewVideos(v)
+        if (!v) runCatching { getApplication<Application>().getSystemService(android.app.NotificationManager::class.java).cancel(7001) }
+    }
     fun showSourceWarnings(v: Boolean) = viewModelScope.launch { repo.setShowSourceWarnings(v) }
     fun rememberPosition(v: Boolean) = viewModelScope.launch { repo.setRememberPlaybackPosition(v) }
 

@@ -23,6 +23,7 @@ data class AppSettings(
     val downloadSelectMode: Boolean = false,
     val downloadFolderUri: String = "",
     val showSourceWarnings: Boolean = false,
+    val notifyNewVideos: Boolean = true,
 )
 
 /** Масштаб интерфейса: 85–100 % с шагом 5. */
@@ -44,6 +45,7 @@ class AppSettingsRepository(private val context: Context) {
         val downloadSelectMode = booleanPreferencesKey("download_select_mode")
         val downloadFolderUri = stringPreferencesKey("download_folder_uri")
         val showSourceWarnings = booleanPreferencesKey("show_source_warnings")
+        val notifyNewVideos = booleanPreferencesKey("notify_new_videos")
     }
 
     val settings: Flow<AppSettings> = context.noodleSettingsStore.data.map { p ->
@@ -62,6 +64,7 @@ class AppSettingsRepository(private val context: Context) {
             downloadSelectMode = p[Keys.downloadSelectMode] ?: false,
             downloadFolderUri = p[Keys.downloadFolderUri] ?: "",
             showSourceWarnings = p[Keys.showSourceWarnings] ?: false,
+            notifyNewVideos = p[Keys.notifyNewVideos] ?: true,
         )
     }
 
@@ -70,6 +73,7 @@ class AppSettingsRepository(private val context: Context) {
         it[Keys.uiScalePercent] = snapScale(value)
     }
     suspend fun setParallelDownloads(value: Int) = context.noodleSettingsStore.edit { it[Keys.parallelDownloads] = value.coerceIn(1, 10) }
+    suspend fun setNotifyNewVideos(value: Boolean) = context.noodleSettingsStore.edit { it[Keys.notifyNewVideos] = value }
     suspend fun setShowSourceWarnings(value: Boolean) = context.noodleSettingsStore.edit { it[Keys.showSourceWarnings] = value }
     suspend fun setDownloadSelectMode(value: Boolean) = context.noodleSettingsStore.edit { it[Keys.downloadSelectMode] = value }
     suspend fun setDownloadFolderUri(value: String) = context.noodleSettingsStore.edit { it[Keys.downloadFolderUri] = value }

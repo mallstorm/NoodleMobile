@@ -61,7 +61,7 @@ class SourceMaintenanceWorker(appContext: Context, params: WorkerParameters) : C
         pro.noodle.mobile.core.player.BackgroundGate.awaitIdle()
         val found = runCatching { pro.noodle.mobile.core.newvideos.NewVideosScanner(applicationContext).scan() }.getOrDefault(0)
         val notifiable = pro.noodle.mobile.core.newvideos.NewVideosStore(applicationContext).lastNotifiable
-        if (found > 0 && notifiable > 0) SourceAlerts.notifyNew(applicationContext, notifiable, settings.monitoringIntervalHours)
+        if (settings.notifyNewVideos && found > 0 && notifiable > 0) SourceAlerts.notifyNew(applicationContext, notifiable, settings.monitoringIntervalHours)
         return Result.success()
     }
 }
