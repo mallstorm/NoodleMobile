@@ -654,7 +654,6 @@ private fun SettingsScreen(vm: SettingsViewModel, header: androidx.compose.found
                         }
                     }
                     var filterOn by remember { mutableStateOf(pro.noodle.mobile.core.search.ServiceCardFilter.enabled) }
-                    var deadCount by remember { mutableStateOf(pro.noodle.mobile.core.search.ServiceCardFilter.deadCount()) }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Switch(filterOn, { filterOn = it; pro.noodle.mobile.core.search.ServiceCardFilter.enabled = it })
                         Spacer(Modifier.width(8.dp))
@@ -662,9 +661,6 @@ private fun SettingsScreen(vm: SettingsViewModel, header: androidx.compose.found
                             Text("Скрывать служебные карточки")
                             Text("«Информация», «Контакты» и карточки, которые уже не открылись (нет видео). Если нужный ролик не находится — выключите.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                    }
-                    if (deadCount > 0) {
-                        TextButton(onClick = { pro.noodle.mobile.core.search.ServiceCardFilter.clearDead(); deadCount = 0 }) { Text("Показать скрытые снова ($deadCount)") }
                     }
                     if (settings.backgroundMonitoring) {
                         Text("Интервал мониторинга: ${settings.monitoringIntervalHours} ч")

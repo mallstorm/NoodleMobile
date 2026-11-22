@@ -220,7 +220,19 @@ class BundledSearchRepository(
             http.fetchText(v.watchUrl, NetworkPolicy(a.allowedHosts, allowCookies = a.allowCookies, maxResponseBytes = 512 * 1024), a.id)
         }?.takeIf { it.success } ?: return batch
         val title = EngineParsing.titleFromHtml(net.text).replace(Regex("\\s+[-|–—]\\s+(?:смотреть|watch).*$", RegexOption.IGNORE_CASE), "").trim()
-        val thumb = EngineParsing.imageFromHtml(net.text, net.finalUrl.ifBlank { v.watchUrl })
+        val pageUrl = EngineParsing.baseHref(net.text, net.finalUrl.ifBlank { v.watchUrl })
+        val thumb = EngineParsing.imageFromHtml(net.text, pageUrl).ifBlank {
+            // Нет og:image — ищем превью в других типичных местах: twitter:image, image_src, JSON-LD, poster/ImageURL плеера.
+            val raw = listOf(
+                "<meta[^>]+(?:property|name)=[\"']twitter:image(?::src)?[\"'][^>]+content=[\"']([^\"']+)[\"']",
+                "<meta[^>]+content=[\"']([^\"']+)[\"'][^>]+(?:property|name)=[\"']twitter:image[\"']",
+                "<link[^>]+rel=[\"']image_src[\"'][^>]+href=[\"']([^\"']+)[\"']",
+                "\"thumbnailUrl\"\\s*:\\s*\\[?\\s*\"([^\"]+)\"",
+                "(?:ImageURL|poster|thumbnail|thumb)\\w*\\s*[:=]\\s*[\"']((?:https?:)?//[^\"']+\\.(?:jpe?g|png|webp)[^\"']*)[\"']",
+                "<video[^>]+poster=[\"']([^\"']+)[\"']",
+            ).firstNotNullOfOrNull { re -> EngineParsing.first(net.text, re).takeIf { it.isNotBlank() } }.orEmpty()
+            if (raw.isBlank()) "" else EngineParsing.absolute(raw.replace("\\/", "/"), pageUrl)
+        }
         return SearchBatch(listOf(v.copy(
             title = title.ifBlank { v.title },
             thumbnailUrl = normalizeAllowed(thumb, a, allowBlank = true, baseUrl = originOf(net.finalUrl, a.baseUrl)).orEmpty(),
