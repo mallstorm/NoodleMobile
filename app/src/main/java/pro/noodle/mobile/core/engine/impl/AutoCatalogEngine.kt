@@ -49,7 +49,7 @@ object AutoCards {
     data class Anchor(val start: Int, val end: Int, val href: String, val path: String, val attrs: String)
 
     /** Every `<a href>` in the document, resolved against [baseUrl]. */
-    fun anchors(html: String, baseUrl: String): List<Anchor> = anchorRe.findAll(html).mapNotNull { m ->
+    fun anchors(html: String, pageUrl: String): List<Anchor> { val baseUrl = EngineParsing.baseHref(html, pageUrl); return anchorRe.findAll(html).mapNotNull { m ->
         val attrs = m.groupValues[1]
         val raw = EngineParsing.attr("<a $attrs>", "href")
         if (raw.isBlank() || raw.startsWith("#") || raw.startsWith("javascript:", true) || raw.startsWith("mailto:", true)) return@mapNotNull null
@@ -58,9 +58,10 @@ object AutoCards {
         val path = pathOf(abs)
         val close = html.indexOf("</a>", m.range.last, ignoreCase = true).let { if (it < 0) m.range.last + 1 else it + 4 }
         Anchor(m.range.first, close, abs, path, attrs)
-    }.toList()
+    }.toList() }
 
-    fun extract(html: String, baseUrl: String, pattern: Regex, max: Int): List<EngineSearchItem> {
+    fun extract(html: String, pageUrl: String, pattern: Regex, max: Int): List<EngineSearchItem> {
+        val baseUrl = EngineParsing.baseHref(html, pageUrl)
         val baseHost = hostOf(baseUrl)
         val all = anchors(html, baseUrl)
         val matching = all.filter { a -> pattern.containsMatchIn(a.path) && sameSite(hostOf(a.href), baseHost) }

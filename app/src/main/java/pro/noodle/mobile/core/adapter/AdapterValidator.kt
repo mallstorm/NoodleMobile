@@ -53,7 +53,7 @@ object AdapterValidator {
         if (!UrlPolicy.isHostAllowed(baseHost, d.allowedHosts)) return fail("ADAPTER_BASE_HOST_NOT_ALLOWED", "Домен base_url должен присутствовать в permissions.allowed_hosts.")
 
         if (d.searchUrlTemplate.startsWith("https://", true) || d.searchUrlTemplate.startsWith("http://", true)) {
-            val u = d.searchUrlTemplate.replace("{base_url}", d.baseUrl, true).replace("{query}", "test", true).replace("{page}", "1", true)
+            val u = d.searchUrlTemplate.replace("{base_url}", d.baseUrl, true).replace("{query_slug}", "test", true).replace("{query_plus}", "test", true).replace("{query}", "test", true).replace("{page}", "1", true)
             val decision = UrlPolicy.evaluateNavigation(u)
             if (!decision.allowed) return fail("ADAPTER_SEARCH_URL_UNSAFE", "${decision.errorCode}: ${decision.reason}")
             val searchHost = runCatching { URI(decision.normalizedUrl).host.orEmpty().lowercase() }.getOrDefault("")
@@ -61,9 +61,9 @@ object AdapterValidator {
         }
 
         if (d.searchPageTemplate.isNotBlank()) {
-            if (!d.searchPageTemplate.contains("{page}", true) || !d.searchPageTemplate.contains("{query}", true)) return fail("ADAPTER_PAGE_TEMPLATE_INVALID", "search.page_template должен содержать {query} и {page}.")
+            if (!d.searchPageTemplate.contains("{page}", true) || !d.searchPageTemplate.contains("{query", true)) return fail("ADAPTER_PAGE_TEMPLATE_INVALID", "search.page_template должен содержать {query} и {page}.")
             if (d.searchPageTemplate.startsWith("https://", true) || d.searchPageTemplate.startsWith("http://", true)) {
-                val u = d.searchPageTemplate.replace("{base_url}", d.baseUrl, true).replace("{query}", "test", true).replace("{page}", "2", true)
+                val u = d.searchPageTemplate.replace("{base_url}", d.baseUrl, true).replace("{query_slug}", "test", true).replace("{query_plus}", "test", true).replace("{query}", "test", true).replace("{page}", "2", true)
                 val decision = UrlPolicy.evaluateNavigation(u)
                 if (!decision.allowed) return fail("ADAPTER_PAGE_TEMPLATE_UNSAFE", "${decision.errorCode}: ${decision.reason}")
                 val pageHost = runCatching { URI(decision.normalizedUrl).host.orEmpty().lowercase() }.getOrDefault("")

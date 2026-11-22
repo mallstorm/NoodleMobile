@@ -102,6 +102,27 @@ object EngineParsing {
         }
     }
 
+    /** `<base href>` страницы (если есть): относительные ссылки браузер разрешает от него, а не от адреса страницы. */
+    fun baseHref(html: String, pageUrl: String): String {
+        val head = if (html.length > 30_000) html.substring(0, 30_000) else html
+        val raw = Regex("<base\\b[^>]*?\\bhref\\s*=\\s*[\"']([^\"']+)[\"']", RegexOption.IGNORE_CASE).find(head)?.groupValues?.getOrNull(1)?.trim().orEmpty()
+        if (raw.isBlank()) return pageUrl
+        val resolved = absolute(raw, pageUrl)
+        return if (resolved.startsWith("http", true)) resolved else pageUrl
+    }
+
+    /** Слаг как у «живого» поиска многих сайтов: нижний регистр, пробелы → «-», спецсимволы убраны, затем URL-кодирование. */
+    fun querySlug(value: String): String {
+        val s = value.lowercase().trim().replace(Regex("\\s+"), "-").replace(Regex("[&/\\\\#,+()$~%.'\":*!^?<>{}\\[\\]]"), "").trim('-')
+        return URLEncoder.encode(s, StandardCharsets.UTF_8.name()).replace("+", "%20")
+    }
+
+    /** Подставляет {query}, {query_plus}, {query_slug} в шаблон адреса поиска. */
+    fun fillQuery(template: String, query: String): String = template
+        .replace("{query_slug}", querySlug(query), true)
+        .replace("{query_plus}", encodedQuery(query).replace("%20", "+"), true)
+        .replace("{query}", encodedQuery(query), true)
+
     fun encodedQuery(value: String): String = URLEncoder.encode(value.trim(), StandardCharsets.UTF_8.name()).replace("+", "%20")
     fun urlDecode(value: String): String = try { URLDecoder.decode(value, StandardCharsets.UTF_8.name()) } catch (_: Exception) { value }
 

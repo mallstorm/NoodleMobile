@@ -35,8 +35,7 @@ object SearchUrls {
         val page = (request.page + 1).coerceAtLeast(1)
         val raw = template
             .replace("{base_url}", request.baseUrl.trimEnd('/'), true)
-            .replace("{query}", EngineParsing.encodedQuery(request.query), true)
-            .replace("{query_plus}", EngineParsing.encodedQuery(request.query).replace("%20", "+"), true)
+            .let { EngineParsing.fillQuery(it, request.query) }
             .replace("{page}", page.toString(), true)
             .replace("{page0}", (page - 1).toString(), true)
         return EngineParsing.absolute(raw, request.baseUrl)

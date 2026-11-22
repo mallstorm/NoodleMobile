@@ -147,3 +147,9 @@ Ask yourself: (1) do search results have real titles/covers/durations? (2) does 
 
 ## 13. Films split into parts
 - Files like `Film.1.mp4, Film.2.mp4 …` (or `Film.1080.1.mp4 …`) are PARTS of one film, not alternatives. Do not reject later/shorter parts as previews and do not pick only part 1: return all parts from the engine. The app joins consecutive parts of the same quality into one "Весь фильм" source with the total duration automatically.
+
+
+## 14. Search slug, <base href>, PlayerJS embeds
+- Some sites build the search URL in JS (`GoSearch`: lowercase, spaces → `-`, special characters removed, then `/search/<slug>/`) and answer 403/404 for a plain URL-encoded query. Use the template placeholder `{query_slug}` (lowercase, spaces → `-`, `& / \ # , + ( ) $ ~ % . ' " : * ! ^ ? < > { }` removed, rest URL-encoded): `"url_template": "{base_url}/search/{query_slug}/"`. Other placeholders: `{query}` (%20), `{query_plus}` (+). `page_template` may use any of them.
+- `<base href="https://site/">` is honoured by `list_cards`, card parsing and the player resolver: `./film/x.html` is resolved against the base, not against the page URL. Write `link_pattern` against the RESOLVED path (`^/film/…`).
+- PlayerJS embeds keep the playlist in an inline `var file = "[{...}]"` (JSON string with `title`, `file`, sometimes `trailer`). Read it with `fetch_page` using `grep: "var file"` and a LARGE `context` (2500+), not a narrow grep — the first 450 chars cut it off. Items flagged `trailer` are previews; if only trailer items exist and the page mentions PRO/premium/login, the full video is behind an access wall for guests: say so honestly, do not publish a trailer-only adapter.

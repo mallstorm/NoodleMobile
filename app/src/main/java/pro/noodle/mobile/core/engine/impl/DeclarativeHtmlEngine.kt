@@ -21,7 +21,7 @@ class DeclarativeHtmlEngine:SourceEngine{
         }.take(request.maxItems.coerceAtLeast(1))
     }
 
-    private fun templateUrl(r:EngineSearchRequest):String{if(r.searchUrlTemplate.isBlank())return "";val page=(r.page+1).coerceAtLeast(1).toString();val u=r.searchUrlTemplate.replace("{base_url}",r.baseUrl,true).replace("{query}",EngineParsing.encodedQuery(r.query),true).replace("{page}",page,true);return EngineParsing.absolute(u,r.baseUrl)}
+    private fun templateUrl(r:EngineSearchRequest):String{if(r.searchUrlTemplate.isBlank())return "";val page=(r.page+1).coerceAtLeast(1).toString();val u=r.searchUrlTemplate.replace("{base_url}",r.baseUrl,true).let{EngineParsing.fillQuery(it,r.query)}.replace("{page}",page,true);return EngineParsing.absolute(u,r.baseUrl)}
     private data class Selector(val tag:String,val clazz:String)
     /** CSS-lite: `tag`, `tag.class`, `.class`, `tag#id` (id ignored). Tag may be omitted. */
     private fun parseSelector(s:String):Selector?{
