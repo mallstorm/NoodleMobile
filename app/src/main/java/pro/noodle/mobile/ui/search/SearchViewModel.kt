@@ -282,7 +282,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
      */
     private fun rankItems(items: List<VideoItem>, query: String): List<VideoItem> {
         val terms = query.lowercase().split(Regex("\\s+")).filter { it.length >= 2 }
-        val latinTerms = (pro.noodle.mobile.core.source.SourceNames.latinQuery(query) ?: "").lowercase().split(Regex("\\s+")).filter { it.length >= 2 }
+        val latinTerms = (pro.noodle.mobile.core.source.SourceNames.altQuery(query) ?: "").lowercase().split(Regex("\\s+")).filter { it.length >= 2 }
         val adapterScores = HashMap<String, Int>()
         fun sourceScore(video: VideoItem): Int {
             val adapter = searchRepo.adapterFor(video) ?: return 0

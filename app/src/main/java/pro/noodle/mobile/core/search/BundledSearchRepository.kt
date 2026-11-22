@@ -76,8 +76,8 @@ class BundledSearchRepository(
         if (query.isBlank()) return@coroutineScope SearchBatch(emptyList(), emptyList())
         val adapters = activeAdapters()
         directUrlResult(query, adapters)?.let { return@coroutineScope it }
-        // Запрос по-русски ищем и в латинской транслитерации («Анна Бали» + «Anna Bali»).
-        val queries = listOfNotNull(query, pro.noodle.mobile.core.source.SourceNames.latinQuery(query))
+        // Запрос ищем в двух написаниях: «Анна Бали» + «Anna Bali», «ne snimaya» + «не снимая».
+        val queries = listOfNotNull(query, pro.noodle.mobile.core.source.SourceNames.altQuery(query))
         val parts = adapters.map { adapter ->
             async {
                 val perQuery = queries.map { q ->

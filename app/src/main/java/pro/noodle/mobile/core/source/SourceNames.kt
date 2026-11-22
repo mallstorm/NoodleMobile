@@ -13,6 +13,31 @@ object SourceNames {
         val t = translit(q.replace('ё', 'е').replace('Ё', 'Е')).replace(Regex("\\s+"), " ").trim()
         return t.ifBlank { null }?.takeIf { !it.equals(q.trim(), true) }
     }
+    /** Обратная транслитерация для запроса латиницей: «ne snimaya dzhinsov» → «не снимая джинсов»; иначе null. */
+    fun cyrillicQuery(q: String): String? {
+        val src = q.trim().lowercase()
+        if (src.none { it in 'a'..'z' } || src.any { it in 'а'..'я' || it == 'ё' }) return null
+        val pairs = listOf("shch" to "щ", "sch" to "щ", "tsya" to "ться", "dzh" to "дж", "zh" to "ж", "sh" to "ш", "ch" to "ч", "kh" to "х",
+            "ts" to "ц", "yo" to "ё", "yu" to "ю", "ya" to "я", "ye" to "е", "iy" to "ий", "yy" to "ый", "ey" to "ей", "ay" to "ай", "oy" to "ой", "uy" to "уй")
+        val single = mapOf('a' to "а", 'b' to "б", 'c' to "к", 'd' to "д", 'e' to "е", 'f' to "ф", 'g' to "г", 'h' to "х", 'i' to "и", 'j' to "й", 'k' to "к",
+            'l' to "л", 'm' to "м", 'n' to "н", 'o' to "о", 'p' to "п", 'q' to "к", 'r' to "р", 's' to "с", 't' to "т", 'u' to "у", 'v' to "в", 'w' to "в",
+            'x' to "кс", 'y' to "ы", 'z' to "з")
+        val sb = StringBuilder()
+        var i = 0
+        while (i < src.length) {
+            val hit = pairs.firstOrNull { src.startsWith(it.first, i) }
+            if (hit != null) { sb.append(hit.second); i += hit.first.length; continue }
+            val c = src[i]
+            sb.append(single[c] ?: c.toString())
+            i++
+        }
+        val out = sb.toString().replace(Regex("\\s+"), " ").trim()
+        return out.takeIf { it.isNotBlank() && it != src }
+    }
+
+    /** Второй вариант запроса: латиница ↔ кириллица. */
+    fun altQuery(q: String): String? = latinQuery(q) ?: cyrillicQuery(q)
+
     fun translit(s: String) = s.lowercase().map { c -> tr[c] ?: c.toString() }.joinToString("")
 
     fun label(host: String): String {
