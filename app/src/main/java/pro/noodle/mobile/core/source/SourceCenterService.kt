@@ -1,6 +1,6 @@
 package pro.noodle.mobile.core.source
 
-import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import android.content.Context
 import kotlinx.coroutines.flow.first
@@ -185,7 +185,18 @@ class SourceCenterService(context:Context){
         if(ids.isEmpty())return false
         val gate=kotlinx.coroutines.sync.Semaphore(3)
         kotlinx.coroutines.coroutineScope{
-            ids.map{id->kotlinx.coroutines.async(kotlinx.coroutines.Dispatchers.IO){gate.withPermit{kotlinx.coroutines.withTimeoutOrNull(20_000L){runCatching{health.checkOne(id)}}}}}.awaitAll()
+            val jobs=ArrayList<kotlinx.coroutines.Deferred<Unit>>()
+            for(id in ids){
+                jobs.add(async(kotlinx.coroutines.Dispatchers.IO){
+                    gate.acquire()
+                    try{
+                        kotlinx.coroutines.withTimeoutOrNull(20_000L){ health.checkOne(id) }
+                    }catch(e:kotlinx.coroutines.CancellationException){throw e}catch(e:Exception){}
+                    finally{gate.release()}
+                    Unit
+                })
+            }
+            jobs.awaitAll()
         }
         return true
     }
