@@ -32,6 +32,7 @@ class SourceMaintenanceWorker(appContext: Context, params: WorkerParameters) : C
         }.forEach { r ->
             val d = r.definition
             runCatching { fingerprint.checkOne(d.id) }
+            runCatching { pro.noodle.mobile.core.source.SourceHealthMonitor(repo).checkOne(d.id) }
             val ok = runCatching {
                 val (items, err) = probe.searchOne(d, d.healthQuery.ifBlank { "video" }, 10)
                 err == null && items.isNotEmpty() && items.take(2).any { playback.resolve(it, d).success }

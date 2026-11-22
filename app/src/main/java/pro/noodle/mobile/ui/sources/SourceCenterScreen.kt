@@ -462,6 +462,7 @@ private fun StatusPill(label: String, value: String) {
     val (color, text) = when {
         v.isBlank() || v.startsWith("unknown") || v.startsWith("not_") || v == "—" -> MaterialTheme.colorScheme.outline to "не проверено"
         v.startsWith("healthy") || v.startsWith("ok") || v.startsWith("reachable") || v.startsWith("unchanged") -> MaterialTheme.colorScheme.secondary to "работает"
+        v.startsWith("unavailable") -> MaterialTheme.colorScheme.error to "не отвечает"
         v.contains("fail") || v.contains("error") || v.contains("unavailable") || v.contains("no_results") || v.contains("broken") -> MaterialTheme.colorScheme.error to "ошибка"
         else -> MaterialTheme.colorScheme.tertiary to value.take(22)
     }

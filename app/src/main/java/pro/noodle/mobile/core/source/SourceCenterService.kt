@@ -1,5 +1,7 @@
 package pro.noodle.mobile.core.source
 
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.awaitAll
 import android.content.Context
 import kotlinx.coroutines.flow.first
 import pro.noodle.mobile.core.settings.SourceOverridesRepository
@@ -176,6 +178,17 @@ class SourceCenterService(context:Context){
     suspend fun importZip(zip:File):SourceActionResult{val r=repo.importCustomZip(zip);if(!r.success)return fail(r.errorCode,r.message);if(r.adapterId.isNotBlank()) overrides.setEnabled(r.adapterId,false);return ok("installed",r.message+" Источник оставлен выключенным до ручной проверки.")}
     suspend fun removeCustom(id:String):SourceActionResult{val r=repo.find(id)?:return fail("SNP_NOT_FOUND","SNP не найден.");if(r.bundled)return fail("SNP_REMOVE_BUNDLED","Штатный SNP нельзя удалить.");val success=repo.removeCustom(id);if(success){overrides.clear(id);return ok("removed","Пользовательский SNP удалён.")};return fail("SNP_REMOVE_FAILED","Не удалось удалить SNP.")}
     suspend fun semantic(id:String):SourceActionResult{val r=probe.semantic(id);return SourceActionResult(r.status==SemanticStatus.HEALTHY,r.status.wireName,r.message,r.errorCode)}
+    /** Тихая проверка доступности сайтов без статуса или со старым (>6 ч) — чтобы метка «Сайт» не оставалась пустой. */
+    suspend fun autoHealth():Boolean{
+        val now=System.currentTimeMillis()
+        val ids=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){repo.listAll().map{it.definition.id}}.filter{id->healthStore.get(id,"status").isBlank()||now-healthStore.getLong(id,"updated_at")>6L*3600_000}
+        if(ids.isEmpty())return false
+        val gate=kotlinx.coroutines.sync.Semaphore(3)
+        kotlinx.coroutines.coroutineScope{
+            ids.map{id->kotlinx.coroutines.async(kotlinx.coroutines.Dispatchers.IO){gate.withPermit{kotlinx.coroutines.withTimeoutOrNull(20_000L){runCatching{health.checkOne(id)}}}}}.awaitAll()
+        }
+        return true
+    }
     suspend fun health(id:String):SourceActionResult{val r=health.checkOne(id);return SourceActionResult(r.status=="healthy",r.status,r.message,r.errorCode)}
     suspend fun fingerprint(id:String):SourceActionResult{val r=fingerprint.checkOne(id);return SourceActionResult(r.status in setOf(FingerprintStatus.BASELINE_CREATED,FingerprintStatus.UNCHANGED,FingerprintStatus.MINOR_CHANGE),r.status.wireName,r.message,r.errorCode)}
     suspend fun breakage(id:String):SourceActionResult{val r=breakage.checkOne(id);return SourceActionResult(r.status in setOf(BreakageStatus.HEALTHY,BreakageStatus.REPAIR_SUCCEEDED),r.status.wireName,r.message,r.errorCode)}

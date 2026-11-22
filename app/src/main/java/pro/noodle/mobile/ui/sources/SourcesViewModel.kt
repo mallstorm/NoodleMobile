@@ -32,7 +32,13 @@ class SourcesViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow(SourcesUiState())
     val state: StateFlow<SourcesUiState> = _state.asStateFlow()
 
-    init { reload() }
+    init {
+        reload()
+        viewModelScope.launch {
+            val changed = runCatching { service.autoHealth() }.getOrDefault(false)
+            if (changed) runCatching { service.enumerate() }.onSuccess { items -> _state.update { it.copy(adapters = items) } }
+        }
+    }
 
     fun reload() = viewModelScope.launch {
         _state.update { it.copy(loading = true, error = "") }
