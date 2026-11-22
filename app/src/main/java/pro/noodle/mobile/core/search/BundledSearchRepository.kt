@@ -12,6 +12,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import pro.noodle.mobile.core.adapter.AdapterDefinition
 import pro.noodle.mobile.core.engine.impl.AutoCards
 import pro.noodle.mobile.core.engine.runtime.SearchUrls
+import pro.noodle.mobile.core.engine.runtime.EngineParsing
 import pro.noodle.mobile.core.engine.runtime.searchRequest
 import pro.noodle.mobile.core.engine.runtime.RuntimeEngineRegistry
 import pro.noodle.mobile.core.model.VideoItem
@@ -75,7 +76,7 @@ class BundledSearchRepository(
     suspend fun search(query: String, page: Int = -1, maxPerSource: Int = 20): SearchBatch = coroutineScope {
         if (query.isBlank()) return@coroutineScope SearchBatch(emptyList(), emptyList())
         val adapters = activeAdapters()
-        directUrlResult(query, adapters)?.let { return@coroutineScope it }
+        directUrlResult(query, adapters)?.let { return@coroutineScope enrichDirect(it) }
         // Запрос ищем в двух написаниях: «Анна Бали» + «Anna Bali», «ne snimaya» + «не снимая».
         val queries = listOfNotNull(query, pro.noodle.mobile.core.source.SourceNames.altQuery(query))
         val parts = adapters.map { adapter ->
@@ -211,6 +212,21 @@ class BundledSearchRepository(
         return SearchBatch(items, emptyList())
     }
 
+    /** Для вставленной ссылки подтягиваем настоящее название и превью со страницы (не дольше 8 с). */
+    private suspend fun enrichDirect(batch: SearchBatch): SearchBatch {
+        val v = batch.items.singleOrNull() ?: return batch
+        val a = adapterFor(v) ?: return batch
+        val net = withTimeoutOrNull(8_000L) {
+            http.fetchText(v.watchUrl, NetworkPolicy(a.allowedHosts, allowCookies = a.allowCookies, maxResponseBytes = 512 * 1024), a.id)
+        }?.takeIf { it.success } ?: return batch
+        val title = EngineParsing.titleFromHtml(net.text).replace(Regex("\\s+[-|–—]\\s+(?:смотреть|watch).*$", RegexOption.IGNORE_CASE), "").trim()
+        val thumb = EngineParsing.imageFromHtml(net.text, net.finalUrl.ifBlank { v.watchUrl })
+        return SearchBatch(listOf(v.copy(
+            title = title.ifBlank { v.title },
+            thumbnailUrl = normalizeAllowed(thumb, a, allowBlank = true, baseUrl = originOf(net.finalUrl, a.baseUrl)).orEmpty(),
+        )), batch.errors)
+    }
+
     private fun directUrlResult(query: String, adapters: List<AdapterDefinition>): SearchBatch? {
         val raw = query.trim()
         if (!raw.startsWith("https://", true) && !raw.startsWith("http://", true)) return null
@@ -233,7 +249,7 @@ class BundledSearchRepository(
                     id = "${adapter.id}|$id",
                     remoteId = id,
                     watchUrl = decision.normalizedUrl,
-                    title = id.replace('-', ' ').replace('_', ' '),
+                    title = id.replace(Regex("\\.(?:html?|php|aspx?)$", RegexOption.IGNORE_CASE), "").replace(Regex("[-_]\\d+$"), "").replace('-', ' ').replace('_', ' '),
                     sourceName = pro.noodle.mobile.core.source.SourceNames.short(adapter.name, adapter.baseUrl),
                     sourceBaseUrl = adapter.baseUrl,
                     sourceEngine = adapter.engine,
