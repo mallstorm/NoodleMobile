@@ -49,9 +49,7 @@ import pro.noodle.mobile.core.player.PlaybackSession
 import pro.noodle.mobile.core.player.PlaybackLogStore
 import pro.noodle.mobile.core.player.StreamRuleStore
 import pro.noodle.mobile.core.search.BundledSearchRepository
-import pro.noodle.mobile.core.similar.CopyFinder
 import pro.noodle.mobile.core.similar.FrameGrabber
-import pro.noodle.mobile.core.similar.VideoCopy
 import pro.noodle.mobile.core.settings.AppSettings
 import pro.noodle.mobile.core.settings.AppSettingsRepository
 import pro.noodle.mobile.core.source.SourceRuntimeDiagnosticsStore
@@ -96,14 +94,9 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
     var resolverRecoveryAttempts by remember(video.id) { mutableIntStateOf(0) }
     var handoffPositionMs by remember(video.id) { mutableLongStateOf(0L) }
     var showStreamReport by remember { mutableStateOf(false) }
-    var carryPositionMs by remember { mutableLongStateOf(0L) }
-    var showCopies by remember { mutableStateOf(false) }
-    var copiesBusy by remember { mutableStateOf(false) }
-    var copiesProgress by remember { mutableStateOf("") }
-    var copies by remember { mutableStateOf<List<VideoCopy>?>(null) }
-    var copiesBaseHeight by remember { mutableIntStateOf(0) }
+    var frameJpeg by remember { mutableStateOf<ByteArray?>(null) }
+    var frameBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     val uiScope = rememberCoroutineScope()
-    val copyFinder = remember { CopyFinder(context.applicationContext, resolverHttp, searchRepo, playbackRepo) }
     var networkRetries by remember(video.id) { mutableIntStateOf(0) }
     var attemptStartMs by remember { mutableLongStateOf(0L) }
     var liveDurationMs by remember(video.id) { mutableLongStateOf(0L) }
@@ -191,7 +184,6 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
         restoredPosition = if (appSettings.rememberPlaybackPosition) {
             withContext(Dispatchers.IO) { userRepo.playbackPosition(key)?.positionMs ?: 0L }
         } else 0L
-        if (carryPositionMs > 0L) { restoredPosition = carryPositionMs; carryPositionMs = 0L }
         positionReady = true
         if (restoredPosition > 5_000L) message = "Продолжаем с ${formatClock(restoredPosition)}"
     }
@@ -599,53 +591,28 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
         )
     }
 
-    fun saveFrame() {
+    fun searchByFrame() {
         uiScope.launch {
             val bmp = FrameGrabber.grab()
             if (bmp == null) { message = "Не удалось снять кадр"; return@launch }
-            val uri = withContext(Dispatchers.IO) { FrameGrabber.saveToGallery(context, bmp, video.title) }
-            message = if (uri != null) "Кадр сохранён в Галерею (Pictures/NoodleMobile)" else "Не удалось сохранить кадр"
+            val jpg = withContext(Dispatchers.Default) { FrameGrabber.toJpeg(bmp) }
+            player.pause()
+            frameBitmap = bmp
+            frameJpeg = jpg
         }
     }
 
-    fun findCopies() {
-        if (copiesBusy) return
-        showPlaybackSettings = false
-        showCopies = true
-        copies = null
-        copiesBusy = true
-        copiesProgress = "Снимаю кадр…"
-        val pos = player.currentPosition.coerceAtLeast(0)
-        val dur = player.duration.takeIf { it > 0 && it != C.TIME_UNSET } ?: 0L
-        val h = player.videoSize.height
-        copiesBaseHeight = h
-        val session0 = activeSession
-        uiScope.launch {
-            val bmp = FrameGrabber.grab()
-            val hash = bmp?.let { withContext(Dispatchers.Default) { FrameGrabber.dHash(it) } }
-            val found = runCatching { copyFinder.find(session0, h, dur, hash, pos) { copiesProgress = it } }.getOrDefault(emptyList())
-            copies = found
-            copiesBusy = false
-        }
-    }
-
-    fun switchToCopy(c: VideoCopy) {
-        carryPositionMs = player.currentPosition.coerceAtLeast(0)
-        activeSession = c.session
-        failedSourceUrls = emptySet()
-        resolverRecoveryAttempts = 0
-        showCopies = false
-        message = "Переключено: ${c.sourceName}"
-    }
-
-    if (showCopies) {
-        CopiesSheet(
-            busy = copiesBusy,
-            progress = copiesProgress,
-            copies = copies,
-            currentHeight = copiesBaseHeight,
-            onPick = { switchToCopy(it) },
-            onDismiss = { showCopies = false },
+    frameJpeg?.let { jpg ->
+        FrameSearchDialog(
+            jpeg = jpg,
+            onSaveToGallery = {
+                val bmp = frameBitmap
+                if (bmp != null) uiScope.launch {
+                    val uri = withContext(Dispatchers.IO) { FrameGrabber.saveToGallery(context, bmp, video.title) }
+                    message = if (uri != null) "Кадр сохранён в Галерею" else "Не удалось сохранить кадр"
+                }
+            },
+            onDismiss = { frameJpeg = null; frameBitmap = null },
         )
     }
 
@@ -698,8 +665,7 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
                 player.trackSelectionParameters = builder.build()
             },
             onOpenEqualizer = { showPlaybackSettings = false; showEqualizer = true },
-            onSaveFrame = { showPlaybackSettings = false; saveFrame() },
-            onFindCopies = { findCopies() },
+            onFrameSearch = { showPlaybackSettings = false; searchByFrame() },
             onDismiss = { showPlaybackSettings = false },
         )
     }
@@ -716,7 +682,7 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
             onBack = backFromPlayer,
             onToggleFullscreen = { fullscreen = false },
             onOpenSettings = { showPlaybackSettings = true },
-            onSaveFrame = { saveFrame() },
+            onFrameSearch = { searchByFrame() },
             activity = activity,
             modifier = Modifier.fillMaxSize(),
         )
@@ -730,7 +696,7 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
             onBack = backFromPlayer,
             onToggleFullscreen = { fullscreen = true },
             onOpenSettings = { showPlaybackSettings = true },
-            onSaveFrame = { saveFrame() },
+            onFrameSearch = { searchByFrame() },
             activity = activity,
             modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
         )
@@ -966,8 +932,7 @@ private fun PlayerSettingsSheet(
     onAudio: (Int) -> Unit,
     onText: (Int) -> Unit,
     onOpenEqualizer: () -> Unit,
-    onSaveFrame: () -> Unit,
-    onFindCopies: () -> Unit,
+    onFrameSearch: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -1016,11 +981,8 @@ private fun PlayerSettingsSheet(
             androidx.compose.material3.OutlinedButton(onClick = onOpenEqualizer, modifier = Modifier.fillMaxWidth()) {
                 Text("Эквалайзер и звук")
             }
-            androidx.compose.material3.OutlinedButton(onClick = onSaveFrame, modifier = Modifier.fillMaxWidth()) {
-                Text("Сохранить кадр в Галерею")
-            }
-            androidx.compose.material3.OutlinedButton(onClick = onFindCopies, modifier = Modifier.fillMaxWidth()) {
-                Text("Найти это видео на других источниках (лучшее качество)")
+            androidx.compose.material3.OutlinedButton(onClick = onFrameSearch, modifier = Modifier.fillMaxWidth()) {
+                Text("Найти по кадру (Яндекс, Bing, Google)")
             }
             Text("Скорость", fontWeight = FontWeight.SemiBold)
             var currentSpeed by remember { mutableFloatStateOf(player.playbackParameters.speed) }
@@ -1034,55 +996,6 @@ private fun PlayerSettingsSheet(
                         onClick = { player.setPlaybackSpeed(speed); currentSpeed = speed },
                         label = { Text(if (speed == 1f) "1×" else "${speed.toString().trimEnd('0').trimEnd('.')}×") },
                     )
-                }
-            }
-            Spacer(Modifier.height(16.dp))
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun CopiesSheet(
-    busy: Boolean,
-    progress: String,
-    copies: List<VideoCopy>?,
-    currentHeight: Int,
-    onPick: (VideoCopy) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Text("Это видео на других источниках", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            if (busy) {
-                LinearProgressIndicator(Modifier.fillMaxWidth())
-                Text(progress, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else if (copies.isNullOrEmpty()) {
-                Text("Копий не найдено. Искали по названию на ваших включённых источниках, совпадение проверяется по длительности и кадру.")
-            } else {
-                if (currentHeight > 0) Text("Сейчас: ${currentHeight}p", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                copies.forEach { c ->
-                    val better = c.height > 0 && currentHeight > 0 && c.height * 100 > currentHeight * 115
-                    Card(Modifier.fillMaxWidth()) {
-                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    c.sourceName + " • " + (if (c.height > 0) "${c.height}p" else "качество неизвестно") + (if (better) " • лучше" else ""),
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                                Text(
-                                    (if (c.verified) "✓ " else "") + c.note + (if (c.durationSec > 0) " • " + formatClock(c.durationSec * 1000L) else ""),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            Spacer(Modifier.width(8.dp))
-                            Button(onClick = { onPick(c) }) { Text("Смотреть") }
-                        }
-                    }
                 }
             }
             Spacer(Modifier.height(16.dp))

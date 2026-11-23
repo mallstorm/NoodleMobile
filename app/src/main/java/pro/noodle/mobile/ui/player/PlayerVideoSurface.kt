@@ -48,7 +48,7 @@ internal fun PlayerVideoSurface(
     onToggleFullscreen: () -> Unit,
     onOpenSettings: () -> Unit,
     activity: android.app.Activity?,
-    onSaveFrame: () -> Unit = {},
+    onFrameSearch: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -282,7 +282,7 @@ internal fun PlayerVideoSurface(
                 IconButton(onClick = { locked = !locked; gestureLabel = if (locked) "Экран заблокирован" else "Разблокировано"; gestureTick++ }) {
                     Icon(if (locked) Icons.Outlined.Lock else Icons.Outlined.LockOpen, "Блокировка экрана", tint = if (locked) MaterialTheme.colorScheme.tertiary else Color.White)
                 }
-                if (!locked) IconButton(onClick = onSaveFrame) {
+                if (!locked) IconButton(onClick = onFrameSearch) {
                     Icon(Icons.Outlined.PhotoCamera, "Сохранить кадр", tint = Color.White)
                 }
                 if (!locked) IconButton(onClick = onOpenSettings) {
