@@ -599,6 +599,56 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
         )
     }
 
+    fun saveFrame() {
+        uiScope.launch {
+            val bmp = FrameGrabber.grab()
+            if (bmp == null) { message = "Не удалось снять кадр"; return@launch }
+            val uri = withContext(Dispatchers.IO) { FrameGrabber.saveToGallery(context, bmp, video.title) }
+            message = if (uri != null) "Кадр сохранён в Галерею (Pictures/NoodleMobile)" else "Не удалось сохранить кадр"
+        }
+    }
+
+    fun findCopies() {
+        if (copiesBusy) return
+        showPlaybackSettings = false
+        showCopies = true
+        copies = null
+        copiesBusy = true
+        copiesProgress = "Снимаю кадр…"
+        val pos = player.currentPosition.coerceAtLeast(0)
+        val dur = player.duration.takeIf { it > 0 && it != C.TIME_UNSET } ?: 0L
+        val h = player.videoSize.height
+        copiesBaseHeight = h
+        val session0 = activeSession
+        uiScope.launch {
+            val bmp = FrameGrabber.grab()
+            val hash = bmp?.let { withContext(Dispatchers.Default) { FrameGrabber.dHash(it) } }
+            val found = runCatching { copyFinder.find(session0, h, dur, hash, pos) { copiesProgress = it } }.getOrDefault(emptyList())
+            copies = found
+            copiesBusy = false
+        }
+    }
+
+    fun switchToCopy(c: VideoCopy) {
+        carryPositionMs = player.currentPosition.coerceAtLeast(0)
+        activeSession = c.session
+        failedSourceUrls = emptySet()
+        resolverRecoveryAttempts = 0
+        showCopies = false
+        message = "Переключено: ${c.sourceName}"
+    }
+
+    if (showCopies) {
+        CopiesSheet(
+            busy = copiesBusy,
+            progress = copiesProgress,
+            copies = copies,
+            currentHeight = copiesBaseHeight,
+            onPick = { switchToCopy(it) },
+            onDismiss = { showCopies = false },
+        )
+    }
+
     if (showPlaybackSettings) {
         PlayerSettingsSheet(
             video = video,
@@ -657,56 +707,6 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
 
     val backFromPlayer = {
         if (fullscreen) fullscreen = false else onBack()
-    }
-
-    fun saveFrame() {
-        uiScope.launch {
-            val bmp = FrameGrabber.grab()
-            if (bmp == null) { message = "Не удалось снять кадр"; return@launch }
-            val uri = withContext(Dispatchers.IO) { FrameGrabber.saveToGallery(context, bmp, video.title) }
-            message = if (uri != null) "Кадр сохранён в Галерею (Pictures/NoodleMobile)" else "Не удалось сохранить кадр"
-        }
-    }
-
-    fun findCopies() {
-        if (copiesBusy) return
-        showPlaybackSettings = false
-        showCopies = true
-        copies = null
-        copiesBusy = true
-        copiesProgress = "Снимаю кадр…"
-        val pos = player.currentPosition.coerceAtLeast(0)
-        val dur = player.duration.takeIf { it > 0 && it != C.TIME_UNSET } ?: 0L
-        val h = player.videoSize.height
-        copiesBaseHeight = h
-        val session0 = activeSession
-        uiScope.launch {
-            val bmp = FrameGrabber.grab()
-            val hash = bmp?.let { withContext(Dispatchers.Default) { FrameGrabber.dHash(it) } }
-            val found = runCatching { copyFinder.find(session0, h, dur, hash, pos) { copiesProgress = it } }.getOrDefault(emptyList())
-            copies = found
-            copiesBusy = false
-        }
-    }
-
-    fun switchToCopy(c: VideoCopy) {
-        carryPositionMs = player.currentPosition.coerceAtLeast(0)
-        activeSession = c.session
-        failedSourceUrls = emptySet()
-        resolverRecoveryAttempts = 0
-        showCopies = false
-        message = "Переключено: ${c.sourceName}"
-    }
-
-    if (showCopies) {
-        CopiesSheet(
-            busy = copiesBusy,
-            progress = copiesProgress,
-            copies = copies,
-            currentHeight = copiesBaseHeight,
-            onPick = { switchToCopy(it) },
-            onDismiss = { showCopies = false },
-        )
     }
 
     if (fullscreen) {
