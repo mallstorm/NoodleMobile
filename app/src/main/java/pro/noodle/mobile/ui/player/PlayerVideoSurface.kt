@@ -48,6 +48,7 @@ internal fun PlayerVideoSurface(
     onToggleFullscreen: () -> Unit,
     onOpenSettings: () -> Unit,
     activity: android.app.Activity?,
+    onSaveFrame: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -124,6 +125,7 @@ internal fun PlayerVideoSurface(
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     this.player = player
+                    pro.noodle.mobile.core.similar.PlayerFrameHolder.view = java.lang.ref.WeakReference(this)
                     useController = false
                     resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                     keepScreenOn = true
@@ -279,6 +281,9 @@ internal fun PlayerVideoSurface(
                 }
                 IconButton(onClick = { locked = !locked; gestureLabel = if (locked) "Экран заблокирован" else "Разблокировано"; gestureTick++ }) {
                     Icon(if (locked) Icons.Outlined.Lock else Icons.Outlined.LockOpen, "Блокировка экрана", tint = if (locked) MaterialTheme.colorScheme.tertiary else Color.White)
+                }
+                if (!locked) IconButton(onClick = onSaveFrame) {
+                    Icon(Icons.Outlined.PhotoCamera, "Сохранить кадр", tint = Color.White)
                 }
                 if (!locked) IconButton(onClick = onOpenSettings) {
                     Icon(Icons.Outlined.Settings, "Настройки воспроизведения", tint = Color.White)
