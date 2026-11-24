@@ -50,6 +50,7 @@ import pro.noodle.mobile.core.player.PlaybackLogStore
 import pro.noodle.mobile.core.player.StreamRuleStore
 import pro.noodle.mobile.core.search.BundledSearchRepository
 import pro.noodle.mobile.core.similar.FrameGrabber
+import pro.noodle.mobile.ui.sources.StudioRequest
 import pro.noodle.mobile.core.settings.AppSettings
 import pro.noodle.mobile.core.settings.AppSettingsRepository
 import pro.noodle.mobile.core.source.SourceRuntimeDiagnosticsStore
@@ -644,6 +645,10 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
                     val uri = withContext(Dispatchers.IO) { FrameGrabber.saveToGallery(context, bmp, video.title) }
                     message = if (uri != null) "Кадр сохранён в Галерею" else "Не удалось сохранить кадр"
                 }
+            },
+            onOpenStudio = { origin ->
+                StudioRequest.pending = StudioRequest.Pending(origin, "", autoStart = false)
+                frameJpeg = null; frameBitmap = null
             },
             onDismiss = { frameJpeg = null; frameBitmap = null },
         )
