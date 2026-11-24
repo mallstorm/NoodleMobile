@@ -258,7 +258,6 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
         val window = activity?.window
         val controller = window?.let { WindowInsetsControllerCompat(it, it.decorView) }
         val oldBehavior = controller?.systemBarsBehavior
-        val oldCutout = if (window != null && android.os.Build.VERSION.SDK_INT >= 28) window.attributes.layoutInDisplayCutoutMode else 0
         if (window != null && controller != null) {
             if (fullscreen) {
                 controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
@@ -278,7 +277,7 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
                 if (oldBehavior != null) controller.systemBarsBehavior = oldBehavior
                 if (android.os.Build.VERSION.SDK_INT >= 28) {
                     val lp = window.attributes
-                    lp.layoutInDisplayCutoutMode = oldCutout
+                    lp.layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
                     window.attributes = lp
                 }
             }
