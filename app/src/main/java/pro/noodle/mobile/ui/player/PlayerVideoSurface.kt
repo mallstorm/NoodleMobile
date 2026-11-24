@@ -120,7 +120,11 @@ internal fun PlayerVideoSurface(
     }
 
     val interaction = remember { MutableInteractionSource() }
-    Box(modifier.background(Color.Black)) {
+    Box(
+        modifier.background(Color.Black).then(
+            if (fullscreen) Modifier.windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)) else Modifier
+        )
+    ) {
         AndroidView(
             factory = { ctx ->
                 PlayerView(ctx).apply {

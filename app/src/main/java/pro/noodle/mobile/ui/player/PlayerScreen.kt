@@ -250,17 +250,48 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
         handoffPositionMs = 0L
     }
 
+    // Полноэкранный режим: «липкий» иммерсив. Режим по умолчанию (BEHAVIOR_DEFAULT) заново показывает
+    // системные панели при ЛЮБОМ касании экрана — поэтому статус-бар возвращался сразу после тапа по плееру
+    // или по кнопке «Полный экран». Здесь панели скрываются насовсем и выезжают только свайпом от края.
+    val screenOrientation = androidx.compose.ui.platform.LocalConfiguration.current.orientation
     DisposableEffect(fullscreen, activity) {
-        activity?.window?.let { window ->
-            val controller = WindowInsetsControllerCompat(window, window.decorView)
-            if (fullscreen) controller.hide(WindowInsetsCompat.Type.systemBars())
-            else controller.show(WindowInsetsCompat.Type.systemBars())
+        val window = activity?.window
+        val controller = window?.let { WindowInsetsControllerCompat(it, it.decorView) }
+        val oldBehavior = controller?.systemBarsBehavior
+        val oldCutout = if (window != null && android.os.Build.VERSION.SDK_INT >= 28) window.attributes.layoutInDisplayCutoutMode else 0
+        if (window != null && controller != null) {
+            if (fullscreen) {
+                controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                if (android.os.Build.VERSION.SDK_INT >= 28) {
+                    val lp = window.attributes
+                    lp.layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                    window.attributes = lp
+                }
+                controller.hide(WindowInsetsCompat.Type.systemBars())
+            } else {
+                controller.show(WindowInsetsCompat.Type.systemBars())
+            }
         }
         onDispose {
-            if (fullscreen) {
-                activity?.window?.let { window ->
-                    WindowInsetsControllerCompat(window, window.decorView).show(WindowInsetsCompat.Type.systemBars())
+            if (fullscreen && window != null && controller != null) {
+                controller.show(WindowInsetsCompat.Type.systemBars())
+                if (oldBehavior != null) controller.systemBarsBehavior = oldBehavior
+                if (android.os.Build.VERSION.SDK_INT >= 28) {
+                    val lp = window.attributes
+                    lp.layoutInDisplayCutoutMode = oldCutout
+                    window.attributes = lp
                 }
+            }
+        }
+    }
+    // Некоторые оболочки (MIUI и др.) теряют hide(), вызванный посреди анимации поворота, — повторяем.
+    LaunchedEffect(fullscreen, screenOrientation, activity) {
+        if (fullscreen) {
+            val window = activity?.window ?: return@LaunchedEffect
+            val controller = WindowInsetsControllerCompat(window, window.decorView)
+            for (d in longArrayOf(120, 350, 800)) {
+                kotlinx.coroutines.delay(d)
+                controller.hide(WindowInsetsCompat.Type.systemBars())
             }
         }
     }
