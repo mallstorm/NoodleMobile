@@ -182,6 +182,8 @@ private fun NoodleApp(settingsVm: SettingsViewModel) {
     }
 
     Scaffold(
+        containerColor = if (playerFullscreen) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.background,
+        contentWindowInsets = if (playerFullscreen) androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0) else ScaffoldDefaults.contentWindowInsets,
         topBar = {
             if (!playerActive && section != Section.SEARCH) {
                 TopAppBar(

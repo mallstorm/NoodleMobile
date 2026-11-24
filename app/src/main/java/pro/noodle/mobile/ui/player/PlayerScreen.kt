@@ -258,6 +258,7 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
         val window = activity?.window
         val controller = window?.let { WindowInsetsControllerCompat(it, it.decorView) }
         val oldBehavior = controller?.systemBarsBehavior
+        val oldBackground = window?.decorView?.background?.constantState?.newDrawable()
         if (window != null && controller != null) {
             if (fullscreen) {
                 controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
@@ -266,6 +267,7 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
                     lp.layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
                     window.attributes = lp
                 }
+                window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.BLACK))
                 controller.hide(WindowInsetsCompat.Type.systemBars())
             } else {
                 controller.show(WindowInsetsCompat.Type.systemBars())
@@ -275,6 +277,7 @@ fun PlayerScreen(session: PlaybackSession, streamingClient: OkHttpClient, onBack
             if (fullscreen && window != null && controller != null) {
                 controller.show(WindowInsetsCompat.Type.systemBars())
                 if (oldBehavior != null) controller.systemBarsBehavior = oldBehavior
+                if (oldBackground != null) window.setBackgroundDrawable(oldBackground)
                 if (android.os.Build.VERSION.SDK_INT >= 28) {
                     val lp = window.attributes
                     lp.layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
