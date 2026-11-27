@@ -1,0 +1,458 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="pro.noodle.mobile.LiveStudioProbeTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-11-27T22:52:41.814Z" hostname="runnervm3lb7s" time="93.536">
+  <properties/>
+  <testcase name="liveProbe" classname="pro.noodle.mobile.LiveStudioProbeTest" time="93.53"/>
+  <system-out><![CDATA[=== BUNDLED SNP LIVE CHECK ===
+noodlemagazine.com [noodle_watch_playlist]
+   search 200 ok https://noodlemagazine.com/video/video -> https://hot.noodlemagazine.com/video/video cards=24
+   view 200 https://noodlemagazine.com/watch/-209098776_456240008 -> sources=7 http https://cdn.pvvstream.pro/videos/-209098776/456240008/vid_720p.mp4?rs=720000&rb=4194304&se
+   stream: full • mp4 21:32 99.9 МБ • ожидалось 21:32 (expected card duration=21:32)
+      FULL https://cdn2.pvvstream.pro/videos/-209098776/456240008/vid_360p.mp4?secure=1795819963-Ds0GKz4IX0mEIC — mp4 21:32 99.9 МБ
+      UNKNOWN https://cdn.pvvstream.pro/videos/-209098776/456240008/vid_720p.mp4?rs=720000&rb=4194304&secure=ul8FO — 
+      UNKNOWN https://cdn.pvvstream.pro/videos/-209098776/456240008/vid_480p.mp4?rs=480000&rb=2796202&secure=2c7hk — 
+      UNKNOWN https://cdn2.pvvstream.pro/videos/-209098776/456240008/vid_240p.mp4?secure=1795819963-uKLrhDnZOkqKpP — 
+      UNKNOWN https://hot.noodlemagazine.com/vtt/m/1/-209098776_456240008?m=64cbf530b97907d0f1bea4cd4fe26490 — 
+      UNKNOWN https://nmcorp.video/player/-209098776_456240008?m=64cbf530b97907d0f1bea4cd4fe26490 — 
+   view 200 https://noodlemagazine.com/watch/-179886022_456239023 -> sources=7 http https://cdn2.pvvstream.pro/videos/-179886022/456239023/vid_720p.mp4?secure=1795819965-WlbX
+   stream: full • mp4 49:05 701.3 МБ • ожидалось 49:05 (expected card duration=49:05)
+      FULL https://cdn2.pvvstream.pro/videos/-179886022/456239023/vid_720p.mp4?secure=1795819965-WlbXyRqr8uuB79 — mp4 49:05 701.3 МБ
+      UNKNOWN https://cdn.pvvstream.pro/videos/-179886022/456239023/vid_480p.mp4?rs=480000&rb=3728270&secure=MLLpt — 
+      UNKNOWN https://cdn2.pvvstream.pro/videos/-179886022/456239023/vid_360p.mp4?secure=1795819965-TV9LlqIBQBsR%2 — 
+      UNKNOWN https://cdn.pvvstream.pro/videos/-179886022/456239023/vid_240p.mp4?rs=240000&rb=1864135&secure=hxyGV — 
+      UNKNOWN https://hot.noodlemagazine.com/vtt/m/1/-179886022_456239023?m=fa44775fab01db31c23e9d70178da016 — 
+      UNKNOWN https://nmcorp.video/player/-179886022_456239023?m=fa44775fab01db31c23e9d70178da016 — 
+pornobomba.in [kvs_videos]
+   search 200 ok https://pornobomba.in/search/?q=video -> https://pornobomba.in/search/?q=video cards=4
+   view 200 https://pornobomba.in/videos/porno-aktrisa-tanya-iz-hachu-nevestu/ -> sources=7 http https://pornobomba.in/get_file/2/4226562559db165649dfe64a88e90d86/9000/9191/9191.mp4/
+   stream: full • mp4 30:09 124.9 МБ • ожидалось 30:09 (expected card duration=30:09)
+      FULL https://pornobomba.in/get_file/2/050aa9566c72b6801c830135788764a1/9000/9191/9191_m.mp4/?embed=true — mp4 30:09 124.9 МБ
+      UNKNOWN https://pornobomba.in/get_file/2/4226562559db165649dfe64a88e90d86/9000/9191/9191.mp4/ — 
+      UNKNOWN https://pornobomba.in/get_file/2/050aa9566c72b6801c830135788764a1/9000/9191/9191_m.mp4/ — 
+      UNKNOWN https://pornobomba.in/get_file/2/4226562559db165649dfe64a88e90d86/9000/9191/9191.mp4/?embed=true — 
+      UNKNOWN https://pbembed.me/get_file/2/050aa9566c72b6801c830135788764a1/9000/9191/9191_m.mp4/?embed=true — 
+      UNKNOWN https://pbembed.me/get_file/2/4226562559db165649dfe64a88e90d86/9000/9191/9191.mp4/?embed=true — 
+   view 200 https://pornobomba.in/videos/otebal-ukrainochku-v-posteli/ -> sources=7 http https://pornobomba.in/get_file/3/96f8ad6f3be5295e532dd715e804ab9d/9000/9579/9579.mp4/
+   stream: full • mp4 31:41 616.0 МБ • ожидалось 31:41 (expected card duration=31:41)
+      FULL https://pornobomba.in/get_file/3/96f8ad6f3be5295e532dd715e804ab9d/9000/9579/9579.mp4/ — mp4 31:41 616.0 МБ
+      UNKNOWN https://pornobomba.in/get_file/3/4bec05780be3a9494f4b620406ee2cd4/9000/9579/9579_m.mp4/ — 
+      UNKNOWN https://pornobomba.in/get_file/3/4bec05780be3a9494f4b620406ee2cd4/9000/9579/9579_m.mp4/?embed=true — 
+      UNKNOWN https://pornobomba.in/get_file/3/96f8ad6f3be5295e532dd715e804ab9d/9000/9579/9579.mp4/?embed=true — 
+      UNKNOWN https://pbembed.me/get_file/3/4bec05780be3a9494f4b620406ee2cd4/9000/9579/9579_m.mp4/?embed=true — 
+      UNKNOWN https://pbembed.me/get_file/3/96f8ad6f3be5295e532dd715e804ab9d/9000/9579/9579.mp4/?embed=true — 
+video-laba.click [novideo_embed]
+   search 0 URL_DNS_FAILED https://video-laba.click/mamki/ -> https://video-laba.click/mamki/
+
+=== SNP STUDIO AUTO-BUILD (query="aziatki") ===
+
+--- https://noodlemagazine.com ---
+SNP AUTO BUILDER REPORT
+success=false code=AUTO_NO_CARDS
+message=Страницы поиска открываются, но карточки видео не распознаны. Попробуйте другой запрос или включите режим браузера.
+site=Noodlemagazine base=https://main.noodlemagazine.com engine=
+search_template=
+page_template=
+link_pattern=
+search_url=
+samples=0 playback_ok=0/0 needs_js=false
+thumbnails_ok=0/0
+candidates:
+  - search_q score=-1000 http=404 items=0 rel=0 thumbs=0 dur=0 HTTP_404 https://main.noodlemagazine.com/search/?q=aziatki
+  - search_q_noslash score=-1000 http=404 items=0 rel=0 thumbs=0 dur=0 HTTP_404 https://main.noodlemagazine.com/search?q=aziatki
+  - search_path score=-1000 http=404 items=0 rel=0 thumbs=0 dur=0 HTTP_404 https://main.noodlemagazine.com/search/aziatki/
+  - search_path_noslash score=-1000 http=404 items=0 rel=0 thumbs=0 dur=0 HTTP_404 https://main.noodlemagazine.com/search/aziatki
+  - wp_s score=-1000 http=200 items=60 rel=0 thumbs=60 dur=0 SEARCH_HOME_FALLBACK https://main.noodlemagazine.com/v
+      groups: /v/*/# n=75 img=75 dur=0 s=565 e.g. https://main.noodlemagazine.com/v/video/27246366 | /v/*/* n=15 img=15 dur=0 s=115 e.g. https://main.noodlemagazine.com/v/category/animation | /v/* n=3 img=3 dur=0 s=19 e.g. https://main.noodlemagazine.com/v/privacy
+  - q_root score=-1000 http=200 items=60 rel=0 thumbs=60 dur=0 SEARCH_HOME_FALLBACK https://main.noodlemagazine.com/v
+      groups: /v/*/# n=75 img=75 dur=0 s=565 e.g. https://main.noodlemagazine.com/v/video/27246366 | /v/*/* n=15 img=15 dur=0 s=115 e.g. https://main.noodlemagazine.com/v/category/animation | /v/* n=3 img=3 dur=0 s=19 e.g. https://main.noodlemagazine.com/v/privacy
+  - k_root score=-1000 http=200 items=60 rel=0 thumbs=60 dur=0 SEARCH_HOME_FALLBACK https://main.noodlemagazine.com/v
+      groups: /v/*/# n=75 img=75 dur=0 s=565 e.g. https://main.noodlemagazine.com/v/video/27246366 | /v/*/* n=15 img=15 dur=0 s=115 e.g. https://main.noodlemagazine.com/v/category/animation | /v/* n=3 img=3 dur=0 s=19 e.g. https://main.noodlemagazine.com/v/privacy
+  - search_k score=-1000 http=404 items=0 rel=0 thumbs=0 dur=0 HTTP_404 https://main.noodlemagazine.com/search?k=aziatki
+  - search_search score=-1000 http=404 items=0 rel=0 thumbs=0 dur=0 HTTP_404 https://main.noodlemagazine.com/search?search=aziatki
+  - search_query score=-1000 http=404 items=0 rel=0 thumbs=0 dur=0 HTTP_404 https://main.noodlemagazine.com/search?search_query=aziatki
+log:
+  Открываю сайт…
+  Сайт: Noodlemagazine (main.noodlemagazine.com)
+  Проверяю 22 вариантов поиска по запросу «aziatki»…
+
+--- https://pornobomba.in ---
+SNP AUTO BUILDER REPORT
+success=true code=
+message=Адаптер готов: поиск и воспроизведение подтверждены.
+site=Pornobomba base=https://pornobomba.in engine=auto_catalog
+search_template=/search/?q={query}
+page_template=
+link_pattern=^/videos/[^/]+/?$
+search_url=https://pornobomba.in/search/?q=aziatki
+samples=40 playback_ok=3/3 needs_js=false
+thumbnails_ok=4/4
+STREAM LEARNING: confidence=100% download=mp4 ai=false
+summary=Настоящий поток найден на 5 из 5 видео; тип: прямой MP4 (скачивается файлом).
+hints: prefer='' reject='' min_seconds=0 extract=[]
+  video 1: https://pornobomba.in/videos/krasivye-telochki-vylizyvayut-kiski-i-tugie-analnye-dyrochki/ expected=53:35
+     ✔ REAL  [pipeline] https://pornobomba.in/get_file/2/5bfe15e0009cc1856b89f573cc5ca6dc/49000/49963/49963.mp4/ — mp4 53:34 559.8 МБ
+     ✔ REAL  [pipeline] https://pornobomba.in/get_file/2/2c77ab3f22bd2fc16a7157c23933fb08/49000/49963/49963_m.mp4/ — mp4 53:34 166.1 МБ
+       ?     [pipeline] https://pbembed.me/embed/49963/ — html FAIL HTTP 200 (не видео)
+     ✔ REAL  [pipeline] https://pornobomba.in/get_file/2/2c77ab3f22bd2fc16a7157c23933fb08/49000/49963/49963_m.mp4/?embed=true — mp4 53:34 166.1 МБ
+     ✔ REAL  [pipeline] https://pornobomba.in/get_file/2/5bfe15e0009cc1856b89f573cc5ca6dc/49000/49963/49963.mp4/?embed=true — mp4 53:34 559.8 МБ
+       ?     [pipeline] https://pbembed.me/get_file/2/2c77ab3f22bd2fc16a7157c23933fb08/49000/49963/49963_m.mp4/?embed=true — unknown FAIL HTTP 403
+     ✔ REAL  [mined] https://pornobomba.in/get_file/2/2c77ab3f22bd2fc16a7157c23933fb08/49000/49963/49963_m.mp4 — mp4 53:34 166.1 МБ
+     ✔ REAL  [mined] https://pornobomba.in/get_file/2/5bfe15e0009cc1856b89f573cc5ca6dc/49000/49963/49963.mp4 — mp4 53:34 559.8 МБ
+       ?     [mined] https://pbembed.me/get_file/2/2c77ab3f22bd2fc16a7157c23933fb08/49000/49963/49963_m.mp4 — unknown FAIL HTTP 403
+       ?     [mined] https://pbembed.me/get_file/2/5bfe15e0009cc1856b89f573cc5ca6dc/49000/49963/49963.mp4 — unknown FAIL HTTP 403
+       ?     [pipeline] https://pbembed.me/get_file/2/5bfe15e0009cc1856b89f573cc5ca6dc/49000/49963/49963.mp4/?embed=true — unknown FAIL HTTP 403
+  video 2: https://pornobomba.in/videos/brat-pomogaet-zastryavshey-sestrenke-i-zaodno-imeet-ee-v-kisku/ expected=12:16
+     ✔ REAL  [pipeline] https://pornobomba.in/get_file/2/080f576c20fbfeddbcb2ffe669158e51/55000/55298/55298.mp4/ — mp4 12:15 166.2 МБ
+     ✔ REAL  [pipeline] https://pornobomba.in/get_file/2/f7b72cd4560c3cc0cf8836f81050775d/55000/55298/55298_m.mp4/ — mp4 12:15 51.5 МБ
+       ?     [pipeline] https://pbembed.me/embed/55298/ — html FAIL HTTP 200 (не видео)
+     ✔ REAL  [pipeline] https://pornobomba.in/get_file/2/f7b72cd4560c3cc0cf8836f81050775d/55000/55298/55298_m.mp4/?embed=true — mp4 12:15 51.5 МБ
+     ✔ REAL  [pipeline] https://pornobomba.in/get_file/2/080f576c20fbfeddbcb2ffe669158e51/55000/55298/55298.mp4/?embed=true — mp4 12:15 166.2 МБ
+       ?     [pipeline] https://pbembed.me/get_file/2/f7b72cd4560c3cc0cf8836f81050775d/55000/55298/55298_m.mp4/?embed=true — unknown FAIL HTTP 403
+     ✔ REAL  [mined] https://pornobomba.in/get_file/2/f7b72cd4560c3cc0cf8836f81050775d/55000/55298/55298_m.mp4 — mp4 12:15 51.5 МБ
+     ✔ REAL  [mined] https://pornobomba.in/get_file/2/080f576c20fbfeddbcb2ffe669158e51/55000/55298/55298.mp4 — mp4 12:15 166.2 МБ
+       ?     [mined] https://pbembed.me/get_file/2/f7b72cd4560c3cc0cf8836f81050775d/55000/55298/55298_m.mp4 — unknown FAIL HTTP 403
+       ?     [mined] https://pbembed.me/get_file/2/080f576c20fbfeddbcb2ffe669158e51/55000/55298/55298.mp4 — unknown FAIL HTTP 403
+       ?     [pipeline] https://pbembed.me/get_file/2/080f576c20fbfeddbcb2ffe669158e51/55000/55298/55298.mp4/?embed=true — unknown FAIL HTTP 403
+  video 3: https://pornobomba.in/videos/analnyy-seks-s-hudenkoy-sestrichkoy-v-chernyh-chulkah/ expected=10:17
+     ✔ REAL  [pipeline] https://pornobomba.in/get_file/5/90e79051c02602c5bcbe34a58c439246/60000/60035/60035.mp4/ — mp4 10:17 130.5 МБ
+     ✔ REAL  [pipeline] https://pornobomba.in/get_file/5/06e6d1ba93b4d19f99df5cf5a6d7b7c6/60000/60035/60035_m.mp4/ — mp4 10:17 39.3 МБ
+       ?     [pipeline] https://pbembed.me/embed/60035/ — html FAIL HTTP 200 (не видео)
+     ✔ REAL  [pipeline] https://pornobomba.in/get_file/5/06e6d1ba93b4d19f99df5cf5a6d7b7c6/60000/60035/60035_m.mp4/?embed=true — mp4 10:17 39.3 МБ
+     ✔ REAL  [pipeline] https://pornobomba.in/get_file/5/90e79051c02602c5bcbe34a58c439246/60000/60035/60035.mp4/?embed=true — mp4 10:17 130.5 МБ
+       ?     [pipeline] https://pbembed.me/get_file/5/06e6d1ba93b4d19f99df5cf5a6d7b7c6/60000/60035/60035_m.mp4/?embed=true — unknown FAIL HTTP 403
+     ✔ REAL  [mined] https://pornobomba.in/get_file/5/06e6d1ba93b4d19f99df5cf5a6d7b7c6/60000/60035/60035_m.mp4 — mp4 10:17 39.3 МБ
+     ✔ REAL  [mined] https://pornobomba.in/get_file/5/90e79051c02602c5bcbe34a58c439246/60000/60035/60035.mp4 — mp4 10:17 130.5 МБ
+       ?     [mined] https://pbembed.me/get_file/5/06e6d1ba93b4d19f99df5cf5a6d7b7c6/60000/60035/60035_m.mp4 — unknown FAIL HTTP 403
+       ?     [mined] https://pbembed.me/get_file/5/90e79051c02602c5bcbe34a58c439246/60000/60035/60035.mp4 — unknown FAIL HTTP 403
+       ?     [pipeline] https://pbembed.me/get_file/5/90e79051c02602c5bcbe34a58c439246/60000/60035/60035.mp4/?embed=true — unknown FAIL HTTP 403
+  video 4: https://pornobomba.in/videos/sestrenka-zakatyvaet-glaza-ot-glubokogo-proniknoveniya-v-vaginu/ expected=12:31
+     ✔ REAL  [pipeline] https://pornobomba.in/get_file/2/d3feb885c6800acf6eba7e58c2600f1c/52000/52088/52088.mp4/ — mp4 12:31 144.3 МБ
+     ✔ REAL  [pipeline] https://pornobomba.in/get_file/2/4918781b1932aaf53a28a06d062b9437/52000/52088/52088_m.mp4/ — mp4 12:31 48.3 МБ
+       ?     [pipeline] https://pbembed.me/embed/52088/ — html FAIL HTTP 200 (не видео)
+     ✔ REAL  [pipeline] https://pornobomba.in/get_file/2/4918781b1932aaf53a28a06d062b9437/52000/52088/52088_m.mp4/?embed=true — mp4 12:31 48.3 МБ
+     ✔ REAL  [pipeline] https://pornobomba.in/get_file/2/d3feb885c6800acf6eba7e58c2600f1c/52000/52088/52088.mp4/?embed=true — mp4 12:31 144.3 МБ
+       ?     [pipeline] https://pbembed.me/get_file/2/4918781b1932aaf53a28a06d062b9437/52000/52088/52088_m.mp4/?embed=true — unknown FAIL HTTP 403
+     ✔ REAL  [mined] https://pornobomba.in/get_file/2/4918781b1932aaf53a28a06d062b9437/52000/52088/52088_m.mp4 — mp4 12:31 48.3 МБ
+     ✔ REAL  [mined] https://pornobomba.in/get_file/2/d3feb885c6800acf6eba7e58c2600f1c/52000/52088/52088.mp4 — mp4 12:31 144.3 МБ
+       ?     [mined] https://pbembed.me/get_file/2/4918781b1932aaf53a28a06d062b9437/52000/52088/52088_m.mp4 — unknown FAIL HTTP 403
+       ?     [mined] https://pbembed.me/get_file/2/d3feb885c6800acf6eba7e58c2600f1c/52000/52088/52088.mp4 — unknown FAIL HTTP 403
+       ?     [pipeline] https://pbembed.me/get_file/2/d3feb885c6800acf6eba7e58c2600f1c/52000/52088/52088.mp4/?embed=true — unknown FAIL HTTP 403
+  video 5: https://pornobomba.in/videos/nochnoy-perepihon-so-zreloy-sosedkoy-na-vysokih-kablukah/ expected=10:58
+     ✔ REAL  [pipeline] https://pornobomba.in/get_file/4/e90d6ee67a7aa645348170fbbfc59ba3/57000/57418/57418.mp4/ — mp4 10:57 154.8 МБ
+     ✔ REAL  [pipeline] https://pornobomba.in/get_file/4/42836076e88dc8dee69479a92c29ea72/57000/57418/57418_m.mp4/ — mp4 10:57 46.1 МБ
+       ?     [pipeline] https://pbembed.me/embed/57418/ — html FAIL HTTP 200 (не видео)
+     ✔ REAL  [pipeline] https://pornobomba.in/get_file/4/42836076e88dc8dee69479a92c29ea72/57000/57418/57418_m.mp4/?embed=true — mp4 10:57 46.1 МБ
+     ✔ REAL  [pipeline] https://pornobomba.in/get_file/4/e90d6ee67a7aa645348170fbbfc59ba3/57000/57418/57418.mp4/?embed=true — mp4 10:57 154.8 МБ
+       ?     [pipeline] https://pbembed.me/get_file/4/42836076e88dc8dee69479a92c29ea72/57000/57418/57418_m.mp4/?embed=true — unknown FAIL HTTP 403
+     ✔ REAL  [mined] https://pornobomba.in/get_file/4/42836076e88dc8dee69479a92c29ea72/57000/57418/57418_m.mp4 — mp4 10:57 46.1 МБ
+     ✔ REAL  [mined] https://pornobomba.in/get_file/4/e90d6ee67a7aa645348170fbbfc59ba3/57000/57418/57418.mp4 — mp4 10:57 154.8 МБ
+       ?     [mined] https://pbembed.me/get_file/4/42836076e88dc8dee69479a92c29ea72/57000/57418/57418_m.mp4 — unknown FAIL HTTP 403
+       ?     [mined] https://pbembed.me/get_file/4/e90d6ee67a7aa645348170fbbfc59ba3/57000/57418/57418.mp4 — unknown FAIL HTTP 403
+       ?     [pipeline] https://pbembed.me/get_file/4/e90d6ee67a7aa645348170fbbfc59ba3/57000/57418/57418.mp4/?embed=true — unknown FAIL HTTP 403
+  · Правила по замерам: уверенность 100%
+  • Красивые телочки вылизывают киски и тугие анальные дырочки | https://pornobomba.in/videos/krasivye-telochki-vylizyvayut-kiski-i-tugie-analnye-dyrochki/ | thumb=true | 53:35
+  • Пацан дерет жопастую подругу в позе раком | https://pornobomba.in/videos/pacan-deret-jopastuyu-podrugu-v-poze-rakom/ | thumb=true | 19:09
+  • Групповуха с толпой молодых телочек | https://pornobomba.in/videos/gruppovuha-s-tolpoy-molodyh-telochek/ | thumb=true | 36:08
+  • Групповое порно русских девушек и негров | https://pornobomba.in/videos/gruppovoe-porno-russkih-devushek-i-negrov/ | thumb=true | 40:38
+  • Полицейский трахает задержанную красотку в анал | https://pornobomba.in/videos/policeyskiy-trahaet-zaderjannuyu-krasotku-v-anal/ | thumb=true | 30:52
+  ▶ OK https://pornobomba.in/videos/krasivye-telochki-vylizyvayut-kiski-i-tugie-analnye-dyrochki/ — http HQ
+  ▶ OK https://pornobomba.in/videos/analnyy-seks-s-hudenkoy-sestrichkoy-v-chernyh-chulkah/ — http HQ
+  ▶ OK https://pornobomba.in/videos/nochnoy-perepihon-so-zreloy-sosedkoy-na-vysokih-kablukah/ — http HQ
+candidates:
+  - form:q score=412 http=200 items=51 rel=0 thumbs=51 dur=49  https://pornobomba.in/search/?q=aziatki
+      groups: /videos/*/ n=51 img=51 dur=49 s=747 e.g. https://pornobomba.in/videos/krasivye-telochki-vylizyvayut-kiski-i-tugie-analnye-dyrochki/
+  - search_q_noslash score=400 http=200 items=51 rel=0 thumbs=51 dur=49  https://pornobomba.in/search/?q=aziatki
+      groups: /videos/*/ n=51 img=51 dur=49 s=747 e.g. https://pornobomba.in/videos/krasivye-telochki-vylizyvayut-kiski-i-tugie-analnye-dyrochki/
+  - category_direct score=302 http=200 items=36 rel=0 thumbs=36 dur=36  https://pornobomba.in/aziatki/
+      groups: /videos/*/ n=36 img=36 dur=36 s=549 e.g. https://pornobomba.in/videos/vina-moon-v-kojanoy-yubke-pritashchila-parnya-s-vecherinki-k-sebe-v-spalnyu/
+  - category_latest score=302 http=200 items=36 rel=0 thumbs=36 dur=36  https://pornobomba.in/aziatki/
+      groups: /videos/*/ n=36 img=36 dur=36 s=549 e.g. https://pornobomba.in/videos/vina-moon-v-kojanoy-yubke-pritashchila-parnya-s-vecherinki-k-sebe-v-spalnyu/
+  - wp_s score=165 http=200 items=42 rel=1 thumbs=42 dur=41  https://pornobomba.in/?s=aziatki
+      groups: /videos/*/ n=42 img=42 dur=41 s=629 e.g. https://pornobomba.in/videos/telari-love-s-tatu-osminoga-na-zadnice-daet-trahat-kisku-cherez-dyrku-v-djinsah/
+  - q_root score=165 http=200 items=42 rel=1 thumbs=42 dur=41  https://pornobomba.in/?q=aziatki
+      groups: /videos/*/ n=42 img=42 dur=41 s=629 e.g. https://pornobomba.in/videos/jestkiy-analnyy-seks-s-hudenkoy-i-chernyavoy-aziatkoy/
+  - k_root score=165 http=200 items=42 rel=1 thumbs=42 dur=41  https://pornobomba.in/?k=aziatki
+      groups: /videos/*/ n=42 img=42 dur=41 s=629 e.g. https://pornobomba.in/videos/telari-love-s-tatu-osminoga-na-zadnice-daet-trahat-kisku-cherez-dyrku-v-djinsah/
+  - dle score=165 http=200 items=42 rel=1 thumbs=42 dur=41  https://pornobomba.in/index.php?do=search&subaction=search&story=aziatki
+      groups: /videos/*/ n=42 img=42 dur=41 s=629 e.g. https://pornobomba.in/videos/telari-love-s-tatu-osminoga-na-zadnice-daet-trahat-kisku-cherez-dyrku-v-djinsah/
+  - search_path score=-1000 http=404 items=0 rel=0 thumbs=0 dur=0 HTTP_404 https://pornobomba.in/search/aziatki/
+  - search_path_noslash score=-1000 http=404 items=0 rel=0 thumbs=0 dur=0 HTTP_404 https://pornobomba.in/search/aziatki
+log:
+  Открываю сайт…
+  Сайт: Pornobomba (pornobomba.in)
+  Сайт сам объявил поиск: form:q
+  Проверяю 22 вариантов поиска по запросу «aziatki»…
+  Поиск найден: /search/?q={query} • карточек 40
+  Проверяю воспроизведение на карточках…
+  Видео: открыто 3 из 3
+  Ищу постраничную навигацию…
+  Пагинация не подтверждена — будет только первая страница
+  Обложки: загружено 4 из 4
+  Изучаю настоящие потоки на 5 видео сайта…
+  Настоящий поток найден на 5 из 5 видео; тип: прямой MP4 (скачивается файлом).
+
+--- https://video-laba.click ---
+SNP AUTO BUILDER REPORT
+success=false code=AUTO_SITE_UNREACHABLE
+message=Сайт не открылся: URL_DNS_FAILED Не удалось безопасно разрешить DNS.
+site= base= engine=
+search_template=
+page_template=
+link_pattern=
+search_url=
+samples=0 playback_ok=0/0 needs_js=false
+thumbnails_ok=0/0
+candidates:
+log:
+  Открываю сайт…
+
+--- rusvideos.net ---
+SNP AUTO BUILDER REPORT
+success=true code=
+message=Адаптер готов: поиск и воспроизведение подтверждены.
+site=rusvideos.net base=https://rusvideos.net engine=auto_catalog
+search_template=/poisk?q={query}
+page_template=/poisk/{query}/{page}
+link_pattern=^/rolik/[^/]+\.html/?$
+search_url=https://rusvideos.net/poisk/anal
+samples=40 playback_ok=3/3 needs_js=false
+thumbnails_ok=4/4
+STREAM LEARNING: confidence=100% download=mp4 ai=false
+summary=Настоящий поток найден на 5 из 5 видео; тип: прямой MP4 (скачивается файлом).
+hints: prefer='/\Qvideorolik\E(?:[/?#]|$)' reject='/\Qporno-kartinki\E(?:[/?#]|$)' min_seconds=10 extract=[]
+  video 1: https://rusvideos.net/rolik/bol-vo-vremya-analnogo-traxa-zastavlyaet-ryzhuyu-davalku-orat-eshhe-gromche-obychnogo.html expected=24:42
+     ✘ PREVIEW [pipeline] https://static.rusvideos.info/porno-kartinki/roliki/big-chuvak-nu-ty-popal-ya-prishla-na-kasting-i-trebuyu-anal.mp4 — mp4 0:05 529 КБ
+     ✘ PREVIEW [pipeline] https://contents.rusvideos.org/porno-kartinki/roliki/big-chem-gromche-ty-budesh-orat-tem-zhyostche-v-ochko-budu-drat.mp4 — mp4 0:05 582 КБ
+     ✘ PREVIEW [pipeline] https://media.rusvideos.art/porno-kartinki/roliki/big-glubokiy-anal-s-ryzhey-sosedkoy-sweetie-fox.mp4 — mp4 0:05 739 КБ
+     ✘ PREVIEW [pipeline] https://s.rusvideos.love/porno-kartinki/roliki/big-razve-segodnya-den-analnogo-seksa.mp4 — mp4 0:05 692 КБ
+     ✘ PREVIEW [pipeline] https://cdn.rusvideos.me/porno-kartinki/roliki/big-privel-devku-v-sad-i-vydolbil-v-zad.mp4 — mp4 0:05 885 КБ
+     ✘ PREVIEW [pipeline] https://super.rusvideos.co/porno-kartinki/roliki/big-sestryonka-derzhi-zaryad-spermy-v-popku.mp4 — mp4 0:05 542 КБ
+     ✔ REAL  [mined] https://rusvideos.net/videorolik/WyJwb3JuaHViIiwicGg1OWM0N2VlM2QyNzAwIiwxXQ%3D%3D?exp=1795863227&sig=ZcVilbdwrj64UPEsdQjvLg — mp4 24:42 136.2 МБ
+     ✘ PREVIEW [pipeline] https://media.rusvideos.art/porno-kartinki/roliki/big-ya-kuplyu-etu-villu-esli-dash-vyebat-ochko.mp4 — mp4 0:05 656 КБ
+     ✘ PREVIEW [pipeline] https://st2.rusvideos.cc/porno-kartinki/roliki/big-pacan-razrabotal-sims-5.mp4 — mp4 0:05 704 КБ
+     ✘ PREVIEW [pipeline] https://st2.rusvideos.cc/porno-kartinki/roliki/big-molli-red-vulf-predstavlyaet-luchshuyu-kollekciyu-traxa-pilotki-v-raznyx-obrazax.mp4 — mp4 0:05 583 КБ
+     ✘ PREVIEW [pipeline] https://media.rusvideos.art/porno-kartinki/roliki/big-traxnul-v-zhopu-razvratnuyu-vedmu-i-konchil-vo-vnutr.mp4 — mp4 0:05 634 КБ
+     ✘ PREVIEW [pipeline] https://s.rusvideos.love/porno-kartinki/roliki/big-chuvak-ottraxal-ryzhuyu-devchonku-v-sochnuyu-popku-i-spustil-spermu-na-lobok.mp4 — mp4 0:05 724 КБ
+  video 2: https://rusvideos.net/rolik/dala-v-zhopu-po-prikolu-teper-ne-doprosishsya-klassiki.html expected=17:01
+     ✘ PREVIEW [pipeline] https://cdn.rusvideos.me/porno-kartinki/roliki/big-kogda-na-konu-analnyy-trax-dazhe-dvoechnik-prevratitsya-v-geniya-matematiki.mp4 — mp4 0:05 609 КБ
+     ✘ PREVIEW [pipeline] https://static.rusvideos.info/porno-kartinki/roliki/big-ubedil-devushku-brata-chto-analnyy-seks-eto-ne-izmena.mp4 — mp4 0:05 655 КБ
+     ✘ PREVIEW [pipeline] https://super.rusvideos.co/porno-kartinki/roliki/big-vyebal-machexu-v-anal-ved-ona-etogo-silno-xotela.mp4 — mp4 0:05 506 КБ
+     ✘ PREVIEW [pipeline] https://cdn.rusvideos.me/porno-kartinki/roliki/big-oktokuro-vpervye-raspechatala-upruguyu-zhopu-dlya-neveroyatnogo-traxa.mp4 — mp4 0:05 514 КБ
+     ✘ PREVIEW [pipeline] https://st2.rusvideos.cc/porno-kartinki/roliki/big-nezhnaya-tinka-milana-milka-poprosila-smazku-pered-boleznennym-analom.mp4 — mp4 0:05 446 КБ
+     ✘ PREVIEW [pipeline] https://contents.rusvideos.org/porno-kartinki/roliki/big-krasivaya-tinka-v-pervyj-raz-traxaetsya-v-zadnicu-i-prinimaet-spermu-na-lico.mp4 — mp4 0:05 661 КБ
+     ✔ REAL  [mined] https://rusvideos.net/videorolik/WyJwb3JuaHViIiwiNjhjZTU2MTc2MWU1YyIsMF0%3D?exp=1795863230&sig=dN2o2TeIthUc4UIl_jYTOw — mp4 17:04 260.3 МБ
+     ✘ PREVIEW [pipeline] https://static.rusvideos.info/porno-kartinki/roliki/big-aleksa-mills-menyaet-ochko-na-ayfon.mp4 — mp4 0:05 731 КБ
+     ✘ PREVIEW [pipeline] https://s.rusvideos.love/porno-kartinki/roliki/big-chyo-nosom-v-xuy-tycheshsya-ili-dazhe-v-ochkax-ne-vidish.mp4 — mp4 0:05 522 КБ
+     ✘ PREVIEW [pipeline] https://static.rusvideos.info/porno-kartinki/roliki/big-paren-so-strastyu-traxaet-zhopu-telki-v-kotoroj-byl-chupa-chups.mp4 — mp4 0:05 444 КБ
+     ✘ PREVIEW [pipeline] https://contents.rusvideos.org/porno-kartinki/roliki/big-xorosho-ochko-podbrila-chtob-tebe-priyatney-bylo.mp4 — mp4 0:05 500 КБ
+     ✘ PREVIEW [pipeline] https://cdn.rusvideos.me/porno-kartinki/roliki/big-valleri-rej-uspela-zanyatsya-s-bratom-analnym-seksom-poka-rodichej-ne-bylo-doma.mp4 — mp4 0:05 622 КБ
+  video 3: https://rusvideos.net/rolik/indigo-sin-traxnulas-s-drugom-syna-zastukav-ego-za-podglyadyvaniem.html expected=39:30
+     ✘ PREVIEW [pipeline] https://st2.rusvideos.cc/porno-kartinki/roliki/big-tolstushka-indigo-sin-govorit-s-muzhem-po-telefonu-poka-syn-deret-ee-v-pizdu.mp4 — mp4 0:05 638 КБ
+     ✘ PREVIEW [pipeline] https://st2.rusvideos.cc/porno-kartinki/roliki/big-tolstaya-indigo-sin-ustroila-dlya-pasynka-seksualnoe-prosveshchenie.mp4 — mp4 0:05 540 КБ
+     ✘ PREVIEW [pipeline] https://s.rusvideos.love/porno-kartinki/roliki/big-molodaya-nyanya-otdala-pizdu-na-rasterzanie-zreloy-supruzheskoy-pare.mp4 — mp4 0:05 632 КБ
+     ✘ PREVIEW [pipeline] https://st2.rusvideos.cc/porno-kartinki/roliki/big-indigo-sin-zaselilas-v-odin-nomer-s-pasynkom-i-ustroila-goryachuyu-eblyu.mp4 — mp4 0:05 581 КБ
+     ✘ PREVIEW [pipeline] https://contents.rusvideos.org/porno-kartinki/roliki/big-indigo-sin-delit-krovat-s-pasynkom-i-traxaetsya-v-pizdu.mp4 — mp4 0:05 509 КБ
+     ✘ PREVIEW [pipeline] https://s.rusvideos.love/porno-kartinki/roliki/big-perevozbuzhdennyy-pacan-ne-smog-usnut-i-vyebal-machexu-indigo-sin-v-vaginu.mp4 — mp4 0:05 588 КБ
+     ✔ REAL  [mined] https://rusvideos.net/videorolik/WyJwb3JuaHViIiwiNjcwMjIwYjhiNDA4NiIsMF0%3D?exp=1795863227&sig=iN0mWMU59t65fqB2hsYdLA — mp4 39:30 653.2 МБ
+     ✘ PREVIEW [pipeline] https://cdn.rusvideos.me/porno-kartinki/roliki/big-pyshnaya-kobylica-indigo-sin-ustlala-ot-nevernogo-muzha-i-dayot-v-sraku-tolko-synu.mp4 — mp4 0:05 520 КБ
+     ✘ PREVIEW [pipeline] https://st2.rusvideos.cc/porno-kartinki/roliki/big-opytnaya-milfa-indigo-sin-chudesnym-obrazom-prevratila-fotosessiyu-v-analnyy-trax.mp4 — mp4 0:05 522 КБ
+     ✘ PREVIEW [pipeline] https://cdn.rusvideos.me/porno-kartinki/roliki/big-dryablaya-maman-indigo-sin-uvyazalas-s-synkom-v-otpusk-radi-bodroy-ebli-po-otelyam.mp4 — mp4 0:05 581 КБ
+     ✘ PREVIEW [pipeline] https://cdn.rusvideos.me/porno-kartinki/roliki/big-indigo-sin-potraxalas-s-muzhem-pered-poezdkoy-v-komandirovku.mp4 — mp4 0:05 558 КБ
+     ✘ PREVIEW [pipeline] https://s.rusvideos.love/porno-kartinki/roliki/big-pizdu-raskryla-u-lica-ploxogo-svodnogo-otca.mp4 — mp4 0:05 572 КБ
+  video 4: https://rusvideos.net/rolik/v-poiskax-fizicheskogo-istoshheniya-russkaya-bryunetka-dolbitsya-v-shirokij-anal.html expected=7:28
+     ✘ PREVIEW [pipeline] https://media.rusvideos.art/porno-kartinki/roliki/big-sestra-s-trudom-perezhila-analnoe-napadenie-na-svoyu-zadnicu.mp4 — mp4 0:05 474 КБ
+     ✘ PREVIEW [pipeline] https://static.rusvideos.info/porno-kartinki/roliki/big-milaya-machexa-neuzheli-ty-analnaya-shlyuxa.mp4 — mp4 0:05 505 КБ
+     ✘ PREVIEW [pipeline] https://static.rusvideos.info/porno-kartinki/roliki/big-kosplejshhicy-ustroili-orgiyu-posle-kotoroj-sglotnuli-spermu-parenka.mp4 — mp4 0:05 705 КБ
+     ✘ PREVIEW [pipeline] https://static.rusvideos.info/porno-kartinki/roliki/big-bryunetke-prishlos-perezhit-analnuyu-ataku-na-tuguyu-zadnicu.mp4 — mp4 0:05 450 КБ
+     ✘ PREVIEW [pipeline] https://st2.rusvideos.cc/porno-kartinki/roliki/big-suchka-prosit-v-zhopu-u-druga-i-razminaet-anus-palcami.mp4 — mp4 0:05 446 КБ
+     ✘ PREVIEW [pipeline] https://media.rusvideos.art/porno-kartinki/roliki/big-lita-phoenix-drochit-popku-pered-analnym-proniknoveniem.mp4 — mp4 0:05 470 КБ
+     ✔ REAL  [mined] https://rusvideos.net/videorolik/WyJwb3JuaHViIiwicGg1OWQ1ZmM3ZmQ0ZjAwIiwwXQ%3D%3D?exp=1795863227&sig=L6MEDVAflu1dahOiJLcY_A — mp4 7:28 53.4 МБ
+     ✘ PREVIEW [pipeline] https://st2.rusvideos.cc/porno-kartinki/roliki/big-pered-tem-kak-vstavit-xuj-paren-razminaet-ochko-krasotki-analnym-vibratorom.mp4 — mp4 0:05 571 КБ
+     ✘ PREVIEW [pipeline] https://cdn.rusvideos.me/porno-kartinki/roliki/big-malyshka-razrabatyvaet-ochko-igrushkoj-i-stoyachim-chlenom-sidya-na-stule.mp4 — mp4 0:05 403 КБ
+     ✘ PREVIEW [pipeline] https://static.rusvideos.info/porno-kartinki/roliki/big-molodoj-chelovek-zharko-traxaet-krasivuyu-blondinku-v-uzkuyu-popku.mp4 — mp4 0:05 382 КБ
+     ✘ PREVIEW [pipeline] https://st2.rusvideos.cc/porno-kartinki/roliki/big-carol-miller-vidit-vo-sne-bezumnyj-trojnichok.mp4 — mp4 0:05 471 КБ
+     ✘ PREVIEW [pipeline] https://st2.rusvideos.cc/porno-kartinki/roliki/big-inostranec-uchit-russkuyu-telku-glubokomu-analu-i-zhestkoj-eble-vo-vse-dyrki.mp4 — mp4 0:05 402 КБ
+  video 5: https://rusvideos.net/rolik/18-letnyaya-blondinka-razvela-dotera-na-analnyj-perepixon-s-okonchaniem-vo-vnutr.html expected=8:25
+     ✘ PREVIEW [pipeline] https://media.rusvideos.art/porno-kartinki/roliki/big-rasputnaya-blonda-naslazhdaetsya-moshhnym-chlenom-v-uprugoj-popke.mp4 — mp4 0:05 395 КБ
+     ✘ PREVIEW [pipeline] https://cdn.rusvideos.me/porno-kartinki/roliki/big-telka-ne-smogla-otkazat-lyubimomu-v-analnom-traxe.mp4 — mp4 0:05 569 КБ
+     ✘ PREVIEW [pipeline] https://cdn.rusvideos.me/porno-kartinki/roliki/big-freya-shtejn-otsosala-bratu-i-otdalas-v-ochko-v-kupalnike.mp4 — mp4 0:05 559 КБ
+     ✘ PREVIEW [pipeline] https://media.rusvideos.art/porno-kartinki/roliki/big-smazlivuyu-tinku-zhestko-natyanul-na-chlen-drug-brata.mp4 — mp4 0:05 643 КБ
+     ✘ PREVIEW [pipeline] https://static.rusvideos.info/porno-kartinki/roliki/big-ubedil-devushku-brata-chto-analnyy-seks-eto-ne-izmena.mp4 — mp4 0:05 655 КБ
+     ✘ PREVIEW [pipeline] https://s.rusvideos.love/porno-kartinki/roliki/big-blondinka-s-nakachennymi-gubami-gluboko-soset-chlen-i-glotaet-spermu.mp4 — mp4 0:05 565 КБ
+     ✔ REAL  [mined] https://rusvideos.net/videorolik/WyJwb3JuaHViIiwicGg1ZDhlNmY2ZGFmZmYyIiwwXQ%3D%3D?exp=1795863230&sig=E8DbsmF1Vb5uem-ijH9IDw — mp4 8:25 122.1 МБ
+     ✘ PREVIEW [pipeline] https://s.rusvideos.love/porno-kartinki/roliki/big-freya-shtejn-delaet-idealnyj-minet-parnyu-na-beregu-ozera.mp4 — mp4 0:05 943 КБ
+     ✘ PREVIEW [pipeline] https://cdn.rusvideos.me/porno-kartinki/roliki/big-yunaya-devka-soset-parnyu-xuj-v-primerochnoj-radi-adrenalina.mp4 — mp4 0:05 576 КБ
+     ✘ PREVIEW [pipeline] https://cdn.rusvideos.me/porno-kartinki/roliki/big-kachestvennaya-podborka-analnogo-seksa-s-burnym-zaversheniem.mp4 — mp4 0:05 603 КБ
+     ✘ PREVIEW [pipeline] https://static.rusvideos.info/porno-kartinki/roliki/big-paren-so-strastyu-traxaet-zhopu-telki-v-kotoroj-byl-chupa-chups.mp4 — mp4 0:05 444 КБ
+     ✘ PREVIEW [pipeline] https://static.rusvideos.info/porno-kartinki/roliki/big-chuvak-uvlazhnil-lico-kukolki-spermoj.mp4 — mp4 0:05 604 КБ
+  · Отличие настоящего от превью: prefer='/\Qvideorolik\E(?:[/?#]|$)' reject='/\Qporno-kartinki\E(?:[/?#]|$)'
+  · Правила по замерам: уверенность 100%
+  • Боль во время анального траха заставляет рыжую давалку орать еще громч | https://rusvideos.net/rolik/bol-vo-vremya-analnogo-traxa-zastavlyaet-ryzhuyu-davalku-orat-eshhe-gromche-obychnogo.html | thumb=true | 
+  • Загнал в жопу Делюкс Бич член вместо анальной пробки | https://rusvideos.net/rolik/zagnal-v-zhopu-delyuks-bich-chlen-vmesto-analnoy-probki.html | thumb=true | 
+  • Милашка проснулась утром и развела отчима на анальный трах | https://rusvideos.net/rolik/milashka-prosnulas-utrom-i-razvela-otchima-na-analnyj-trax.html | thumb=true | 
+  • Телка ощутила горячий хуй парня в жопе и трахалась до спермы внутри | https://rusvideos.net/rolik/telka-oshhutila-goryachij-xuj-parnya-v-zhope-i-traxalas-do-spermy-vnutri.html | thumb=true | 
+  • Тёлочка в чулках получает анальный оргазм от ебли членом в презерватив | https://rusvideos.net/rolik/tyolochka-v-chulkax-poluchaet-analnyj-orgazm-ot-ebli-chlenom-v-prezervative.html | thumb=true | 
+  ▶ OK https://rusvideos.net/rolik/bol-vo-vremya-analnogo-traxa-zastavlyaet-ryzhuyu-davalku-orat-eshhe-gromche-obychnogo.html — http video/mp4
+  ▶ OK https://rusvideos.net/rolik/indigo-sin-traxnulas-s-drugom-syna-zastukav-ego-za-podglyadyvaniem.html — http video/mp4
+  ▶ OK https://rusvideos.net/rolik/18-letnyaya-blondinka-razvela-dotera-na-analnyj-perepixon-s-okonchaniem-vo-vnutr.html — http video/mp4
+candidates:
+  - form:q score=250 http=200 items=42 rel=23 thumbs=42 dur=0  https://rusvideos.net/poisk/anal
+      groups: /rolik/*.html n=42 img=42 dur=0 s=337 e.g. https://rusvideos.net/rolik/bol-vo-vremya-analnogo-traxa-zastavlyaet-ryzhuyu-davalku-orat-eshhe-gromche-obychnogo.html | /aktrisa/* n=23 img=23 dur=0 s=139 e.g. https://rusvideos.net/aktrisa/nicole-murkovski | /poisk/*/# n=9 img=9 dur=0 s=60 e.g. https://rusvideos.net/poisk/anal/2
+  - search_q score=238 http=200 items=42 rel=23 thumbs=42 dur=0  https://rusvideos.net/poisk/anal
+      groups: /rolik/*.html n=42 img=42 dur=0 s=337 e.g. https://rusvideos.net/rolik/bol-vo-vremya-analnogo-traxa-zastavlyaet-ryzhuyu-davalku-orat-eshhe-gromche-obychnogo.html | /aktrisa/* n=23 img=23 dur=0 s=139 e.g. https://rusvideos.net/aktrisa/nicole-murkovski | /poisk/*/# n=9 img=9 dur=0 s=60 e.g. https://rusvideos.net/poisk/anal/2
+  - search_q_noslash score=238 http=200 items=42 rel=23 thumbs=42 dur=0  https://rusvideos.net/poisk/anal
+      groups: /rolik/*.html n=42 img=42 dur=0 s=337 e.g. https://rusvideos.net/rolik/bol-vo-vremya-analnogo-traxa-zastavlyaet-ryzhuyu-davalku-orat-eshhe-gromche-obychnogo.html | /aktrisa/* n=23 img=23 dur=0 s=139 e.g. https://rusvideos.net/aktrisa/nicole-murkovski | /poisk/*/# n=9 img=9 dur=0 s=60 e.g. https://rusvideos.net/poisk/anal/2
+  - search_path score=238 http=200 items=42 rel=23 thumbs=42 dur=0  https://rusvideos.net/search/anal/
+      groups: /rolik/*.html n=42 img=42 dur=0 s=337 e.g. https://rusvideos.net/rolik/bol-vo-vremya-analnogo-traxa-zastavlyaet-ryzhuyu-davalku-orat-eshhe-gromche-obychnogo.html | /aktrisa/* n=23 img=23 dur=0 s=139 e.g. https://rusvideos.net/aktrisa/nicole-murkovski | /poisk/*/# n=9 img=9 dur=0 s=60 e.g. https://rusvideos.net/poisk/anal/2
+  - search_path_noslash score=238 http=200 items=42 rel=23 thumbs=42 dur=0  https://rusvideos.net/search/anal
+      groups: /rolik/*.html n=42 img=42 dur=0 s=337 e.g. https://rusvideos.net/rolik/bol-vo-vremya-analnogo-traxa-zastavlyaet-ryzhuyu-davalku-orat-eshhe-gromche-obychnogo.html | /aktrisa/* n=23 img=23 dur=0 s=139 e.g. https://rusvideos.net/aktrisa/nicole-murkovski | /poisk/*/# n=9 img=9 dur=0 s=60 e.g. https://rusvideos.net/poisk/anal/2
+  - plus_search score=238 http=200 items=42 rel=23 thumbs=42 dur=0  https://rusvideos.net/search/anal/
+      groups: /rolik/*.html n=42 img=42 dur=0 s=337 e.g. https://rusvideos.net/rolik/bol-vo-vremya-analnogo-traxa-zastavlyaet-ryzhuyu-davalku-orat-eshhe-gromche-obychnogo.html | /aktrisa/* n=23 img=23 dur=0 s=139 e.g. https://rusvideos.net/aktrisa/nicole-murkovski | /poisk/*/# n=9 img=9 dur=0 s=60 e.g. https://rusvideos.net/poisk/anal/2
+  - category_direct score=206 http=200 items=42 rel=16 thumbs=42 dur=0  https://rusvideos.net/anal/
+      groups: /rolik/*.html n=42 img=42 dur=0 s=323 e.g. https://rusvideos.net/rolik/do-parney-ne-srazu-doshlo-chto-v-orgii-uchastvuet-trans.html | /aktrisa/* n=18 img=18 dur=0 s=99 e.g. https://rusvideos.net/aktrisa/nicole-murkovski | /anal/# n=9 img=9 dur=0 s=60 e.g. https://rusvideos.net/anal/2
+  - category_latest score=206 http=200 items=42 rel=16 thumbs=42 dur=0  https://rusvideos.net/anal/latest/
+      groups: /rolik/*.html n=42 img=42 dur=0 s=323 e.g. https://rusvideos.net/rolik/do-parney-ne-srazu-doshlo-chto-v-orgii-uchastvuet-trans.html | /aktrisa/* n=18 img=18 dur=0 s=99 e.g. https://rusvideos.net/aktrisa/nicole-murkovski | /anal/# n=9 img=9 dur=0 s=60 e.g. https://rusvideos.net/anal/2
+  - search_videos score=152 http=200 items=42 rel=4 thumbs=42 dur=0  https://rusvideos.net/search/videos/anal/
+      groups: /rolik/*.html n=42 img=42 dur=0 s=299 e.g. https://rusvideos.net/rolik/nataliya-starr-sluchajno-spotknulas-i-prizemlilas-pizdoj-na-zdorovennyj-chlen.html | /aktrisa/* n=23 img=23 dur=0 s=139 e.g. https://rusvideos.net/aktrisa/nicole-murkovski
+  - wp_s score=-1000 http=200 items=45 rel=0 thumbs=45 dur=0 SEARCH_HOME_FALLBACK https://rusvideos.net/?s=anal
+      groups: /rolik/*.html n=45 img=45 dur=0 s=315 e.g. https://rusvideos.net/rolik/do-parney-ne-srazu-doshlo-chto-v-orgii-uchastvuet-trans.html | /aktrisa/* n=25 img=25 dur=0 s=155 e.g. https://rusvideos.net/aktrisa/nicole-murkovski
+log:
+  Открываю сайт…
+  Сайт: rusvideos.net (rusvideos.net)
+  Сайт сам объявил поиск: form:q
+  Проверяю 23 вариантов поиска по запросу «anal»…
+  Поиск найден: /poisk?q={query} • карточек 40
+  Проверяю воспроизведение на карточках…
+  Видео: открыто 3 из 3
+  Ищу постраничную навигацию…
+  Страницы: /poisk/{query}/{page}
+  Обложки: загружено 4 из 4
+  Изучаю настоящие потоки на 5 видео сайта…
+  Настоящий поток найден на 5 из 5 видео; тип: прямой MP4 (скачивается файлом). Правила сохранены в адаптер.
+
+--- rusvideos.pro ---
+SNP AUTO BUILDER REPORT
+success=true code=
+message=Адаптер готов: поиск и воспроизведение подтверждены.
+site=rusvideos.net base=https://rusvideos.pro engine=auto_catalog
+search_template=/tag/{query}/
+page_template=/tag/{query}/{page}
+link_pattern=^/rolik/[^/]+\.html/?$
+search_url=https://rusvideos.pro/tag/milf/
+samples=40 playback_ok=3/3 needs_js=false
+thumbnails_ok=4/4
+STREAM LEARNING: confidence=100% download=mp4 ai=false
+summary=Настоящий поток найден на 5 из 5 видео; тип: прямой MP4 (скачивается файлом).
+hints: prefer='/\Qvideorolik\E(?:[/?#]|$)' reject='/\Qporno-kartinki\E(?:[/?#]|$)' min_seconds=10 extract=[]
+  video 1: https://rusvideos.pro/rolik/annet-milf-poexala-s-pasynkom-na-ozero-i-poebalas-v-vysokoy-trave.html expected=13:47
+     ✘ PREVIEW [pipeline] https://super.rusvideos.co/porno-kartinki/roliki/big-annet-milf-sluchayno-vozbudila-pasynka-i-poebalas-v-pizdu.mp4 — mp4 0:05 514 КБ
+     ✘ PREVIEW [pipeline] https://contents.rusvideos.org/porno-kartinki/roliki/big-annet-milf-potrusila-siskami-na-kameru-i-popalas-pod-krepkiy-kachan-pasynka.mp4 — mp4 0:05 572 КБ
+     ✘ PREVIEW [pipeline] https://cdn.rusvideos.me/porno-kartinki/roliki/big-annet-milf-omolodilas-posle-ebli-s-pasynkom.mp4 — mp4 0:05 540 КБ
+     ✘ PREVIEW [pipeline] https://static.rusvideos.info/porno-kartinki/roliki/big-vozbudilsya-na-nyudsy-sisyastoy-machexi-i-mechtayu-ee-vyebat.mp4 — mp4 0:05 473 КБ
+     ✘ PREVIEW [pipeline] https://contents.rusvideos.org/porno-kartinki/roliki/big-rozhdestvenskoe-chudo-nepristupnaya-machexa-prosit-eyo-vyebat-pod-yolkoy.mp4 — mp4 0:05 606 КБ
+     ✘ PREVIEW [pipeline] https://s.rusvideos.love/porno-kartinki/roliki/big-pasynok-razbudil-grudastuyu-machexu-i-razvel-ee-na-utrennij-seks.mp4 — mp4 0:05 528 КБ
+     ✔ REAL  [mined] https://rusvideos.pro/videorolik/WyJwb3JuaHViIiwiNjY5NzcwY2M3ZjA0NiIsMF0%3D?exp=1795863244&sig=mPE-bDXuIzjbwBFjPbrcGA — mp4 13:48 340.2 МБ
+     ✘ PREVIEW [pipeline] https://media.rusvideos.art/porno-kartinki/roliki/big-andrej-i-annet-proveli-vecher-ne-za-vkusnym-uzhinom-a-za-burnoj-eblej.mp4 — mp4 0:05 709 КБ
+     ✘ PREVIEW [pipeline] https://cdn.rusvideos.me/porno-kartinki/roliki/big-kostik-rastraxal-pilotku-machexi-na-ozere.mp4 — mp4 0:05 736 КБ
+     ✘ PREVIEW [pipeline] https://cdn.rusvideos.me/porno-kartinki/roliki/big-machexa-snyala-xalatik-i-sklonila-chuvaka-k-traxu-v-obe-dyrochki.mp4 — mp4 0:05 649 КБ
+     ✘ PREVIEW [pipeline] https://super.rusvideos.co/porno-kartinki/roliki/big-igrivoe-nastroenie-machexi-vylilos-v-analnyj-seks-s-pasynkom.mp4 — mp4 0:05 587 КБ
+     ✘ PREVIEW [pipeline] https://static.rusvideos.info/porno-kartinki/roliki/big-zrelaya-zhenshhina-nadela-bodi-i-podstavila-ochko-pasynku-dlya-ebli.mp4 — mp4 0:05 701 КБ
+  video 2: https://rusvideos.pro/rolik/annet-milf-polzuetsya-xuem-remontnika-noutbukov-poka-tot-sobiraetsya-s-myslyami.html expected=22:57
+     ✘ PREVIEW [pipeline] https://s.rusvideos.love/porno-kartinki/roliki/big-goryachaya-mamochka-s-tugoj-zhopoj-udovletvoryaet-lyubimogo-synochka-analnoj-eblej.mp4 — mp4 0:05 753 КБ
+     ✘ PREVIEW [pipeline] https://super.rusvideos.co/porno-kartinki/roliki/big-igrivoe-nastroenie-machexi-vylilos-v-analnyj-seks-s-pasynkom.mp4 — mp4 0:05 587 КБ
+     ✘ PREVIEW [pipeline] https://static.rusvideos.info/porno-kartinki/roliki/big-zrelaya-zhenshhina-nadela-bodi-i-podstavila-ochko-pasynku-dlya-ebli.mp4 — mp4 0:05 701 КБ
+     ✘ PREVIEW [pipeline] https://media.rusvideos.art/porno-kartinki/roliki/big-grudastuyu-mamashu-izdevatelski-traxayut-v-rastyanutoe-ochko.mp4 — mp4 0:05 605 КБ
+     ✘ PREVIEW [pipeline] https://cdn.rusvideos.me/porno-kartinki/roliki/big-zrelaya-krasotka-zhestko-dolbitsya-v-appetitnuyu-popku-do-klassnogo-orgazma.mp4 — mp4 0:05 666 КБ
+     ✘ PREVIEW [pipeline] https://contents.rusvideos.org/porno-kartinki/roliki/big-parnishka-zabral-pyanuyu-mamku-devushki-i-prozharil-eyo-dyrki-v-mashine.mp4 — mp4 0:05 435 КБ
+     ✔ REAL  [mined] https://rusvideos.pro/videorolik/WyJwb3JuaHViIiwiNjY3MGJmMDEwZWRlYiIsMF0%3D?exp=1795863244&sig=vHfqZvwCXJWV4Dsgihzyeg — mp4 22:57 358.3 МБ
+     ✘ PREVIEW [pipeline] https://static.rusvideos.info/porno-kartinki/roliki/big-pacan-zashel-v-gosti-k-podruge-materi-i-ta-razvela-ego-na-eblyu.mp4 — mp4 0:05 538 КБ
+     ✘ PREVIEW [pipeline] https://cdn.rusvideos.me/porno-kartinki/roliki/big-machexa-snyala-xalatik-i-sklonila-chuvaka-k-traxu-v-obe-dyrochki.mp4 — mp4 0:05 649 КБ
+     ✘ PREVIEW [pipeline] https://contents.rusvideos.org/porno-kartinki/roliki/big-annet-milf-potrusila-siskami-na-kameru-i-popalas-pod-krepkiy-kachan-pasynka.mp4 — mp4 0:05 572 КБ
+     ✘ PREVIEW [pipeline] https://s.rusvideos.love/porno-kartinki/roliki/big-zrelaya-babenka-prinimaet-chlen-v-anal-i-naprashivaetsya-na-kamshot.mp4 — mp4 0:05 687 КБ
+     ✘ PREVIEW [pipeline] https://contents.rusvideos.org/porno-kartinki/roliki/big-andrej-i-annet-snyali-domashnee-porno-v-kotorom-ustroili-goryachij-trax.mp4 — mp4 0:05 768 КБ
+  video 3: https://rusvideos.pro/rolik/molodaya-mamka-nashla-sposob-rasslabitsya-na-prirode-vo-vremya-drochki-v-kabriolete.html expected=8:28
+     ✘ PREVIEW [pipeline] https://super.rusvideos.co/porno-kartinki/roliki/big-telke-ne-vazhno-gde-ustraivat-solo-i-ona-beret-s-soboj-na-piknik-igrushku.mp4 — mp4 0:05 748 КБ
+     ✘ PREVIEW [pipeline] https://s.rusvideos.love/porno-kartinki/roliki/big-nensi-ej-sxodit-s-uma-ot-odinochestva-i-masturbiruet-pilotku-na-stole.mp4 — mp4 0:05 474 КБ
+     ✘ PREVIEW [pipeline] https://s.rusvideos.love/porno-kartinki/roliki/big-molodaya-18-ti-letnyaya-kroshka-davno-nauchilas-darit-sebe-udovolstvie-drochkoj.mp4 — mp4 0:05 306 КБ
+     ✘ PREVIEW [pipeline] https://contents.rusvideos.org/porno-kartinki/roliki/big-molodoj-devushke-ne-strashny-nevzgody-kogda-ona-masturbiruet-kisku-doma.mp4 — mp4 0:05 286 КБ
+     ✘ PREVIEW [pipeline] https://media.rusvideos.art/porno-kartinki/roliki/big-molodaya-zvezda-soxranyaet-celku-i-masturbiruet-kisku-dlya-podnyatiya-nastroeniya.mp4 — mp4 0:05 377 КБ
+     ✘ PREVIEW [pipeline] https://super.rusvideos.co/porno-kartinki/roliki/big-sia-siberiya-otkazalas-ot-muzhskogo-vnimaniya-i-reshila-zanyatsya-solnoj-drochkoj.mp4 — mp4 0:05 365 КБ
+     ✔ REAL  [mined] https://rusvideos.pro/videorolik/WyJwb3JuaHViIiwicGg1ZDE5MTU3ZWE1MDAyIiwwXQ%3D%3D?exp=1795863244&sig=vvYS4Y2bWguZ8nd4Ul4LwA — mp4 8:28 84.4 МБ
+     ✘ PREVIEW [pipeline] https://st2.rusvideos.cc/porno-kartinki/roliki/big-molodaya-devushka-pryachetsya-ot-roditelej-kolxoznikov-i-drochit-na-kukuruznom-pole.mp4 — mp4 0:05 820 КБ
+     ✘ PREVIEW [pipeline] https://static.rusvideos.info/porno-kartinki/roliki/big-krasavica-traxnula-sebya-palchikami-i-nauchilas-doma-konchat.mp4 — mp4 0:05 235 КБ
+     ✘ PREVIEW [pipeline] https://super.rusvideos.co/porno-kartinki/roliki/big-kazhdoe-utro-mamochka-uxodit-na-rabotu-poka-molodaya-dochka-v-posteli-drochit.mp4 — mp4 0:05 389 КБ
+     ✘ PREVIEW [pipeline] https://st2.rusvideos.cc/porno-kartinki/roliki/big-devushka-nashla-sebe-romanticheskoe-zanyatie-s-drochkoj-piski-na-polu.mp4 — mp4 0:05 240 КБ
+     ✘ PREVIEW [pipeline] https://cdn.rusvideos.me/porno-kartinki/roliki/big-molodaya-devushka-vstavila-v-kisku-krasnyj-dildo-i-legko-dovela-sebya-do-orgazma.mp4 — mp4 0:05 403 КБ
+  video 4: https://rusvideos.pro/rolik/seks-igry-s-zhenoy-vyshli-na-novyy-uroven.html expected=15:52
+     ✘ PREVIEW [pipeline] https://media.rusvideos.art/porno-kartinki/roliki/big-podrabatyvaet-ne-tolko-gornichnoy-no-i-shlyuxoy.mp4 — mp4 0:05 578 КБ
+     ✘ PREVIEW [pipeline] https://static.rusvideos.info/porno-kartinki/roliki/big-luna-rulet-uchilas-igrat-na-gitare-i-zaodno-traxnula-uchitelya-muzyki.mp4 — mp4 0:05 391 КБ
+     ✘ PREVIEW [pipeline] https://cdn.rusvideos.me/porno-kartinki/roliki/big-luna-rulet-ne-nashla-deneg-i-rasplatilas-s-kurerom-ebley.mp4 — mp4 0:05 401 КБ
+     ✘ PREVIEW [pipeline] https://media.rusvideos.art/porno-kartinki/roliki/big-v-dzhakuzi-s-shikarnym-vidom-i-ebatsya-priyatnee.mp4 — mp4 0:05 661 КБ
+     ✘ PREVIEW [pipeline] https://cdn.rusvideos.me/porno-kartinki/roliki/big-razve-chtenie-luchshe-goryachego-poreva.mp4 — mp4 0:05 415 КБ
+     ✘ PREVIEW [pipeline] https://s.rusvideos.love/porno-kartinki/roliki/big-missis-klaus-klyunula-na-chlen-parnya-iz-chernogo-spiska.mp4 — mp4 0:05 674 КБ
+     ✔ REAL  [mined] https://rusvideos.pro/videorolik/WyJwb3JuaHViIiwiNjk0OTMwYjlkZDUwMiIsMF0%3D?exp=1795863246&sig=_oJknrX6PsRPFBFQuW2MLQ — mp4 15:55 210.4 МБ
+     ✘ PREVIEW [pipeline] https://static.rusvideos.info/porno-kartinki/roliki/big-seksi-gornichnaya-vzyala-oplatu-zdorovennym-chlenom.mp4 — mp4 0:05 639 КБ
+     ✘ PREVIEW [pipeline] https://cdn.rusvideos.me/porno-kartinki/roliki/big-sidit-ryadom-i-ne-zamechaet-chto-zhena-s-drugom-uzhe-konchaet.mp4 — mp4 0:05 609 КБ
+     ✘ PREVIEW [pipeline] https://super.rusvideos.co/porno-kartinki/roliki/big-seks-vtroem-baletu-ne-pomexa.mp4 — mp4 0:05 565 КБ
+     ✘ PREVIEW [pipeline] https://media.rusvideos.art/porno-kartinki/roliki/big-slila-konkurentku-i-natraxala-sebe-besplatnoe-zhile.mp4 — mp4 0:05 475 КБ
+     ✘ PREVIEW [pipeline] https://cdn.rusvideos.me/porno-kartinki/roliki/big-posudu-vymoesh-popozzhe-poka-chto-chlen-moy-obsluzhi.mp4 — mp4 0:05 724 КБ
+  video 5: https://rusvideos.pro/rolik/odinokaya-zhenshhina-vyzvala-muzha-na-chas-i-zaodno-reshila-potraxatsya.html expected=21:48
+     ✘ PREVIEW [pipeline] https://contents.rusvideos.org/porno-kartinki/roliki/big-andrej-i-annet-zanyalis-strastnym-seksom-i-snyali-domashnee-video.mp4 — mp4 0:05 654 КБ
+     ✘ PREVIEW [pipeline] https://cdn.rusvideos.me/porno-kartinki/roliki/big-annet-milf-omolodilas-posle-ebli-s-pasynkom.mp4 — mp4 0:05 540 КБ
+     ✘ PREVIEW [pipeline] https://static.rusvideos.info/porno-kartinki/roliki/big-pacan-zashel-v-gosti-k-podruge-materi-i-ta-razvela-ego-na-eblyu.mp4 — mp4 0:05 538 КБ
+     ✘ PREVIEW [pipeline] https://static.rusvideos.info/porno-kartinki/roliki/big-zrelaya-zhenshhina-nadela-bodi-i-podstavila-ochko-pasynku-dlya-ebli.mp4 — mp4 0:05 701 КБ
+     ✘ PREVIEW [pipeline] https://st2.rusvideos.cc/porno-kartinki/roliki/big-pacan-drochil-na-trusiki-machexi-a-ona-spalila-i-predlozhila-pizdu.mp4 — mp4 0:05 465 КБ
+     ✘ PREVIEW [pipeline] https://s.rusvideos.love/porno-kartinki/roliki/big-andrej-i-annet-ustroili-goryachij-trax-na-krovati-s-okonchaniem-v-pizdu.mp4 — mp4 0:05 675 КБ
+     ✔ REAL  [mined] https://rusvideos.pro/videorolik/WyJwb3JuaHViIiwiNjU5ZGEwMTc3OGE4NSIsMF0%3D?exp=1795863247&sig=CPdhquADGprpFX4P0YbrsQ — mp4 21:48 340.7 МБ
+     ✘ PREVIEW [pipeline] https://media.rusvideos.art/porno-kartinki/roliki/big-russkaya-milfa-otdalas-taksistu-sredi-nochi-bez-ugovorov.mp4 — mp4 0:05 419 КБ
+     ✘ PREVIEW [pipeline] https://media.rusvideos.art/porno-kartinki/roliki/big-andrej-i-annet-proveli-vecher-ne-za-vkusnym-uzhinom-a-za-burnoj-eblej.mp4 — mp4 0:05 709 КБ
+     ✘ PREVIEW [pipeline] https://static.rusvideos.info/porno-kartinki/roliki/big-ty-xochesh-pochuvstvovat-zapax-zhenshchiny.mp4 — mp4 0:05 591 КБ
+     ✘ PREVIEW [pipeline] https://s.rusvideos.love/porno-kartinki/roliki/big-goryachaya-mamochka-s-tugoj-zhopoj-udovletvoryaet-lyubimogo-synochka-analnoj-eblej.mp4 — mp4 0:05 753 КБ
+     ✘ PREVIEW [pipeline] https://super.rusvideos.co/porno-kartinki/roliki/big-igrivoe-nastroenie-machexi-vylilos-v-analnyj-seks-s-pasynkom.mp4 — mp4 0:05 587 КБ
+  · Отличие настоящего от превью: prefer='/\Qvideorolik\E(?:[/?#]|$)' reject='/\Qporno-kartinki\E(?:[/?#]|$)'
+  · Правила по замерам: уверенность 100%
+  • Аннет МИЛФ поехала с пасынком на озеро и поебалась в высокой траве | https://rusvideos.pro/rolik/annet-milf-poexala-s-pasynkom-na-ozero-i-poebalas-v-vysokoy-trave.html | thumb=true | 
+  • Аннет МИЛФ случайно возбудила пасынка и поебалась в пизду | https://rusvideos.pro/rolik/annet-milf-sluchayno-vozbudila-pasynka-i-poebalas-v-pizdu.html | thumb=true | 
+  • Аннет МИЛФ напоролась на случайный трах застав незнакомца за дрочкой в | https://rusvideos.pro/rolik/annet-milf-naporolas-na-sluchaynyy-trax-zastav-neznakomca-za-drochkoy-v-pole.html | thumb=true | 
+  • Аннет МИЛФ омолодилась после ебли с пасынком | https://rusvideos.pro/rolik/annet-milf-omolodilas-posle-ebli-s-pasynkom.html | thumb=true | 
+  • Пышная подруга мамки массажиста Аннет МИЛФ легла на кушетку для захват | https://rusvideos.pro/rolik/pyshnaya-podruga-mamki-massazhista-annet-milf-legla-na-kushetku-dlya-zaxvata-chlena.html | thumb=true | 
+  ▶ OK https://rusvideos.pro/rolik/annet-milf-poexala-s-pasynkom-na-ozero-i-poebalas-v-vysokoy-trave.html — http video/mp4
+  ▶ OK https://rusvideos.pro/rolik/molodaya-mamka-nashla-sposob-rasslabitsya-na-prirode-vo-vremya-drochki-v-kabriolete.html — http video/mp4
+  ▶ OK https://rusvideos.pro/rolik/odinokaya-zhenshhina-vyzvala-muzha-na-chas-i-zaodno-reshila-potraxatsya.html — http video/mp4
+candidates:
+  - tag_path score=215 http=200 items=42 rel=18 thumbs=42 dur=0  https://rusvideos.pro/tag/milf/
+      groups: /rolik/*.html n=42 img=42 dur=0 s=327 e.g. https://rusvideos.pro/rolik/annet-milf-poexala-s-pasynkom-na-ozero-i-poebalas-v-vysokoy-trave.html | /aktrisa/* n=22 img=22 dur=0 s=131 e.g. https://rusvideos.pro/aktrisa/nicole-murkovski
+  - form:q score=209 http=200 items=42 rel=14 thumbs=42 dur=0  https://rusvideos.pro/poisk/milf
+      groups: /rolik/*.html n=42 img=42 dur=0 s=319 e.g. https://rusvideos.pro/rolik/iscelil-zashhemlenie-poyasnicy-annette-milf-s-pomoshhyu-texniki-analnogo-vozdejstviya.html | /aktrisa/* n=17 img=17 dur=0 s=91 e.g. https://rusvideos.pro/aktrisa/nicole-murkovski | /poisk/*/# n=9 img=9 dur=0 s=60 e.g. https://rusvideos.pro/poisk/milf/2
+  - search_q score=197 http=200 items=42 rel=14 thumbs=42 dur=0  https://rusvideos.pro/poisk/milf
+      groups: /rolik/*.html n=42 img=42 dur=0 s=319 e.g. https://rusvideos.pro/rolik/iscelil-zashhemlenie-poyasnicy-annette-milf-s-pomoshhyu-texniki-analnogo-vozdejstviya.html | /aktrisa/* n=17 img=17 dur=0 s=91 e.g. https://rusvideos.pro/aktrisa/nicole-murkovski | /poisk/*/# n=9 img=9 dur=0 s=60 e.g. https://rusvideos.pro/poisk/milf/2
+  - search_q_noslash score=197 http=200 items=42 rel=14 thumbs=42 dur=0  https://rusvideos.pro/poisk/milf
+      groups: /rolik/*.html n=42 img=42 dur=0 s=319 e.g. https://rusvideos.pro/rolik/iscelil-zashhemlenie-poyasnicy-annette-milf-s-pomoshhyu-texniki-analnogo-vozdejstviya.html | /aktrisa/* n=17 img=17 dur=0 s=91 e.g. https://rusvideos.pro/aktrisa/nicole-murkovski | /poisk/*/# n=9 img=9 dur=0 s=60 e.g. https://rusvideos.pro/poisk/milf/2
+  - search_path score=197 http=200 items=42 rel=14 thumbs=42 dur=0  https://rusvideos.pro/search/milf/
+      groups: /rolik/*.html n=42 img=42 dur=0 s=319 e.g. https://rusvideos.pro/rolik/iscelil-zashhemlenie-poyasnicy-annette-milf-s-pomoshhyu-texniki-analnogo-vozdejstviya.html | /aktrisa/* n=17 img=17 dur=0 s=91 e.g. https://rusvideos.pro/aktrisa/nicole-murkovski | /poisk/*/# n=9 img=9 dur=0 s=60 e.g. https://rusvideos.pro/poisk/milf/2
+  - search_path_noslash score=197 http=200 items=42 rel=14 thumbs=42 dur=0  https://rusvideos.pro/search/milf
+      groups: /rolik/*.html n=42 img=42 dur=0 s=319 e.g. https://rusvideos.pro/rolik/iscelil-zashhemlenie-poyasnicy-annette-milf-s-pomoshhyu-texniki-analnogo-vozdejstviya.html | /aktrisa/* n=17 img=17 dur=0 s=91 e.g. https://rusvideos.pro/aktrisa/nicole-murkovski | /poisk/*/# n=9 img=9 dur=0 s=60 e.g. https://rusvideos.pro/poisk/milf/2
+  - plus_search score=197 http=200 items=42 rel=14 thumbs=42 dur=0  https://rusvideos.pro/search/milf/
+      groups: /rolik/*.html n=42 img=42 dur=0 s=319 e.g. https://rusvideos.pro/rolik/iscelil-zashhemlenie-poyasnicy-annette-milf-s-pomoshhyu-texniki-analnogo-vozdejstviya.html | /aktrisa/* n=17 img=17 dur=0 s=91 e.g. https://rusvideos.pro/aktrisa/nicole-murkovski | /poisk/*/# n=9 img=9 dur=0 s=60 e.g. https://rusvideos.pro/poisk/milf/2
+  - search_videos score=119 http=200 items=42 rel=0 thumbs=42 dur=0  https://rusvideos.pro/search/videos/milf/
+      groups: /rolik/*.html n=42 img=42 dur=0 s=291 e.g. https://rusvideos.pro/rolik/nataliya-starr-sluchajno-spotknulas-i-prizemlilas-pizdoj-na-zdorovennyj-chlen.html | /aktrisa/* n=23 img=23 dur=0 s=139 e.g. https://rusvideos.pro/aktrisa/nicole-murkovski
+  - wp_s score=-1000 http=200 items=45 rel=0 thumbs=45 dur=0 SEARCH_HOME_FALLBACK https://rusvideos.pro/?s=milf
+      groups: /rolik/*.html n=45 img=45 dur=0 s=315 e.g. https://rusvideos.pro/rolik/do-parney-ne-srazu-doshlo-chto-v-orgii-uchastvuet-trans.html | /aktrisa/* n=25 img=25 dur=0 s=155 e.g. https://rusvideos.pro/aktrisa/nicole-murkovski
+  - q_root score=-1000 http=200 items=45 rel=0 thumbs=45 dur=0 SEARCH_HOME_FALLBACK https://rusvideos.pro/?q=milf
+      groups: /rolik/*.html n=45 img=45 dur=0 s=315 e.g. https://rusvideos.pro/rolik/do-parney-ne-srazu-doshlo-chto-v-orgii-uchastvuet-trans.html | /aktrisa/* n=25 img=25 dur=0 s=155 e.g. https://rusvideos.pro/aktrisa/nicole-murkovski
+log:
+  Открываю сайт…
+  Сайт: rusvideos.net (rusvideos.pro)
+  Сайт сам объявил поиск: form:q
+  Проверяю 23 вариантов поиска по запросу «milf»…
+  Поиск найден: /tag/{query}/ • карточек 40
+  Проверяю воспроизведение на карточках…
+  Видео: открыто 3 из 3
+  Ищу постраничную навигацию…
+  Страницы: /tag/{query}/{page}
+  Обложки: загружено 4 из 4
+  Изучаю настоящие потоки на 5 видео сайта…
+  Настоящий поток найден на 5 из 5 видео; тип: прямой MP4 (скачивается файлом). Правила сохранены в адаптер.
+
+]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

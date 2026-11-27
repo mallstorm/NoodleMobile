@@ -1,0 +1,83 @@
+{
+  "version": 3,
+  "id": "rusvideos.net",
+  "name": "rusvideos.net",
+  "adapter_version": "1.0.0",
+  "publisher": "SNP Studio Auto",
+  "homepage": "https://rusvideos.net",
+  "min_app_version": "1.9.0",
+  "base_url": "https://rusvideos.net",
+  "engine": "auto_catalog",
+  "engine_dependencies": [
+    "jwplayer_config",
+    "videojs_config",
+    "generic_player_config",
+    "generic_html5",
+    "oembed_provider",
+    "iframe_chain",
+    "hls_manifest",
+    "dash_manifest"
+  ],
+  "enabled": false,
+  "capabilities": {
+    "search": true,
+    "pagination": true,
+    "direct_url": true,
+    "embedded_playback": true
+  },
+  "permissions": {
+    "allowed_hosts": [
+      "rusvideos.net",
+      "*.rusvideos.net",
+      "media.rusvideos.art",
+      "cdn.rusvideos.me",
+      "static.rusvideos.info",
+      "s.rusvideos.love",
+      "contents.rusvideos.org",
+      "super.rusvideos.co",
+      "st2.rusvideos.cc",
+      "rvcdn.net"
+    ],
+    "allow_javascript": false,
+    "allow_cookies": true
+  },
+  "search": {
+    "url_template": "/poisk?q={query}",
+    "link_pattern": "^/rolik/[^/]+\\.html/?$",
+    "page_template": "/poisk/{query}/{page}"
+  },
+  "view": {
+    "strategies": [
+      "primary",
+      "jwplayer",
+      "videojs",
+      "player_config",
+      "generic_html5",
+      "oembed",
+      "iframe",
+      "hls",
+      "dash"
+    ],
+    "stream": {
+      "prefer": "/\\Qvideorolik\\E(?:[/?#]|$)",
+      "reject": "/\\Qporno-kartinki\\E(?:[/?#]|$)",
+      "min_seconds": 10
+    }
+  },
+  "health": {
+    "query": "anal",
+    "min_results": 1,
+    "require_playback": true,
+    "auto_repair": false
+  },
+  "repair": {
+    "enabled": false,
+    "mode": "conservative",
+    "failure_threshold": 3,
+    "cooldown_minutes": 60,
+    "auto_quarantine": false,
+    "strategies": [
+      "resolver_refresh"
+    ]
+  }
+}

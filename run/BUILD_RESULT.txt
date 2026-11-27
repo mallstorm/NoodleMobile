@@ -1,0 +1,2 @@
+FIRST_TEST_APK=app/build/outputs/apk/debug/app-debug.apk
+ANDROID_TEST_APK=app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
