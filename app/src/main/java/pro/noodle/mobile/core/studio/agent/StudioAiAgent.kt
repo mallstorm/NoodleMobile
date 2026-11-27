@@ -70,6 +70,7 @@ class StudioAiAgent(context: Context) {
         var toolCalls = 0
         var finishes = 0
         var testsRun = 0
+        var sniffs = 0
         var bestJson = currentJson
         var bestStatus = ""
         var bestDetails = report
@@ -114,7 +115,9 @@ class StudioAiAgent(context: Context) {
 
             val observation: String = when (tool) {
                 "give_up" -> {
-                    if (testsRun == 0 && finishes == 0 && toolCalls < 20) {
+                    if (sniffs == 0 && finishes == 0 && toolCalls < 24) {
+                        "GIVE_UP REJECTED: you have not yet called sniff_page. When the report says the player is recognised but no MP4/HLS/DASH URL is found (PLAYER_CONFIG_MEDIA_NOT_FOUND), or the player is a JS widget (data-publisher-id, playbackSources, Vibix/Kodik/Alloha-like), the hidden browser is the universal fallback: call sniff_page on ONE real watch page (a card URL from list_cards, e.g. /movie/<slug>), and on the iframe/embed URL if it shows one. Then build the adapter with allow_javascript:true and allow_cookies:true and run run_adapter_test. Only after that may you give up."
+                    } else if (testsRun == 0 && finishes == 0 && toolCalls < 20) {
                         "GIVE_UP REJECTED: you have not yet run run_adapter_test on a complete candidate adapter (with allow_cookies:true and, if needed, allow_javascript:true). Do that first; the app solves simple JS cookie challenges by itself."
                     } else {
                     val reason = args.optString("reason", "причина не указана")
@@ -156,6 +159,7 @@ class StudioAiAgent(context: Context) {
                     dupStreak = 0
                     onStep(stepTitle(tool, args))
                     if (tool == "run_adapter_test") testsRun++
+                    if (tool == "sniff_page") sniffs++
                     val out = runCatching { runTool(tool, args, targetUrl, query) { json, status, text -> bestJson = json; bestStatus = status; bestDetails = text } }
                         .getOrElse { "TOOL ERROR: ${it.javaClass.simpleName}: ${it.message}" }
                     log.appendLine("    ← ${out.take(1500)}")

@@ -153,3 +153,19 @@ Ask yourself: (1) do search results have real titles/covers/durations? (2) does 
 - Some sites build the search URL in JS (`GoSearch`: lowercase, spaces → `-`, special characters removed, then `/search/<slug>/`) and answer 403/404 for a plain URL-encoded query. Use the template placeholder `{query_slug}` (lowercase, spaces → `-`, `& / \ # , + ( ) $ ~ % . ' " : * ! ^ ? < > { }` removed, rest URL-encoded): `"url_template": "{base_url}/search/{query_slug}/"`. Other placeholders: `{query}` (%20), `{query_plus}` (+). `page_template` may use any of them.
 - `<base href="https://site/">` is honoured by `list_cards`, card parsing and the player resolver: `./film/x.html` is resolved against the base, not against the page URL. Write `link_pattern` against the RESOLVED path (`^/film/…`).
 - PlayerJS embeds keep the playlist in an inline `var file = "[{...}]"` (JSON string with `title`, `file`, sometimes `trailer`). Read it with `fetch_page` using `grep: "var file"` and a LARGE `context` (2500+), not a narrow grep — the first 450 chars cut it off. Items flagged `trailer` are previews; if only trailer items exist and the page mentions PRO/premium/login, the full video is behind an access wall for guests: say so honestly, do not publish a trailer-only adapter.
+
+## 15. Next.js / React sites and JS-widget players (Vibix-style)
+* Symptoms: `ENGINE FINGERPRINT: unknown`, `_next/static` scripts, no IFRAMES in static HTML, PLAYER HITS like `"playbackSources":[{"provider":"vibix","embed":{"kind":"widget","attributes":{"data-id":"…","data-type":"movie","data-publisher-id":"…"}}}]`. The player is created by JavaScript after the page loads, so static `find_streams` finds nothing and the report says `PLAYER_CONFIG_MEDIA_NOT_FOUND`. This is NOT a reason to give up: the adapter needs `permissions.allow_javascript:true` and `allow_cookies:true`, and the app then runs the same hidden browser at playback.
+* Do this: (1) `sniff_page` on one card URL (`/movie/<slug>`). (2) If it lists media requests or an iframe/embed host, add those hosts (`host` and `*.host`) to `permissions.allowed_hosts` and use `view.stream.prefer` for the manifest. (3) `run_adapter_test` with JS enabled.
+* Search on such sites is usually `/search?q={query}`; the titles are Russian, so a Latin query returns loosely related results — test with a Russian query from the report if the site has Russian titles.
+* Card titles may start with a prefix (`IMDb : …`) or be just `Смотреть`; that is fine, do not treat it as a failure.
+* Minimal VALID adapter skeleton (all of these fields are required, otherwise `invalid_adapter`: ADAPTER_BASE_URL_MISSING / ADAPTER_VERSION_INVALID / ADAPTER_VIEW_ENGINE_UNDECLARED). Every name used in `view.strategies` MUST also be listed in `engine_dependencies`:
+```
+{"version":3,"id":"<host>","name":"<Name>","adapter_version":"1.0.0","publisher":"user","homepage":"https://<host>","min_app_version":"1.9.0","base_url":"https://<host>","engine":"auto_catalog","enabled":true,
+ "capabilities":{"search":true,"pagination":false,"direct_url":true,"embedded_playback":true},
+ "permissions":{"allowed_hosts":["<host>","*.<host>"],"allow_javascript":true,"allow_cookies":true},
+ "search":{"url_template":"{base_url}/search?q={query}","link_pattern":"^/movie/[^/]+/?$"},
+ "view":{"strategies":["generic_html5","iframe_chain","hls_manifest","dash_manifest","playlist_json","open_graph"]},
+ "engine_dependencies":["generic_html5","iframe_chain","hls_manifest","dash_manifest"],
+ "health":{"query":"<query>","min_results":1,"require_playback":true,"auto_repair":false}}
+```
