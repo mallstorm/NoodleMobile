@@ -349,8 +349,8 @@ class StudioAiAgent(context: Context) {
             id = "sniff", name = "sniff", baseUrl = url, engine = "generic_html5",
             allowedHosts = emptyList(), allowJavaScript = true, allowCookies = true,
         )
-        val res = withTimeoutOrNull(50_000) { pro.noodle.mobile.core.web.SandboxedWebExtractor(app).extract(url, def, timeoutMs = 16_000, browserProbe = true) }
-            ?: return "ERROR: browser timeout 50s"
+        val res = withTimeoutOrNull(70_000) { pro.noodle.mobile.core.web.SandboxedWebExtractor(app).extract(url, def, timeoutMs = 26_000, browserProbe = true) }
+            ?: return "ERROR: browser timeout 70s"
         if (!res.success) return "BROWSER ERROR ${res.errorCode}: ${res.errorMessage}"
         val out = StringBuilder("BROWSER final=${res.finalUrl} • DOM ${res.html.length} chars\n")
         if (res.diagnostics.isNotBlank()) out.appendLine(res.diagnostics).appendLine("(BROWSER_VIDEO_TEST OK + app probe FAIL ⇒ the browser sends something the app does not: compare the headers/cookies above and retry http_request with them.)")

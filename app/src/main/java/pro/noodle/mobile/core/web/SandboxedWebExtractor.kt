@@ -40,10 +40,14 @@ class SandboxedWebExtractor(private val context: Context) {
         if (!allowed(url, adapter, additionalAllowedHosts, resolveDns = true)) {
             return WebExtractResult(false, errorCode = "WEB_URL_BLOCKED", errorMessage = "URL не прошёл SNP/security policy.")
         }
+        val trace = Trace()
         try {
-            withTimeout(timeoutMs + (if (sniff) SNIFF_EXTRA_MS else 0L) + (if (browserProbe) 14_000L else 0L)) { extractOnMain(url, adapter, additionalAllowedHosts, sniff, browserProbe) }
+            withTimeout(timeoutMs + (if (sniff) SNIFF_EXTRA_MS else 0L) + (if (browserProbe) 14_000L else 0L)) { extractOnMain(url, adapter, additionalAllowedHosts, sniff, browserProbe, trace) }
         } catch (_: TimeoutCancellationException) {
-            WebExtractResult(false, errorCode = "WEB_TIMEOUT", errorMessage = "JavaScript extraction превысил ${timeoutMs} мс.")
+            val seen = synchronized(trace.captured) { trace.captured.toList() }
+            val evidence = "этап=${trace.stage}; запросов=${trace.requests.get()}; хосты=${trace.hosts.take(14).joinToString(",")}; заблокировано=${trace.blocked.take(8).joinToString(",")}"
+            if (seen.isNotEmpty()) WebExtractResult(true, finalUrl = url, html = "<!--NOODLE_RUNTIME_MEDIA\n" + seen.joinToString("\n") + "\n-->", capturedMedia = seen, diagnostics = "WEB_TIMEOUT, но поток пойман: $evidence")
+            else WebExtractResult(false, errorCode = "WEB_TIMEOUT", errorMessage = "JavaScript extraction превысил ${timeoutMs} мс ($evidence).")
         } catch (e: Exception) {
             WebExtractResult(false, errorCode = "WEB_EXTRACT_ERROR", errorMessage = e.message ?: e.javaClass.simpleName)
         }
@@ -56,6 +60,7 @@ class SandboxedWebExtractor(private val context: Context) {
         additionalAllowedHosts: Set<String>,
         sniff: Boolean,
         probe: Boolean = false,
+        trace: Trace = Trace(),
     ): WebExtractResult = withContext(Dispatchers.Main.immediate) {
         suspendCancellableCoroutine { cont ->
             val cookies = CookieManager.getInstance()
@@ -64,7 +69,8 @@ class SandboxedWebExtractor(private val context: Context) {
             val web = WebView(context.applicationContext)
             web.settings.apply {
                 javaScriptEnabled = true
-                domStorageEnabled = false
+                // Современные плееры и Next.js-сайты падают без localStorage; в режиме sniff включаем и чистим после.
+                domStorageEnabled = sniff
                 databaseEnabled = false
                 allowFileAccess = false
                 allowContentAccess = false
@@ -76,14 +82,23 @@ class SandboxedWebExtractor(private val context: Context) {
                 if (Build.VERSION.SDK_INT >= 26) safeBrowsingEnabled = true
             }
             CookieManager.getInstance().setAcceptCookie(adapter.allowCookies)
-            CookieManager.getInstance().setAcceptThirdPartyCookies(web, false)
+            CookieManager.getInstance().setAcceptThirdPartyCookies(web, sniff && adapter.allowCookies)
+            if (sniff) {
+                // Невидимый WebView без размера даёт странице viewport 0×0: адаптивная вёрстка прячет плеер,
+                // а ленивые виджеты (IntersectionObserver) никогда не монтируются. Даём экранный размер.
+                val dm = context.resources.displayMetrics
+                val w = dm.widthPixels.coerceAtLeast(720)
+                val h = dm.heightPixels.coerceAtLeast(1280)
+                web.measure(android.view.View.MeasureSpec.makeMeasureSpec(w, android.view.View.MeasureSpec.EXACTLY), android.view.View.MeasureSpec.makeMeasureSpec(h, android.view.View.MeasureSpec.EXACTLY))
+                web.layout(0, 0, w, h)
+            }
             var finished = false
             var pageLoaded = false
             var blockedNav = ""
             var probing = false
             val mediaHeaders = java.util.concurrent.ConcurrentHashMap<String, String>()
             var challengeWaits = 0
-            val captured = java.util.Collections.synchronizedSet(LinkedHashSet<String>())
+            val captured = trace.captured
             fun close(result: WebExtractResult) {
                 if (finished) return
                 finished = true
@@ -97,6 +112,7 @@ class SandboxedWebExtractor(private val context: Context) {
                 cookies.setAcceptCookie(false)
                 cookies.removeAllCookies(null)
                 cookies.flush()
+                if (sniff) runCatching { android.webkit.WebStorage.getInstance().deleteAllData() }
                 if (cont.isActive) cont.resume(result)
             }
             web.webChromeClient = object : WebChromeClient() {
@@ -119,6 +135,8 @@ class SandboxedWebExtractor(private val context: Context) {
 
                 override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest): WebResourceResponse? {
                     val u = request.url.toString()
+                    trace.requests.incrementAndGet()
+                    request.url.host?.let { if (trace.hosts.size < 40) trace.hosts.add(it) }
                     val media = sniff && looksLikeMediaRequest(u, request.requestHeaders)
                     if (media && captured.size < 24 && u.startsWith("https://", true)) {
                         captured.add(u)
@@ -127,7 +145,10 @@ class SandboxedWebExtractor(private val context: Context) {
                     // Сам поток не качаем: нам нужен только его адрес (кроме диагностики «играет ли в браузере»).
                     if (media && !probing) return blockedResponse()
                     if (media && probing) return if (allowed(u, adapter, additionalAllowedHosts, resolveDns = true)) null else blockedResponse()
-                    return if (allowed(u, adapter, additionalAllowedHosts, resolveDns = true)) null else blockedResponse()
+                    return if (allowed(u, adapter, additionalAllowedHosts, resolveDns = true)) null else {
+                        request.url.host?.let { if (trace.blocked.size < 20) trace.blocked.add(it) }
+                        blockedResponse()
+                    }
                 }
 
                 override fun onReceivedSslError(
@@ -164,6 +185,7 @@ class SandboxedWebExtractor(private val context: Context) {
                         return
                     }
                     pageLoaded = true
+                    trace.stage = "страница загружена"
                     fun finishNow() {
                         if (finished) return
                         view.evaluateJavascript(RUNTIME_DOM_SCRIPT) { encoded ->
@@ -218,7 +240,13 @@ class SandboxedWebExtractor(private val context: Context) {
                             when {
                                 captured.isNotEmpty() && attempt >= 1 -> view.postDelayed({ finishNow() }, 600L)
                                 attempt >= 6 -> finishNow()
-                                else -> { view.evaluateJavascript(ACTIVATE_SCRIPT, null); poll(attempt + 1) }
+                                else -> {
+                                    trace.stage = "запуск плеера, попытка ${attempt + 1}"
+                                    view.evaluateJavascript(ACTIVATE_SCRIPT, null)
+                                    // Плеер в чужом iframe недоступен для JS-клика: тапаем по нему настоящим касанием.
+                                    if (attempt == 1 || attempt == 3) tapPlayer(view)
+                                    poll(attempt + 1)
+                                }
                             }
                         }, 800L)
                     }
@@ -233,6 +261,7 @@ class SandboxedWebExtractor(private val context: Context) {
                             finished = true
                             web.stopLoading()
                             web.destroy()
+                            if (sniff) runCatching { android.webkit.WebStorage.getInstance().deleteAllData() }
                             cookies.setAcceptCookie(false)
                             cookies.removeAllCookies(null)
                             cookies.flush()
@@ -288,7 +317,48 @@ class SandboxedWebExtractor(private val context: Context) {
         }.getOrDefault("")
     }
 
+    internal class Trace {
+        val captured: MutableSet<String> = java.util.Collections.synchronizedSet(LinkedHashSet<String>())
+        @Volatile var stage: String = "загрузка страницы"
+        val requests = java.util.concurrent.atomic.AtomicInteger(0)
+        val hosts: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+        val blocked: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+    }
+
+    /** Прокручивает к плееру и делает настоящий тап по его центру (работает и для кросс-доменных iframe). */
+    private fun tapPlayer(view: WebView) {
+        view.evaluateJavascript(PLAYER_RECT_SCRIPT) { raw ->
+            val parts = raw.orEmpty().trim('"').split(',')
+            if (parts.size < 4) return@evaluateJavascript
+            val density = view.resources.displayMetrics.density
+            val x = (parts[0].toFloatOrNull() ?: return@evaluateJavascript) * density
+            val y = (parts[1].toFloatOrNull() ?: return@evaluateJavascript) * density
+            if (x <= 0f || y <= 0f || x >= view.width || y >= view.height) return@evaluateJavascript
+            val t = android.os.SystemClock.uptimeMillis()
+            val down = android.view.MotionEvent.obtain(t, t, android.view.MotionEvent.ACTION_DOWN, x, y, 0)
+            val up = android.view.MotionEvent.obtain(t, t + 60, android.view.MotionEvent.ACTION_UP, x, y, 0)
+            runCatching { view.dispatchTouchEvent(down); view.dispatchTouchEvent(up) }
+            down.recycle(); up.recycle()
+        }
+    }
+
     companion object {
+        private val PLAYER_RECT_SCRIPT = """
+            (function() {
+              var sels = ['iframe', '[data-publisher-id]', 'ins[data-id]', 'video', '[class*="player" i]', '[id*="player" i]'];
+              for (var i = 0; i < sels.length; i++) {
+                var list = document.querySelectorAll(sels[i]);
+                for (var j = 0; j < list.length; j++) {
+                  var e = list[j]; var r0 = e.getBoundingClientRect();
+                  if (r0.width < 150 || r0.height < 90) continue;
+                  try { e.scrollIntoView({block: 'center'}); } catch (x) {}
+                  var r = e.getBoundingClientRect();
+                  return (r.left + r.width / 2) + ',' + (r.top + r.height / 2) + ',' + r.width + ',' + r.height;
+                }
+              }
+              return '';
+            })()
+        """.trimIndent()
         private val mutex = Mutex()
         private const val SNIFF_EXTRA_MS = 7_000L
         private val mediaExt = Regex("\\.(?:mp4|m4v|webm|m3u8|mpd|m4s|ts|mov)(?:[?#]|$)", RegexOption.IGNORE_CASE)
@@ -312,6 +382,12 @@ class SandboxedWebExtractor(private val context: Context) {
                     '[class*="play-btn"]','[class*="playBtn"]','[class*="PlayButton"]','[aria-label*="Play" i]','[title*="Play" i]',
                     '[title*="Смотреть" i]','[title*="Воспроизвести" i]','#play','.play'];
                   sel.forEach(function(s) { try { doc.querySelectorAll(s).forEach(function(e, i) { if (i < 2) e.click(); }); } catch (e) {} });
+                  // React/Next-сайты: кнопка «Смотреть/Play» — это <button> с текстом (ссылки не трогаем: уведут со страницы).
+                  try { var n = 0; doc.querySelectorAll('button,[role="button"]').forEach(function(e) {
+                    var t = (e.innerText || e.getAttribute('aria-label') || '').trim();
+                    if (n < 2 && /^(смотреть( онлайн)?|play|воспроизвести|начать просмотр|продолжить просмотр)$/i.test(t)) { n++; e.click(); }
+                  }); } catch (e) {}
+                  try { doc.querySelectorAll('[data-publisher-id],ins[data-id],iframe').forEach(function(e, i) { if (i < 3) e.scrollIntoView({block: 'center'}); }); } catch (e) {}
                   doc.querySelectorAll('video').forEach(function(v) {
                     try { v.muted = true; v.setAttribute('playsinline', ''); var p = v.play(); if (p && p.catch) p.catch(function(){}); } catch (e) {}
                   });
